@@ -67,6 +67,11 @@ pub struct SyncOpts {
 	pub typegen_omit_generated_at: bool,
 	/// `[typegen] schema_version`: which document the JSON output is.
 	pub typegen_schema_version: crate::typegen::SchemaVersion,
+	/// `[typegen.emit.<name>]`: external emitters run over schema document v2 after a sync
+	/// that changed the schema (and on the first one, before they have published).
+	pub typegen_emitters: Vec<crate::typegen::Emitter>,
+	/// `[typegen] acknowledge`: diagnostic codes whose errors do not fail a strict typegen.
+	pub typegen_acknowledge: std::collections::BTreeMap<String, String>,
 }
 
 /// A schema file embedded into the binary at compile time (via [`embed_schema!`](crate::embed_schema))
@@ -293,6 +298,8 @@ impl<'a> Sync<'a> {
 			typegen_strict: false,
 			typegen_omit_generated_at: false,
 			typegen_schema_version: crate::typegen::SchemaVersion::V1,
+			typegen_emitters: Vec::new(),
+			typegen_acknowledge: Default::default(),
 		};
 		sync_embedded(db, self.files, &opts).await
 	}
@@ -615,7 +622,14 @@ async fn run_sync_with_files(
 		let json_due_at_path =
 			opts.typegen_json_out.as_deref().filter(|path| has_changes || !path.exists());
 
-		if ts_due_at_path.is_some() || json_due_at_path.is_some() {
+		let emitters: &[crate::typegen::Emitter] =
+			if has_changes || crate::typegen::emitters_due(&opts.typegen_emitters) {
+				&opts.typegen_emitters
+			} else {
+				&[]
+			};
+
+		if ts_due_at_path.is_some() || json_due_at_path.is_some() || !emitters.is_empty() {
 			let ts_file = ts_due_at_path.map(crate::typegen::typescript_file);
 			let outputs = crate::typegen::Outputs {
 				json: json_due_at_path.map(|path| (path, true)),
@@ -629,6 +643,8 @@ async fn run_sync_with_files(
 				opts.typegen_strict,
 				opts.typegen_omit_generated_at,
 				opts.typegen_schema_version,
+				emitters,
+				&opts.typegen_acknowledge,
 			)
 			.await?;
 		}

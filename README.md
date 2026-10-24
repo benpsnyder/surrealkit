@@ -513,6 +513,45 @@ document on disk instead of a database. A v2 document is decoded strictly and
 its `semanticDigest` recomputed, so a hand-edited document is refused. The
 TypeScript interfaces are generated from v1 documents only.
 
+The machine-readable contract is the JSON Schema (draft 2020-12)
+[`crates/surrealkit/schema/schema-document-v2.schema.json`](crates/surrealkit/schema/schema-document-v2.schema.json),
+also exported as `surrealkit::typegen::SCHEMA_DOCUMENT_V2_JSON_SCHEMA`. Every
+document SurrealKit generates for its golden corpus is validated against it in
+the test suite.
+
+### External emitters
+
+Other generators plug in as external emitters: commands that read schema
+document v2 on stdin and print the files they generate.
+
+```toml
+[typegen.emit.effect]
+command = "effect-surrealkit"
+out = "src/generated/surreal"
+```
+
+`typegen`, `typegen --from`, `compile` and `sync` (each `sync --watch` change
+included) run every configured emitter, then write its files into `out` with the
+same guarantees as SurrealKit's own outputs: nothing is written unless every
+output rendered, each file is replaced atomically and left alone when
+unchanged, files an emitter stops producing are removed, and `--check` reports
+missing, stale and extra files without writing. SurrealKit owns `out` and
+records what it wrote in `out/.surrealkit-emit.json`; it never overwrites a file
+it did not write. A failing emitter fails a strict run, `compile` (even with
+`--lenient`, which tolerates diagnostics only) and any `--check`; otherwise it is
+skipped with its files untouched. The protocol is specified in
+[docs/typegen/external-emitters.md](docs/typegen/external-emitters.md).
+
+An error diagnostic fails `compile` and every strict run. When one is expected and
+acceptable, acknowledge its code, with the reason, instead of turning strictness
+off; the diagnostic stays in the document, and emitters receive the list too
+(`SURREALKIT_EMIT_ACKNOWLEDGE`):
+
+```toml
+[typegen]
+acknowledge = { "param-value-nondeterministic" = "$started is informational only" }
+```
+
 ## Vite Plugin
 
 [`vite-plugin-surrealkit`](packages/vite-plugin-surrealkit) runs `surrealkit sync`
