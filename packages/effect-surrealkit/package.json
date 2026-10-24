@@ -11,7 +11,14 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./emitter": {
+			"types": "./dist/emitter.d.ts",
+			"import": "./dist/emitter.js"
 		}
+	},
+	"bin": {
+		"effect-surrealkit": "dist/cli.js"
 	},
 	"files": [
 		"dist",
@@ -23,13 +30,13 @@
 		"node": "^20.19.0 || >=22.12.0"
 	},
 	"scripts": {
-		"build": "tsup",
+		"build": "rm -rf dist && tsup",
 		"clean": "rm -rf dist",
 		"format": "biome check --write .",
 		"prepare": "tsup",
 		"lint": "biome ci .",
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit && tsc --noEmit -p test/types"
 	},
 	"keywords": [
 		"effect",
@@ -44,6 +51,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.2",
 		"@types/node": "^24.3.0",
+		"ajv": "8.17.1",
 		"effect": "4.0.6",
 		"surrealdb": "2.1.1",
 		"tsup": "^8.2.4",
