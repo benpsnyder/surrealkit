@@ -40,7 +40,7 @@ pub struct Snapshot {
 	pub tables_structure: Vec<(String, Value)>,
 }
 
-async fn query_json(db: &Surreal<Any>, sql: &str) -> Result<Value> {
+pub(crate) async fn query_json(db: &Surreal<Any>, sql: &str) -> Result<Value> {
 	let mut response = db.query(sql).await?.check()?;
 	let raw: surrealdb_types::Value = response.take(0)?;
 	Value::from_value(raw).context("converting the INFO result to JSON")

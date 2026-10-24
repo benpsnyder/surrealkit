@@ -20,11 +20,11 @@ use super::diagnostics::{Diagnostic, Severity, codes};
 use super::introspect::assemble;
 use super::types::{FieldType, SchemaTypes};
 
-pub(super) fn corpus_dir() -> PathBuf {
+pub(crate) fn corpus_dir() -> PathBuf {
 	Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/typegen_corpus")
 }
 
-pub(super) fn read_json(path: &Path) -> Value {
+pub(crate) fn read_json(path: &Path) -> Value {
 	let text =
 		std::fs::read_to_string(path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
 	serde_json::from_str(&text).unwrap_or_else(|err| panic!("{}: {err}", path.display()))
@@ -320,13 +320,13 @@ fn previously_unknown_kinds_are_structured() {
 // ---------------------------------------------------------------------------
 
 /// A corpus module from `corpus.json`.
-pub(super) struct Module {
+pub(crate) struct Module {
 	pub path: String,
 	pub engines: Option<Vec<String>>,
 	pub experimental: bool,
 }
 
-pub(super) fn corpus_modules() -> Vec<Module> {
+pub(crate) fn corpus_modules() -> Vec<Module> {
 	let corpus = read_json(&corpus_dir().join("corpus.json"));
 	corpus["modules"]
 		.as_array()

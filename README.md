@@ -457,6 +457,62 @@ supported engine minor (SurrealDB 3.2.x and 3.3.x). Any other minor is read from
 plain `INFO` instead, with the error diagnostic `structure-unsupported-engine`,
 so a `strict` run refuses it.
 
+### Compiling without a database
+
+`surrealkit compile` produces schema document v2 from the schema files alone. It
+applies the selected modules, in `depends_on` order and the way `sync` would, to
+a throwaway embedded in-memory engine, then reads that engine back:
+
+```bash
+surrealkit compile                       # writes [typegen] json (schema_version = 2), else database/types/schema.json
+surrealkit compile --check               # CI: fail when the committed outputs are stale
+surrealkit --schema billing compile      # billing and the modules it depends on
+surrealkit compile --allow-experimental files,surrealism
+```
+
+It needs no server and reads no connection settings (`SURREALDB_*`, `.env`,
+targets), so it runs in a build with no credentials and no network. Template
+variables come from `surrealkit.toml [variables]` and `--var` only; compile
+ignores `SURREALKIT_VAR_*` in the environment, so a checkout compiles to the same
+bytes everywhere. The engine itself has no network access (`http::*` is refused)
+and no scripting. It is strict by default: an error diagnostic fails the command
+(`--lenient` logs it instead). A configured `[typegen] typescript` is written too, from the same
+engine, and what it cannot represent fails a strict compile as well. Because `sync` and `typegen`
+write `[typegen] json` in the configured version, compile writes that file only when the project
+sets `schema_version = 2` (otherwise use `--out` or `--stdout`). Accesses and users defined `ON
+NAMESPACE` or `ON ROOT` are not part of the document, and each is reported as a warning. Schemas that use `DEFINE BUCKET` or `DEFINE MODULE` need the matching
+capability, from `--allow-experimental` or:
+
+```toml
+[typegen]
+experimental = ["files", "surrealism"]
+```
+
+The compiled document equals what `surrealkit typegen` reads from a database
+synced from the same files on the same engine minor: SurrealKit's test suite
+checks it against live SurrealDB 3.2.4 and 3.3.0 servers. The embedded engine is
+always SurrealKit's own `surrealdb` version (3.3), so a project deploying to 3.2
+gets a document shaped by 3.3, and 3.2-only spellings are refused. Name the minor
+you deploy to and compile reports the error `compile-engine-mismatch` when it
+differs:
+
+```toml
+[typegen]
+engine = "3.2"
+```
+
+A module that defines the same entity twice gets the warning
+`definition-duplicate`, since raw SurrealQL and SurrealKit's `OVERWRITE` would
+deploy it differently. A `DEFINE PARAM` whose `VALUE` changes every time it is
+evaluated (`time::now()`, `rand::uuid()`) gets the error
+`param-value-nondeterministic`: its stored value would make every compile
+different.
+
+`surrealkit typegen --from <schema.json>` produces the configured outputs from a
+document on disk instead of a database. A v2 document is decoded strictly and
+its `semanticDigest` recomputed, so a hand-edited document is refused. The
+TypeScript interfaces are generated from v1 documents only.
+
 ## Vite Plugin
 
 [`vite-plugin-surrealkit`](packages/vite-plugin-surrealkit) runs `surrealkit sync`

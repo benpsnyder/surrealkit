@@ -16,7 +16,7 @@ use super::document::{EngineMode, SchemaDocument, Source};
 use super::introspect_v2::{Origin, Snapshot, assemble, assemble_from_info};
 
 /// The captured `INFO` and `INFO … STRUCTURE` output for one engine version.
-pub(super) fn fixture_snapshot(version: &str) -> Snapshot {
+pub(crate) fn fixture_snapshot(version: &str) -> Snapshot {
 	let dir = corpus_dir().join("introspection").join(version);
 	let pairs = |file: &str| -> Vec<(String, Value)> {
 		read_json(&dir.join(file))
@@ -48,7 +48,7 @@ fn introspect_origin() -> Origin {
 	}
 }
 
-pub(super) fn fixture_document(version: &str) -> SchemaDocument {
+pub(crate) fn fixture_document(version: &str) -> SchemaDocument {
 	assemble(&fixture_snapshot(version), introspect_origin()).expect("assemble")
 }
 
@@ -93,11 +93,16 @@ fn the_corpus_reads_cleanly_through_both_structure_adapters() {
 	}
 }
 
+/// The 3.3.0 document's content is pinned once, by `compiled/corpus.v2.json`: compiling the
+/// corpus gives the same semantic content (`compile::corpus` checks that), so here its digest
+/// must equal that file's, and only its diagnostics, which differ between the readers, are
+/// pinned.
 #[test]
 fn the_3_3_0_document_is_pinned() {
 	let doc = fixture_document("3.3.0");
-	let mut text = semantic(&doc);
-	text.push_str("\n\ndiagnostics:\n");
+	let compiled = read_json(&corpus_dir().join("compiled/corpus.v2.json"));
+	assert_eq!(compiled["semanticDigest"].as_str(), Some(doc.semantic_digest.as_str()));
+	let mut text = String::from("diagnostics:\n");
 	text.push_str(&diagnostic_lines(&doc).join("\n"));
 	text.push_str(&format!("\n\n{}\n", doc.semantic_digest));
 	insta::assert_snapshot!("corpus_v2_3_3_0", text);
@@ -251,7 +256,7 @@ fn identical_inputs_give_identical_bytes() {
 }
 
 /// Apply the corpus modules the engine accepts to a fresh database.
-pub(super) async fn apply_corpus(
+pub(crate) async fn apply_corpus(
 	db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
 	experimental: bool,
 ) -> String {
@@ -275,7 +280,7 @@ pub(super) async fn apply_corpus(
 
 /// Whether a server at `SURREALKIT_TEST_URL` was started with the experimental capabilities
 /// the gated corpus modules need (`--allow-experimental=files,surrealism`).
-pub(super) fn remote_has_experimental() -> bool {
+pub(crate) fn remote_has_experimental() -> bool {
 	std::env::var("SURREALKIT_TEST_EXPERIMENTAL").is_ok_and(|v| v == "1")
 }
 
