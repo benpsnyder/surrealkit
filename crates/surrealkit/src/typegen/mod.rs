@@ -24,9 +24,14 @@ mod define;
 mod diagnostics;
 pub mod document;
 mod emit;
+#[cfg(test)]
+mod emitter_tests;
+mod emitters;
 mod info_v2;
 mod introspect;
 pub mod introspect_v2;
+#[cfg(test)]
+mod json_schema_tests;
 mod kind_v2;
 mod output;
 mod refine;
@@ -36,11 +41,13 @@ mod structure;
 mod type_parser;
 mod types;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 pub use diagnostics::{Diagnostic, Severity, Span, codes};
 pub use document::{SCHEMA_DOCUMENT_V2_JSON_SCHEMA, SCHEMA_DOCUMENT_VERSION, SchemaDocument};
+pub use emitters::{Emitter, MANIFEST as EMITTER_MANIFEST, PROTOCOL as EMITTER_PROTOCOL};
 use output::{FileStatus, WriteOutcome};
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
@@ -94,6 +101,16 @@ pub struct TypegenOpts {
 	/// Which document the JSON output is: `[typegen] schema_version`. Version 2 has no
 	/// `generatedAt`, and the TypeScript interfaces are still emitted from version 1.
 	pub schema_version: SchemaVersion,
+	/// External emitters, `[typegen.emit.<name>]`, run over schema document v2.
+	pub emitters: Vec<Emitter>,
+	/// `[typegen] acknowledge`: diagnostic codes whose errors do not fail generation, each
+	/// with the reason. Acknowledged diagnostics stay in the document; the emitters get the
+	/// list as `SURREALKIT_EMIT_ACKNOWLEDGE`.
+	pub acknowledge: BTreeMap<String, String>,
+	/// Fail when an external emitter cannot run or replies with something that is not a valid
+	/// reply, even without `strict`. `compile` sets it, so `--lenient` tolerates diagnostics
+	/// but not a broken emitter.
+	pub emitter_failures_fatal: bool,
 }
 
 /// Render a [`SchemaTypes`] document as TypeScript. Re-exported so callers
@@ -208,23 +225,34 @@ pub async fn generate_with_diagnostics(
 	introspect::introspect(db).await
 }
 
-/// Log `diagnostics`, or, when `strict`, fail on any of [`Severity::Error`].
+/// Log `diagnostics`, or, when `strict`, fail on any of [`Severity::Error`] whose code is not
+/// in `acknowledge` (`[typegen] acknowledge`, code → reason).
 ///
 /// Without `strict`, errors and warnings are logged as warnings and infos at
-/// debug level, so a lenient run keeps today's output and says what it lost.
-pub(crate) fn report_diagnostics(diagnostics: &[Diagnostic], strict: bool) -> Result<()> {
-	let errors: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.is_error()).collect();
+/// debug level, so a lenient run keeps today's output and says what it lost. An acknowledged
+/// error is logged at debug level with its reason; it stays in the document.
+pub(crate) fn report_diagnostics(
+	diagnostics: &[Diagnostic],
+	strict: bool,
+	acknowledge: &BTreeMap<String, String>,
+) -> Result<()> {
+	let errors: Vec<&Diagnostic> =
+		diagnostics.iter().filter(|d| d.is_error() && !acknowledge.contains_key(&d.code)).collect();
 	if strict && !errors.is_empty() {
 		bail!(
-			"typegen --strict: {} error diagnostic(s):\n{}",
+			"typegen --strict: {} error diagnostic(s):\n{}\nfix them, or acknowledge a code with a \
+			 reason in [typegen] acknowledge",
 			errors.len(),
 			errors.iter().map(|d| format!("  {d}")).collect::<Vec<_>>().join("\n")
 		);
 	}
 	for d in diagnostics {
-		match d.severity {
-			Severity::Error | Severity::Warning => log::warn!("typegen: {d}"),
-			Severity::Info => log::debug!("typegen: {d}"),
+		match (d.severity, acknowledge.get(&d.code)) {
+			(Severity::Error, Some(reason)) => {
+				log::debug!("typegen: {d} (acknowledged: {reason})");
+			}
+			(Severity::Error | Severity::Warning, _) => log::warn!("typegen: {d}"),
+			(Severity::Info, _) => log::debug!("typegen: {d}"),
 		}
 	}
 	Ok(())
@@ -248,7 +276,7 @@ pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> 
 		return run_typegen_v2(db, folder, opts).await;
 	}
 	let (mut doc, diagnostics) = generate_with_diagnostics(db).await?;
-	report_diagnostics(&diagnostics, opts.strict)?;
+	report_diagnostics(&diagnostics, opts.strict, &opts.acknowledge)?;
 	let json_path = if opts.stdout {
 		None
 	} else {
@@ -268,23 +296,15 @@ pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> 
 		};
 	}
 
-	let progress = if opts.stdout {
-		log::info!("{}", emit::to_json(&doc, opts.pretty)?);
-		log::Level::Debug
+	// External emitters read v2 whatever version the JSON is.
+	let v2 = if opts.emitters.is_empty() {
+		None
 	} else {
-		log::Level::Info
+		let v2 = generate_v2(db).await?;
+		report_diagnostics(&v2.diagnostics, opts.strict, &opts.acknowledge)?;
+		Some(v2)
 	};
-
-	let ts_path = opts.ts_out.as_deref().map(typescript_file);
-	let outputs = Outputs {
-		json: json_path.as_deref().map(|path| (path, opts.pretty)),
-		typescript: ts_path.as_deref().map(|path| (path, opts.ts_format.as_deref())),
-	};
-	let artifacts = render(&doc, None, &outputs, opts.strict, opts.check)?;
-	if opts.check {
-		return check(&artifacts);
-	}
-	publish(&artifacts, progress, OnWriteError::Propagate)
+	produce(&doc, v2.as_ref(), folder, &opts)
 }
 
 /// `run_typegen` with `[typegen] schema_version = 2`: the JSON output is schema document
@@ -292,9 +312,9 @@ pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> 
 /// interface emitter's output, unchanged.
 async fn run_typegen_v2(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> Result<()> {
 	let v2 = introspect_v2::introspect(db, document::EngineMode::Remote).await?;
-	report_diagnostics(&v2.diagnostics, opts.strict)?;
+	report_diagnostics(&v2.diagnostics, opts.strict, &opts.acknowledge)?;
 	let v1 = match opts.ts_out {
-		Some(_) => v1_for_typescript(db, opts.strict).await?,
+		Some(_) => v1_for_typescript(db, opts.strict, &opts.acknowledge).await?,
 		None => empty_v1(),
 	};
 	produce(&v1, Some(&v2), folder, &opts)
@@ -309,13 +329,15 @@ pub fn produce(
 	folder: &str,
 	opts: &TypegenOpts,
 ) -> Result<()> {
+	// The JSON is v2 when that is the configured version and there is one to write.
+	let json_v2 = v2.filter(|_| opts.schema_version == SchemaVersion::V2);
 	let json_path = if opts.stdout {
 		None
 	} else {
 		Some(opts.out.clone().unwrap_or_else(|| crate::constants::typegen_output_path(folder)))
 	};
 	let progress = if opts.stdout {
-		match v2 {
+		match json_v2 {
 			Some(v2) => log::info!("{}", v2_json(v2, opts.pretty)?),
 			None => log::info!("{}", emit::to_json(v1, opts.pretty)?),
 		}
@@ -328,19 +350,57 @@ pub fn produce(
 		json: json_path.as_deref().map(|path| (path, opts.pretty)),
 		typescript: ts_path.as_deref().map(|path| (path, opts.ts_format.as_deref())),
 	};
-	let artifacts = render(v1, v2, &outputs, opts.strict, opts.check)?;
+	let artifacts = render(v1, json_v2, &outputs, opts.strict, opts.check)?;
+	let rendered = render_emitters(
+		v2,
+		&opts.emitters,
+		emitters::Policy {
+			strict: opts.strict,
+			fatal_failures: opts.emitter_failures_fatal,
+			acknowledge: &opts.acknowledge,
+		},
+	)?;
 	if opts.check {
-		return check(&artifacts);
+		return check_with(&artifacts, &rendered.plans, &rendered.failed);
 	}
-	publish(&artifacts, progress, OnWriteError::Propagate)
+	// Refuse before writing anything, so a strict failure leaves every output as it was.
+	for plan in &rendered.plans {
+		emitters::preflight(plan, opts.strict)?;
+	}
+	publish(&artifacts, progress, OnWriteError::Propagate)?;
+	for plan in &rendered.plans {
+		emitters::publish(plan, progress)?;
+	}
+	Ok(())
+}
+
+/// Run the configured external emitters over `v2`.
+fn render_emitters(
+	v2: Option<&SchemaDocument>,
+	configured: &[Emitter],
+	policy: emitters::Policy<'_>,
+) -> Result<emitters::Rendered> {
+	if configured.is_empty() {
+		return Ok(emitters::Rendered::default());
+	}
+	let v2 = v2.ok_or_else(|| {
+		anyhow::anyhow!(
+			"external emitters read schema document v2, and this run has only a v1 document"
+		)
+	})?;
+	emitters::render(configured, &v2_bytes(v2, true)?, policy)
 }
 
 /// The v1 document the TypeScript interface emitter reads when the JSON is v2. Its own
 /// diagnostics are reported (and fail a strict run) as well: a kind v2 reads but v1 cannot
 /// parse is `unknown` in the TypeScript, which v2's diagnostics do not show.
-pub(crate) async fn v1_for_typescript(db: &Surreal<Any>, strict: bool) -> Result<SchemaTypes> {
+pub(crate) async fn v1_for_typescript(
+	db: &Surreal<Any>,
+	strict: bool,
+	acknowledge: &BTreeMap<String, String>,
+) -> Result<SchemaTypes> {
 	let (v1, diagnostics) = generate_with_diagnostics(db).await?;
-	report_diagnostics(&diagnostics, strict)?;
+	report_diagnostics(&diagnostics, strict, acknowledge)?;
 	Ok(v1)
 }
 
@@ -402,7 +462,7 @@ pub fn run_typegen_from(from: &Path, folder: &str, opts: TypegenOpts) -> Result<
 			produce(&doc, None, folder, &opts)
 		}
 		LoadedDocument::V2(doc) => {
-			report_diagnostics(&doc.diagnostics, opts.strict)?;
+			report_diagnostics(&doc.diagnostics, opts.strict, &opts.acknowledge)?;
 			if opts.ts_out.is_some() {
 				bail!(
 					"typegen --from {}: the TypeScript interfaces are generated from schema \
@@ -411,6 +471,11 @@ pub fn run_typegen_from(from: &Path, folder: &str, opts: TypegenOpts) -> Result<
 					from.display()
 				);
 			}
+			// The input decides: a v2 document is written as v2.
+			let opts = TypegenOpts {
+				schema_version: SchemaVersion::V2,
+				..opts
+			};
 			produce(&empty_v1(), Some(&doc), folder, &opts)
 		}
 	}
@@ -467,7 +532,9 @@ pub async fn generate_v2(db: &Surreal<Any>) -> Result<SchemaDocument> {
 /// Without `strict` this never fails: a problem is logged and the sync, which has
 /// already applied its changes, still succeeds, which is how sync has always
 /// treated typegen. With `strict` the first problem is returned, so a CI sync
-/// fails instead of leaving outputs stale behind a log line.
+/// fails instead of leaving outputs stale behind a log line. Leniently, a schema document v2
+/// that cannot be read skips only the external emitters: the v1 JSON and TypeScript are still
+/// written.
 #[doc(hidden)]
 pub async fn regenerate_after_sync(
 	db: &Surreal<Any>,
@@ -475,37 +542,85 @@ pub async fn regenerate_after_sync(
 	strict: bool,
 	omit_generated_at: bool,
 	schema_version: SchemaVersion,
+	emitters: &[Emitter],
+	acknowledge: &BTreeMap<String, String>,
 ) -> Result<()> {
 	let result = async {
+		let mut emitters = emitters;
 		let (v1, v2) = match schema_version {
 			SchemaVersion::V1 => {
 				let (mut doc, diagnostics) =
 					generate_with_diagnostics(db).await.context("introspecting the schema")?;
-				report_diagnostics(&diagnostics, strict)?;
+				report_diagnostics(&diagnostics, strict, acknowledge)?;
 				if !omit_generated_at {
 					doc.generated_at = now_rfc3339()?;
 				}
-				(doc, None)
+				// External emitters read v2 whatever version the JSON is.
+				let v2 = if emitters.is_empty() {
+					None
+				} else {
+					match generate_v2(db).await.context("introspecting the schema for the emitters")
+					{
+						Ok(v2) => {
+							report_diagnostics(&v2.diagnostics, strict, acknowledge)?;
+							Some(v2)
+						}
+						Err(err) if strict => return Err(err),
+						Err(err) => {
+							log::error!("typegen: {err:#}; the external emitters were skipped");
+							emitters = &[];
+							None
+						}
+					}
+				};
+				(doc, v2)
 			}
 			SchemaVersion::V2 => {
 				let v2 = generate_v2(db).await.context("introspecting the schema")?;
-				report_diagnostics(&v2.diagnostics, strict)?;
+				report_diagnostics(&v2.diagnostics, strict, acknowledge)?;
 				let v1 = match outputs.typescript {
-					Some(_) => {
-						v1_for_typescript(db, strict).await.context("introspecting the schema")?
-					}
+					Some(_) => v1_for_typescript(db, strict, acknowledge)
+						.await
+						.context("introspecting the schema")?,
 					None => empty_v1(),
 				};
 				(v1, Some(v2))
 			}
 		};
-		let artifacts = render(&v1, v2.as_ref(), outputs, strict, false)?;
+		let json_v2 = v2.as_ref().filter(|_| schema_version == SchemaVersion::V2);
+		let artifacts = render(&v1, json_v2, outputs, strict, false)?;
+		let plans = render_emitters(
+			v2.as_ref(),
+			emitters,
+			emitters::Policy {
+				strict,
+				fatal_failures: false,
+				acknowledge,
+			},
+		)?
+		.plans;
 		let on_error = if strict {
 			OnWriteError::Propagate
 		} else {
 			OnWriteError::Log
 		};
-		publish(&artifacts, log::Level::Info, on_error)
+		let mut ready = Vec::new();
+		for plan in plans {
+			match emitters::preflight(&plan, strict) {
+				Ok(()) => ready.push(plan),
+				Err(err) if strict => return Err(err),
+				Err(err) => log::error!("typegen: {err:#}"),
+			}
+		}
+		publish(&artifacts, log::Level::Info, on_error)?;
+		for plan in &ready {
+			match emitters::publish(plan, log::Level::Info) {
+				Ok(()) => {}
+				Err(err) if strict => return Err(err),
+				Err(err) => log::error!("typegen: {err:#}"),
+			}
+		}
+		Ok(())
 	}
 	.await;
 	match result {
@@ -516,6 +631,13 @@ pub async fn regenerate_after_sync(
 		}
 		Ok(()) => Ok(()),
 	}
+}
+
+/// Whether `sync` must run the emitters even though no schema changed: one of them has never
+/// published its output.
+#[doc(hidden)]
+pub fn emitters_due(emitters: &[Emitter]) -> bool {
+	emitters::any_unpublished(emitters)
 }
 
 /// The outputs one generation produces.
@@ -639,7 +761,19 @@ fn publish(artifacts: &[Artifact], level: log::Level, on_error: OnWriteError) ->
 
 /// Compare every output with the file on disk; fail listing each one that is
 /// missing or different.
+#[cfg(test)]
 fn check(artifacts: &[Artifact]) -> Result<()> {
+	check_with(artifacts, &[], &[])
+}
+
+/// [`check`], including the external emitters' files: missing, stale, and extra files in
+/// an emitter's directory. An emitter in `failed` could not run, so its files cannot be
+/// checked: that fails the check too, whatever `strict` says.
+fn check_with(
+	artifacts: &[Artifact],
+	plans: &[emitters::EmitPlan],
+	failed: &[String],
+) -> Result<()> {
 	let mut problems = Vec::new();
 	for artifact in artifacts {
 		match output::status(&artifact.path, &artifact.bytes)? {
@@ -648,16 +782,39 @@ fn check(artifacts: &[Artifact]) -> Result<()> {
 			FileStatus::Missing => problems.push(format!("  missing: {}", artifact.path.display())),
 		}
 	}
+	let mut total = artifacts.len();
+	for plan in plans {
+		problems.extend(emitters::check(plan)?);
+		total += emitters::file_count(plan);
+	}
+	let mut sections = Vec::new();
 	if !problems.is_empty() {
-		bail!(
-			"typegen --check: {} of {} generated file(s) out of date:\n{}\nrerun the command \
-			 without --check to regenerate them",
+		sections.push(format!(
+			"{} of {} generated file(s) out of date:\n{}",
 			problems.len(),
-			artifacts.len(),
+			total,
 			problems.join("\n")
+		));
+	}
+	if !failed.is_empty() {
+		sections.push(format!(
+			"{} emitter(s) failed, so their files were not checked:\n{}",
+			failed.len(),
+			failed
+				.iter()
+				.map(|name| format!("  failed:  [typegen.emit.{name}]"))
+				.collect::<Vec<_>>()
+				.join("\n")
+		));
+	}
+	if !sections.is_empty() {
+		bail!(
+			"typegen --check: {}\nrerun the command without --check to regenerate them (fixing any \
+			 failed emitter first)",
+			sections.join("\n")
 		);
 	}
-	log::info!("typegen: {} generated file(s) up to date", artifacts.len());
+	log::info!("typegen: {total} generated file(s) up to date");
 	Ok(())
 }
 
@@ -812,15 +969,49 @@ mod tests {
 	fn strict_fails_on_error_diagnostics_only() {
 		let warning = Diagnostic::new(Severity::Warning, codes::DEFINITION_UNSUPPORTED, "x", "w");
 		let info = Diagnostic::new(Severity::Info, codes::FIELD_KIND_UNDECLARED, "y", "i");
-		report_diagnostics(&[warning.clone(), info.clone()], true).expect("warnings never fail");
+		let none = BTreeMap::new();
+		report_diagnostics(&[warning.clone(), info.clone()], true, &none)
+			.expect("warnings never fail");
 
 		let error = Diagnostic::new(Severity::Error, codes::KIND_UNRECOGNIZED, "frob", "unknown")
 			.on_table("t")
 			.on_field(vec!["f".into()]);
-		report_diagnostics(&[warning.clone(), error.clone()], false).expect("lenient logs errors");
-		let err = report_diagnostics(&[warning, error, info], true).unwrap_err().to_string();
+		report_diagnostics(&[warning.clone(), error.clone()], false, &none)
+			.expect("lenient logs errors");
+		let err = report_diagnostics(&[warning.clone(), error.clone(), info.clone()], true, &none)
+			.unwrap_err()
+			.to_string();
 		assert!(err.contains("1 error diagnostic(s)"), "{err}");
 		assert!(err.contains("kind-unrecognized at t.f: unknown (`frob`)"), "{err}");
+		assert!(err.contains("[typegen] acknowledge"), "{err}");
+
+		// An acknowledged code does not fail a strict run; another code still does.
+		let acknowledged =
+			BTreeMap::from([(codes::KIND_UNRECOGNIZED.to_string(), "known gap".to_string())]);
+		report_diagnostics(&[warning, error.clone(), info], true, &acknowledged)
+			.expect("acknowledged");
+		let other = Diagnostic::new(Severity::Error, codes::STRUCTURE_UNKNOWN_KEY, "k", "?");
+		let err = report_diagnostics(&[error, other], true, &acknowledged).unwrap_err().to_string();
+		assert!(
+			err.contains("1 error diagnostic(s)") && err.contains("structure-unknown-key"),
+			"{err}"
+		);
+	}
+
+	#[test]
+	fn check_fails_on_an_emitter_that_could_not_run() {
+		let tmp = tempfile::TempDir::new().unwrap();
+		let fresh = tmp.path().join("fresh.json");
+		std::fs::write(&fresh, "a").unwrap();
+		let artifacts = [Artifact {
+			path: fresh,
+			bytes: b"a".to_vec(),
+		}];
+		check_with(&artifacts, &[], &[]).expect("up to date");
+		let err = check_with(&artifacts, &[], &["broken".to_string()]).unwrap_err().to_string();
+		assert!(err.contains("1 emitter(s) failed"), "{err}");
+		assert!(err.contains("failed:  [typegen.emit.broken]"), "{err}");
+		assert!(!err.contains("out of date:"), "the files themselves are current: {err}");
 	}
 
 	#[test]

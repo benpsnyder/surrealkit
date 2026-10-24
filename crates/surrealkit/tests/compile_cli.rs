@@ -172,6 +172,42 @@ fn compile_takes_experimental_capabilities_from_config_and_flag() {
 	assert_eq!(code, Some(0), "{text}");
 }
 
+/// `[typegen.emit.<name>]` from `surrealkit.toml`: compile runs the emitter over the
+/// document it writes, and `compile --check` covers the emitter's files.
+#[cfg(unix)]
+#[test]
+fn compile_runs_configured_emitters() {
+	let tmp = tempfile::TempDir::new().expect("tempdir");
+	write_project(tmp.path(), true);
+	let script = tmp.path().join("emit.sh");
+	write(
+		&script,
+		"#!/bin/sh\ncat > /dev/null\nprintf '{\"protocol\":1,\"files\":[{\"path\":\"tables.txt\",\"contents\":\"%s\"}]}' \"$1\"\n",
+	);
+	let mut perms = fs::metadata(&script).unwrap().permissions();
+	std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+	fs::set_permissions(&script, perms).unwrap();
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		&format!(
+			"[schema.core]\n[schema.billing]\ndepends_on = [\"core\"]\n\n[typegen]\nschema_version = 2\njson = \
+			 \"out/schema.json\"\n\n[typegen.emit.demo]\ncommand = [\"sh\", {:?}, \"hello world\"]\nout = \
+			 \"out/demo\"\n",
+			script.to_string_lossy()
+		),
+	);
+	let (code, text) = surrealkit(tmp.path(), &["compile"]);
+	assert_eq!(code, Some(0), "{text}");
+	assert_eq!(fs::read_to_string(tmp.path().join("out/demo/tables.txt")).unwrap(), "hello world");
+	assert!(tmp.path().join("out/demo/.surrealkit-emit.json").is_file());
+	let (code, text) = surrealkit(tmp.path(), &["compile", "--check"]);
+	assert_eq!(code, Some(0), "{text}");
+	fs::write(tmp.path().join("out/demo/tables.txt"), "edited").unwrap();
+	let (code, text) = surrealkit(tmp.path(), &["compile", "--check"]);
+	assert_eq!(code, Some(1), "{text}");
+	assert!(text.contains("tables.txt"), "{text}");
+}
+
 #[test]
 fn typegen_from_reads_a_document_and_refuses_an_edited_one() {
 	let tmp = tempfile::TempDir::new().expect("tempdir");
@@ -333,4 +369,73 @@ fn compile_reports_a_different_engine_minor() {
 	let (code, text) = surrealkit(tmp.path(), &["compile"]);
 	assert_eq!(code, Some(1), "{text}");
 	assert!(text.contains("not an engine minor"), "{text}");
+}
+
+/// A broken emitter is never a green `--check`: not through `compile --lenient`, whose
+/// leniency covers diagnostics only, and not through a non-strict `typegen --from`.
+#[test]
+fn check_fails_when_an_emitter_cannot_run() {
+	let tmp = tempfile::TempDir::new().expect("tempdir");
+	write(&tmp.path().join("database/schema/001_app.surql"), "DEFINE TABLE t;\n");
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		"[typegen]\nschema_version = 2\njson = \"out/schema.json\"\n",
+	);
+	let (code, text) = surrealkit(tmp.path(), &["compile"]);
+	assert_eq!(code, Some(0), "{text}");
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		"[typegen]\nschema_version = 2\njson = \"out/schema.json\"\n\n[typegen.emit.broken]\ncommand = \"false\"\nout = \"gen\"\n",
+	);
+	for args in [
+		&["compile", "--lenient", "--check"][..],
+		&["compile", "--check"][..],
+		&["typegen", "--from", "out/schema.json", "--check"][..],
+	] {
+		let (code, text) = surrealkit(tmp.path(), args);
+		assert_eq!(code, Some(1), "{args:?}: {text}");
+		assert!(text.contains("[typegen.emit.broken]"), "{args:?}: {text}");
+		assert!(!text.contains("up to date"), "{args:?}: {text}");
+		assert!(!tmp.path().join("gen").exists(), "{args:?}");
+	}
+	// Writing, too: compile --lenient does not skip a broken emitter.
+	let (code, text) = surrealkit(tmp.path(), &["compile", "--lenient"]);
+	assert_eq!(code, Some(1), "{text}");
+}
+
+/// `[typegen] acknowledge` lets compile pass an error code it names, with a reason; an empty
+/// reason is refused.
+#[test]
+fn compile_passes_acknowledged_error_codes() {
+	let tmp = tempfile::TempDir::new().expect("tempdir");
+	write(
+		&tmp.path().join("database/schema/001_app.surql"),
+		"DEFINE PARAM $started VALUE time::now();\n",
+	);
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		"[typegen]\nschema_version = 2\njson = \"out/schema.json\"\n",
+	);
+	let (code, text) = surrealkit(tmp.path(), &["compile"]);
+	assert_eq!(code, Some(1), "{text}");
+	assert!(text.contains("param-value-nondeterministic"), "{text}");
+	assert!(text.contains("[typegen] acknowledge"), "{text}");
+
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		"[typegen]\nschema_version = 2\njson = \"out/schema.json\"\nacknowledge = { \"param-value-nondeterministic\" = \"\" }\n",
+	);
+	let (code, text) = surrealkit(tmp.path(), &["compile"]);
+	assert_eq!(code, Some(1), "{text}");
+	assert!(text.contains("has no reason"), "{text}");
+
+	write(
+		&tmp.path().join("surrealkit.toml"),
+		"[typegen]\nschema_version = 2\njson = \"out/schema.json\"\nacknowledge = { \"param-value-nondeterministic\" = \"the start time is informational\" }\n",
+	);
+	let (code, text) = surrealkit(tmp.path(), &["compile"]);
+	assert_eq!(code, Some(0), "{text}");
+	// The acknowledged diagnostic stays in the document.
+	let json = fs::read_to_string(tmp.path().join("out/schema.json")).expect("schema.json");
+	assert!(json.contains("param-value-nondeterministic"), "{json}");
 }
