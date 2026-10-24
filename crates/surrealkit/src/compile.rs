@@ -398,11 +398,19 @@ pub async fn run_compile(
 		.map(|module| collect_module(project, folder, module))
 		.collect::<Result<Vec<_>>>()?;
 	let compiled = compile(&collected, opts).await?;
-	crate::typegen::report_diagnostics(&compiled.document.diagnostics, outputs.strict)?;
+	crate::typegen::report_diagnostics(
+		&compiled.document.diagnostics,
+		outputs.strict,
+		&outputs.acknowledge,
+	)?;
 	// The TypeScript interfaces come from v1: what it cannot represent there fails a strict
 	// compile too, rather than becoming `unknown` behind a clean document.
 	if outputs.ts_out.is_some() {
-		crate::typegen::report_diagnostics(&compiled.v1_diagnostics, outputs.strict)?;
+		crate::typegen::report_diagnostics(
+			&compiled.v1_diagnostics,
+			outputs.strict,
+			&outputs.acknowledge,
+		)?;
 	}
 	crate::typegen::produce(&compiled.v1, Some(&compiled.document), folder, outputs)?;
 	Ok(compiled)
@@ -678,6 +686,8 @@ mod corpus {
 				typegen_strict: false,
 				typegen_omit_generated_at: false,
 				typegen_schema_version: crate::typegen::SchemaVersion::V1,
+				typegen_emitters: Vec::new(),
+				typegen_acknowledge: Default::default(),
 			},
 		)
 		.await

@@ -256,7 +256,8 @@ enum Commands {
 		/// what would be generated.
 		#[arg(long, conflicts_with = "stdout")]
 		check: bool,
-		/// Log error diagnostics instead of failing on them.
+		/// Log error diagnostics instead of failing on them. An external emitter that
+		/// cannot run still fails the command.
 		#[arg(long)]
 		lenient: bool,
 		/// Experimental capabilities the compile engine allows, adding to
@@ -583,6 +584,10 @@ async fn run_offline(args: &Cli) -> Result<bool> {
 					check: *check,
 					omit_generated_at: true,
 					schema_version: surrealkit::typegen::SchemaVersion::V2,
+					emitters: typegen_cfg.emitters()?,
+					acknowledge: typegen_cfg.acknowledgements()?,
+					// --lenient tolerates diagnostics, never an emitter that cannot run.
+					emitter_failures_fatal: true,
 				},
 			)
 			.await?;
@@ -619,6 +624,9 @@ async fn run_offline(args: &Cli) -> Result<bool> {
 					check: *check,
 					omit_generated_at: *no_generated_at || !typegen_cfg.stamps_generated_at(),
 					schema_version: typegen_cfg.schema_version()?,
+					emitters: typegen_cfg.emitters()?,
+					acknowledge: typegen_cfg.acknowledgements()?,
+					emitter_failures_fatal: false,
 				},
 			)?;
 			Ok(true)
@@ -850,6 +858,8 @@ async fn main() -> Result<()> {
 			let typegen_ts_out = typegen_cfg.typescript_path()?;
 			let typegen_json_out = typegen_cfg.json_path()?;
 			let typegen_schema_version = typegen_cfg.schema_version()?;
+			let typegen_emitters = typegen_cfg.emitters()?;
+			let typegen_acknowledge = typegen_cfg.acknowledgements()?;
 			if selection.pairs() == 0 {
 				bail!(
 					"refusing filesystem sync: the selected targets accept none of the selected \
@@ -922,6 +932,8 @@ async fn main() -> Result<()> {
 						typegen_strict: typegen_cfg.strict,
 						typegen_omit_generated_at: !typegen_cfg.stamps_generated_at(),
 						typegen_schema_version,
+						typegen_emitters: typegen_emitters.clone(),
+						typegen_acknowledge: typegen_acknowledge.clone(),
 					};
 					let outcome =
 						sync::run_sync_with_filesystem_sources(&db, opts, layout, files).await;
@@ -1190,6 +1202,9 @@ async fn main() -> Result<()> {
 					check,
 					omit_generated_at: no_generated_at || !typegen_cfg.stamps_generated_at(),
 					schema_version: typegen_cfg.schema_version()?,
+					emitters: typegen_cfg.emitters()?,
+					acknowledge: typegen_cfg.acknowledgements()?,
+					emitter_failures_fatal: false,
 				},
 			)
 			.await?;

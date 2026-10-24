@@ -347,6 +347,8 @@ impl RunnerContext {
 						typegen_strict: false,
 						typegen_omit_generated_at: false,
 						typegen_schema_version: crate::typegen::SchemaVersion::V1,
+						typegen_emitters: Vec::new(),
+						typegen_acknowledge: Default::default(),
 					},
 				)
 				.await

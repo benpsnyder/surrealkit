@@ -9,8 +9,13 @@ Schema document v2 is the interchange format between SurrealKit, which understan
 SurrealQL, and code generators, which do not. A generator reads the document and
 never connects to a database. This page is the normative description; the machine
 check is [`crates/surrealkit/schema/schema-document-v2.schema.json`](../../crates/surrealkit/schema/schema-document-v2.schema.json)
-(JSON Schema draft 2020-12). Prose wins where the two disagree, and a disagreement is
-a bug in the JSON Schema.
+(JSON Schema draft 2020-12), exported by the crate as
+`surrealkit::typegen::SCHEMA_DOCUMENT_V2_JSON_SCHEMA`. Prose wins where the two disagree,
+and a disagreement is a bug in the JSON Schema. SurrealKit's test suite validates the
+example document, every document it generates from the corpus snapshots (through both the
+STRUCTURE adapters and the plain-`INFO` fallback) and a compiled corpus against it.
+
+Generators consume the document as [external emitters](external-emitters.md).
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
