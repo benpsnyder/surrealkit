@@ -300,6 +300,19 @@ Nothing to do. `[typegen]` takes a `filename` for the file inside the
 itself, e.g. `typescript = "src/types/database.ts"` (#75).
 `surrealkit typegen --typescript <path>` overrides it for one run.
 
+### 13. `typegen` reads the selected target (unreleased)
+
+`surrealkit typegen` used to connect through the ambient connection even when
+`surrealkit.toml` declared targets, so `--target` and `primary = true` were
+ignored. It now resolves its database like the other single-target commands:
+`--target`, else the `primary` target, else the only declared target, else the
+ambient connection. A project with exactly one declared target therefore
+introspects that target now; pass nothing extra if that is the database you
+meant, or remove the `[target.*]` section if it is not.
+
+Unknown keys in `[typegen]` are now an error instead of being ignored. Fix the
+key the error names. `typegen --stdout` now still writes configured TypeScript.
+
 ## Opting into multiple schema modules
 
 Adopting modules is additive. Your existing schema stays in the default module

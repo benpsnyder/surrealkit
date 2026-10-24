@@ -239,6 +239,33 @@ async fn run_typegen_writes_to_a_named_typescript_file() {
 	);
 }
 
+#[tokio::test]
+async fn run_typegen_to_stdout_still_writes_configured_typescript() {
+	// `--stdout` replaces the JSON file only; it used to return before the
+	// TypeScript step, leaving configured types stale without a word.
+	let db = mem_db().await;
+	define_schema(&db).await;
+	let tmp = tempfile::TempDir::new().expect("temp dir");
+	let folder = tmp.path().join("database");
+	let ts_file = tmp.path().join("types/database.ts");
+	run_typegen(
+		&db,
+		folder.to_str().unwrap(),
+		TypegenOpts {
+			out: None,
+			stdout: true,
+			pretty: true,
+			ts_out: Some(ts_file.clone()),
+			ts_format: None,
+		},
+	)
+	.await
+	.expect("run_typegen");
+	let ts = std::fs::read_to_string(&ts_file).expect("TypeScript written");
+	assert!(ts.contains("export interface User {"), "got:\n{ts}");
+	assert!(!folder.join("types/schema.json").exists(), "stdout replaces the JSON file");
+}
+
 #[test]
 fn the_typescript_file_follows_the_configured_path() {
 	use std::path::Path;

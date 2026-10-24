@@ -29,7 +29,8 @@ pub struct TypegenOpts {
 	/// Output path. The CLI fills it from `--out`, else `[typegen] json` in
 	/// `surrealkit.toml`; when `None`, it is `{folder}/types/schema.json`.
 	pub out: Option<PathBuf>,
-	/// Write to stdout instead of a file.
+	/// Print the JSON to stdout instead of writing the JSON file. Configured
+	/// TypeScript output is still written.
 	pub stdout: bool,
 	/// Pretty-print the JSON.
 	pub pretty: bool,
@@ -104,6 +105,11 @@ pub fn write_typescript_formatted(
 /// Failures (missing binary, non-zero exit) are non-fatal: they are reported as
 /// warnings so a missing formatter never breaks `typegen` or `sync --watch`.
 pub fn format_file(command: &str, path: &std::path::Path) {
+	run_formatter(command, path, log::Level::Info);
+}
+
+/// [`format_file`], logging success at `success_level`.
+fn run_formatter(command: &str, path: &std::path::Path, success_level: log::Level) {
 	let mut parts = command.split_whitespace();
 	let Some(program) = parts.next() else {
 		return; // empty / whitespace-only command: nothing to run
@@ -111,7 +117,7 @@ pub fn format_file(command: &str, path: &std::path::Path) {
 	let args: Vec<&str> = parts.collect();
 	match std::process::Command::new(program).args(&args).arg(path).status() {
 		Ok(status) if status.success() => {
-			log::info!("typegen: formatted {} with `{command}`", path.display());
+			log::log!(success_level, "typegen: formatted {} with `{command}`", path.display());
 		}
 		Ok(status) => {
 			log::warn!("typegen: formatter `{command}` exited with {status}");
@@ -131,23 +137,33 @@ pub async fn generate(db: &Surreal<Any>) -> Result<SchemaTypes> {
 }
 
 /// Run the `typegen` command: introspect the database, render JSON, and either
-/// print it or write it to a file.
+/// print it or write it to a file, then write the TypeScript types when they are
+/// configured.
+///
+/// `stdout` replaces only the JSON file: configured TypeScript is still written,
+/// so `typegen --stdout | jq …` does not quietly leave the types stale. Progress
+/// for that file is logged at `debug`, because the CLI prints `info` on stdout
+/// and it would corrupt the JSON there.
 #[doc(hidden)]
 pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> Result<()> {
 	let doc = generate(db).await?;
 
-	if opts.stdout {
+	let progress = if opts.stdout {
 		log::info!("{}", emit::to_json(&doc, opts.pretty)?);
-		return Ok(());
-	}
-
-	let path = opts.out.unwrap_or_else(|| crate::constants::typegen_output_path(folder));
-	write_json(&doc, &path, opts.pretty)?;
-	log::info!("typegen: wrote {}", path.display());
+		log::Level::Debug
+	} else {
+		let path = opts.out.unwrap_or_else(|| crate::constants::typegen_output_path(folder));
+		write_json(&doc, &path, opts.pretty)?;
+		log::info!("typegen: wrote {}", path.display());
+		log::Level::Info
+	};
 
 	if let Some(ts_out) = &opts.ts_out {
-		let ts_path = write_typescript_formatted(&doc, ts_out, opts.ts_format.as_deref())?;
-		log::info!("typegen: wrote {}", ts_path.display());
+		let ts_path = write_typescript(&doc, ts_out)?;
+		if let Some(cmd) = opts.ts_format.as_deref() {
+			run_formatter(cmd, &ts_path, progress);
+		}
+		log::log!(progress, "typegen: wrote {}", ts_path.display());
 	}
 	Ok(())
 }

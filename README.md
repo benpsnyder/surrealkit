@@ -355,9 +355,16 @@ types.
 
 ```bash
 surrealkit typegen                 # writes database/types/schema.json
-surrealkit typegen --stdout        # print instead
+surrealkit typegen --stdout        # print the JSON instead (TypeScript is still written)
 surrealkit typegen --out types.json
+surrealkit typegen --target staging
 ```
+
+Typegen reads one database: the `--target` you name, else the target marked
+`primary = true`, else the only declared target, else the ambient connection.
+With `--schema`, that target must accept the module (its `schemas` list).
+Unknown keys in `[typegen]` are an error, so a misspelt key cannot silently turn
+an output off.
 
 Configure the outputs in `surrealkit.toml`:
 

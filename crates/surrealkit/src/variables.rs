@@ -140,7 +140,12 @@ struct ProjectConfig {
 }
 
 /// The `[typegen]` section of `surrealkit.toml`.
+///
+/// Unknown keys are rejected rather than ignored: a misspelt `typescrpt` used to
+/// turn TypeScript generation off without a word, which is indistinguishable from
+/// a schema with nothing to generate.
 #[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TypegenConfig {
 	/// Where generated TypeScript types go. When set, TS generation is enabled:
 	/// `surrealkit typegen` and `sync --watch` write them here. A path ending in
@@ -593,6 +598,17 @@ mod tests {
 		};
 		let err = cfg.json_path().unwrap_err().to_string();
 		assert!(err.contains("[typegen] json"), "{err}");
+	}
+
+	#[test]
+	fn load_typegen_config_rejects_unknown_keys() {
+		let tmp = TempDir::new().unwrap();
+		let cfg = tmp.path().join("surrealkit.toml");
+		std::fs::write(&cfg, "[typegen]\ntypescrpt = \"src/types\"\n").unwrap();
+		let err = format!("{:#}", load_typegen_config(Some(&cfg)).unwrap_err());
+		assert!(err.contains("unknown field `typescrpt`"), "{err}");
+		// The error names the keys that do exist, so the typo is obvious.
+		assert!(err.contains("typescript"), "{err}");
 	}
 
 	#[test]

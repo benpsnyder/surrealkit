@@ -197,12 +197,16 @@ enum Commands {
 		schema_from: Option<surrealkit::tester::SchemaSource>,
 	},
 	/// Introspect the database and generate a typed schema document (JSON).
+	///
+	/// Reads one database: `--target`, else the `primary` target, else the only
+	/// declared target, else the ambient connection.
 	Typegen {
 		/// Output path (default: `[typegen] json`, else
 		/// `{folder}/types/schema.json`).
 		#[arg(long)]
 		out: Option<PathBuf>,
-		/// Print the JSON to stdout instead of writing a file.
+		/// Print the JSON to stdout instead of writing the JSON file. Configured
+		/// TypeScript output is still written.
 		#[arg(long)]
 		stdout: bool,
 		/// Emit compact (single-line) JSON instead of pretty-printed.
@@ -445,6 +449,30 @@ impl Selection {
 	}
 }
 
+/// The database `typegen` introspects.
+///
+/// Typegen reads one database, so it resolves a target the way the other
+/// single-target commands do: `--target`, else the `primary` target, else the
+/// only declared one, else the ambient connection. Before this it always used the
+/// ambient connection, so `--target` and `primary` were silently ignored and a
+/// project with declared targets introspected whatever the environment pointed
+/// at.
+///
+/// An explicit `--schema` must be one the target accepts: introspecting a
+/// database the module is never applied to would describe the wrong schema.
+fn typegen_target(selection: &Selection, schema_selection_used: bool) -> Result<&Target> {
+	let target = selection.single_target()?;
+	if schema_selection_used && selection.modules_for(target).is_empty() {
+		bail!(
+			"refusing typegen: target {:?} accepts none of the selected schema modules ({}); \
+			 pick a target whose `schemas` list includes them",
+			target.name(),
+			selection.modules.iter().map(Module::name).collect::<Vec<_>>().join(", ")
+		);
+	}
+	Ok(target)
+}
+
 /// Warn that `--target`/`--all` does nothing on a command that never connects.
 ///
 /// These commands read only the filesystem, so silently accepting the flag reads
@@ -600,6 +628,7 @@ async fn main() -> Result<()> {
 	// Read before `args.command` is moved. Offline commands use it to refuse a
 	// target selection rather than accept one and silently ignore it.
 	let target_selection_used = !args.target.is_empty() || args.all;
+	let schema_selection_used = !args.schema.is_empty();
 
 	match args.command {
 		Commands::Init {
@@ -955,7 +984,8 @@ async fn main() -> Result<()> {
 			}
 			let ts_out = typegen_cfg.typescript_path()?;
 			let json_out = typegen_cfg.json_path()?;
-			let db = connect(&cfg).await?;
+			let target = typegen_target(&selection, schema_selection_used)?;
+			let db = connect(target.cfg()).await?;
 			run_typegen(
 				&db,
 				&folder,
@@ -1016,6 +1046,38 @@ mod selection_tests {
 		assert!(!sel.is_fan_out());
 		assert!(sel.modules_for(&sel.targets()[0])[0].is_default());
 		assert_eq!(sel.targets()[0].name(), "default");
+	}
+
+	#[test]
+	fn typegen_introspects_the_selected_target() {
+		let raw =
+			"[target.acme]\nns = \"acme\"\n[target.globex]\nns = \"globex\"\nprimary = true\n";
+		let sel = resolve(raw, &[], &["acme"], false, false);
+		assert_eq!(typegen_target(&sel, false).unwrap().cfg().ns(), "acme");
+		// Without --target, the primary one; before, the ambient connection.
+		let sel = resolve(raw, &[], &[], false, false);
+		assert_eq!(typegen_target(&sel, false).unwrap().cfg().ns(), "globex");
+		// The only declared target needs no `primary`.
+		let sel = resolve("[target.acme]\nns = \"acme\"\n", &[], &[], false, false);
+		assert_eq!(typegen_target(&sel, false).unwrap().cfg().ns(), "acme");
+	}
+
+	#[test]
+	fn typegen_refuses_more_than_one_target() {
+		let sel = resolve("[target.acme]\n[target.globex]\n", &[], &[], true, false);
+		let err = typegen_target(&sel, false).unwrap_err().to_string();
+		assert!(err.contains("one database target at a time"), "{err}");
+	}
+
+	#[test]
+	fn typegen_refuses_a_target_that_never_receives_the_selected_schema() {
+		let raw = "[schema.core]\n[schema.billing]\n[target.acme]\nschemas = [\"core\"]\n";
+		let sel = resolve(raw, &["billing"], &["acme"], false, true);
+		let err = typegen_target(&sel, true).unwrap_err().to_string();
+		assert!(err.contains("accepts none of the selected schema modules (billing)"), "{err}");
+		// A module the target does accept is fine.
+		let sel = resolve(raw, &["core"], &["acme"], false, true);
+		assert_eq!(typegen_target(&sel, true).unwrap().name(), "acme");
 	}
 
 	#[test]
