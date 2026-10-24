@@ -222,7 +222,8 @@ enum Commands {
 		#[arg(long, conflicts_with = "stdout")]
 		check: bool,
 		/// Fail instead of warning when an output cannot be produced exactly as
-		/// configured (e.g. the formatter fails). Same as `[typegen] strict`.
+		/// configured: the formatter fails, or a kind cannot be parsed. Same as
+		/// `[typegen] strict`.
 		#[arg(long)]
 		strict: bool,
 		/// Leave `generatedAt` out of the JSON so identical schemas produce

@@ -8,10 +8,20 @@
 //! Every output file is published through the `output` module: written atomically, left
 //! alone when its bytes are unchanged, and comparable without writing for
 //! `surrealkit typegen --check`.
+//!
+//! Anything introspection cannot represent structurally — an unparseable kind, a
+//! field without `TYPE`, an `INFO` category the document does not model — is
+//! reported as a [`Diagnostic`] instead of being dropped or typed `unknown`
+//! silently. A strict run fails on any diagnostic of [`Severity::Error`].
 
+#[cfg(test)]
+mod corpus_tests;
+mod define;
+mod diagnostics;
 mod emit;
 mod introspect;
 mod output;
+mod scan;
 mod signature;
 mod type_parser;
 mod types;
@@ -19,14 +29,15 @@ mod types;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+pub use diagnostics::{Diagnostic, Severity, Span, codes};
 use output::{FileStatus, WriteOutcome};
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 pub use types::{
-	FieldDef, FieldType, FnArg, FunctionDef, NamedDef, ObjectField, ParamDef, PrimitiveType,
-	SchemaTypes, TableDef,
+	FieldDef, FieldType, FnArg, FunctionDef, LiteralType, NamedDef, ObjectField, ParamDef,
+	PrimitiveType, SchemaTypes, TableDef,
 };
 
 /// Options for the `typegen` command.
@@ -48,8 +59,9 @@ pub struct TypegenOpts {
 	/// Configured via `[typegen] format` in `surrealkit.toml`.
 	pub ts_format: Option<String>,
 	/// Fail instead of warning when an output cannot be produced exactly as
-	/// configured — today, a formatter that fails. `--strict`, or `[typegen]
-	/// strict = true`.
+	/// configured: a formatter that fails, or a [`Diagnostic`] of
+	/// [`Severity::Error`] (a kind that could not be parsed). `--strict`, or
+	/// `[typegen] strict = true`.
 	pub strict: bool,
 	/// Compare every output with the file on disk instead of writing it, and fail
 	/// when any is missing or different. Nothing is written. `--check`.
@@ -148,7 +160,7 @@ pub fn format_file(command: &str, path: &Path) {
 /// Introspect the database into a [`SchemaTypes`] document and stamp the
 /// generation time. Performs no filesystem IO — used by emitters and tests.
 pub async fn generate(db: &Surreal<Any>) -> Result<SchemaTypes> {
-	let mut doc = introspect::introspect(db).await?;
+	let mut doc = generate_unstamped(db).await?;
 	doc.generated_at = now_rfc3339()?;
 	Ok(doc)
 }
@@ -156,7 +168,40 @@ pub async fn generate(db: &Surreal<Any>) -> Result<SchemaTypes> {
 /// Introspect the database into a [`SchemaTypes`] document without a generation
 /// time, so two runs over the same schema produce identical documents.
 pub async fn generate_unstamped(db: &Surreal<Any>) -> Result<SchemaTypes> {
+	Ok(introspect::introspect(db).await?.0)
+}
+
+/// Introspect the database into an unstamped [`SchemaTypes`] document together
+/// with a [`Diagnostic`] for everything that could not be represented
+/// structurally. Every [`FieldType::Unknown`] with a source in the document has a matching
+/// [`codes::KIND_UNRECOGNIZED`] error; one with an empty source is a field without `TYPE`
+/// ([`codes::FIELD_KIND_UNDECLARED`] or [`codes::FIELD_COMPUTED_KIND_UNDECLARED`]).
+pub async fn generate_with_diagnostics(
+	db: &Surreal<Any>,
+) -> Result<(SchemaTypes, Vec<Diagnostic>)> {
 	introspect::introspect(db).await
+}
+
+/// Log `diagnostics`, or, when `strict`, fail on any of [`Severity::Error`].
+///
+/// Without `strict`, errors and warnings are logged as warnings and infos at
+/// debug level, so a lenient run keeps today's output and says what it lost.
+fn report_diagnostics(diagnostics: &[Diagnostic], strict: bool) -> Result<()> {
+	let errors: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.is_error()).collect();
+	if strict && !errors.is_empty() {
+		bail!(
+			"typegen --strict: {} error diagnostic(s):\n{}",
+			errors.len(),
+			errors.iter().map(|d| format!("  {d}")).collect::<Vec<_>>().join("\n")
+		);
+	}
+	for d in diagnostics {
+		match d.severity {
+			Severity::Error | Severity::Warning => log::warn!("typegen: {d}"),
+			Severity::Info => log::debug!("typegen: {d}"),
+		}
+	}
+	Ok(())
 }
 
 fn now_rfc3339() -> Result<String> {
@@ -173,7 +218,8 @@ fn now_rfc3339() -> Result<String> {
 /// and it would corrupt the JSON there.
 #[doc(hidden)]
 pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> Result<()> {
-	let mut doc = generate_unstamped(db).await?;
+	let (mut doc, diagnostics) = generate_with_diagnostics(db).await?;
+	report_diagnostics(&diagnostics, opts.strict)?;
 	let json_path = if opts.stdout {
 		None
 	} else {
@@ -226,7 +272,9 @@ pub async fn regenerate_after_sync(
 	omit_generated_at: bool,
 ) -> Result<()> {
 	let result = async {
-		let mut doc = generate_unstamped(db).await.context("introspecting the schema")?;
+		let (mut doc, diagnostics) =
+			generate_with_diagnostics(db).await.context("introspecting the schema")?;
+		report_diagnostics(&diagnostics, strict)?;
 		if !omit_generated_at {
 			doc.generated_at = now_rfc3339()?;
 		}
@@ -530,6 +578,21 @@ mod tests {
 		assert!(!tmp.path().join("absent").exists());
 		let err = check(&artifacts).unwrap_err().to_string();
 		assert!(err.contains("missing"), "{err}");
+	}
+
+	#[test]
+	fn strict_fails_on_error_diagnostics_only() {
+		let warning = Diagnostic::new(Severity::Warning, codes::DEFINITION_UNSUPPORTED, "x", "w");
+		let info = Diagnostic::new(Severity::Info, codes::FIELD_KIND_UNDECLARED, "y", "i");
+		report_diagnostics(&[warning.clone(), info.clone()], true).expect("warnings never fail");
+
+		let error = Diagnostic::new(Severity::Error, codes::KIND_UNRECOGNIZED, "frob", "unknown")
+			.on_table("t")
+			.on_field(vec!["f".into()]);
+		report_diagnostics(&[warning.clone(), error.clone()], false).expect("lenient logs errors");
+		let err = report_diagnostics(&[warning, error, info], true).unwrap_err().to_string();
+		assert!(err.contains("1 error diagnostic(s)"), "{err}");
+		assert!(err.contains("kind-unrecognized at t.f: unknown (`frob`)"), "{err}");
 	}
 
 	#[test]

@@ -388,8 +388,9 @@ format = "biome check --write"
 json = "src/types"
 
 # Fail instead of warning when an output cannot be produced exactly as
-# configured: a failing formatter, and in `surrealkit sync`, any typegen failure
-# after the schema was applied (default: false).
+# configured: a failing formatter, a kind typegen cannot parse, and in
+# `surrealkit sync`, any typegen failure after the schema was applied
+# (default: false).
 strict = true
 
 # Leave the `generatedAt` timestamp out of the JSON, so the same schema always
@@ -408,6 +409,18 @@ configured output is missing or differs from what would be generated, which
 suits a CI freshness check. It compares content: an unchanged schema passes even
 though `generatedAt` would be a new time. `--strict` and `--no-generated-at`
 turn on `strict` and `generated_at = false` for one run.
+
+Typegen understands every SurrealDB 3.x kind: primitives (including `regex` and
+`range`), `option`, `array` and `set` with their exact length, `record`, `table`,
+`file` and `geometry` with their name lists, tuples `[A, B]`, object literals
+`{ a: int }`, and literal strings, numbers, floats (`1.5f`), decimals (`10dec`),
+durations (`1d`) and booleans. Anything it cannot represent is reported as a
+diagnostic rather than typed `unknown` without a word: an unparseable kind is an
+error (it fails a `strict` run), a `COMPUTED` field without `TYPE` or an `INFO`
+category the document does not model (such as `DEFINE MODULE`) is a warning, and
+a field without `TYPE` (still `unknown` in `schema.json` and TypeScript) is an
+info logged with `--verbose`. The
+codes are the ones schema document v2 uses.
 
 `typescript` can also name the file itself, as in
 `typescript = "src/types/database.ts"` (any `.ts`, `.mts` or `.cts` path), in

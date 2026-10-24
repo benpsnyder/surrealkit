@@ -320,6 +320,34 @@ formatter only accepts files matching a pattern, make sure that name matches
 too. New opt-ins: `[typegen] strict`, `[typegen] generated_at = false`, and
 `surrealkit typegen --check`.
 
+### 14. Typegen parses every SurrealDB 3.x kind (unreleased)
+
+These are changes to v1 output that need no opt-in: they are parser fixes.
+`schema.json` and the generated TypeScript change only where the old parser was
+wrong; a schema it already understood produces the same bytes (CI pins that).
+Where it was wrong, the output is now correct:
+
+- Fields rendered `TYPE object FLEXIBLE` (every FLEXIBLE field on 3.x), or with
+  `COMPUTED` or `INLINE` after the kind, used to get an `unknown` type whose
+  `rawType` included the keyword. They now have their real kind.
+- `regex`, `range`, `table<…>`, `file<…>`, tuples `[A, B]`, object literals
+  `{ a: int }` and float, decimal and duration literals were `unknown`. They are
+  now the primitives `regex` and `range`, and the kinds `table`, `file`,
+  `tuple` and `object`; float, decimal and duration literals carry a `type`
+  beside their `value` (decimals and durations as exact strings). TypeScript maps
+  them to `Table`, `FileRef`, `Range`, tuple and object types.
+- A backtick-quoted field name containing a dot is one TypeScript key rather
+  than a nested object.
+
+A field without `TYPE` is unchanged: still `{"kind":"unknown","source":""}`
+and `unknown` in TypeScript, now with an info diagnostic. (Schema document v2
+calls it `any`.)
+
+Library users matching on `FieldType` or `PrimitiveType` have new variants to
+handle, and `FieldType::Literal` has a `literal_type` field. Anything typegen
+still cannot represent is reported as a `Diagnostic`
+(`typegen::generate_with_diagnostics`), and `strict` fails on errors.
+
 ## Opting into multiple schema modules
 
 Adopting modules is additive. Your existing schema stays in the default module

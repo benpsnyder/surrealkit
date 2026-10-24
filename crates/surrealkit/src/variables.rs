@@ -167,9 +167,10 @@ pub struct TypegenConfig {
 	/// it is `schema.json`.
 	pub json: Option<PathBuf>,
 	/// Fail instead of warning when generated output cannot be produced exactly
-	/// as configured: a formatter that fails, and in `sync`, any typegen failure
-	/// after the schema was applied. Off by default, which keeps those failures
-	/// as log lines. `surrealkit typegen --strict` turns it on for one run.
+	/// as configured: a formatter that fails, a kind typegen could not parse
+	/// (an error diagnostic), and in `sync`, any typegen failure after the schema
+	/// was applied. Off by default, which keeps those failures as log lines.
+	/// `surrealkit typegen --strict` turns it on for one run.
 	#[serde(default)]
 	pub strict: bool,
 	/// Whether the JSON carries a `generatedAt` timestamp (default `true`).
