@@ -18,7 +18,7 @@ use surrealkit::setup::force_setup;
 use surrealkit::sync::{self, SyncOpts};
 use surrealkit::tester::{TestOpts, run_test};
 use surrealkit::typegen::{TypegenOpts, run_typegen};
-use surrealkit::variables::{TemplateVars, build_vars, parse_var_flag};
+use surrealkit::variables::{TemplateVars, build_project_vars, build_vars, parse_var_flag};
 
 use crate::templates::InitOpts;
 
@@ -230,6 +230,39 @@ enum Commands {
 		/// identical bytes. Same as `[typegen] generated_at = false`.
 		#[arg(long)]
 		no_generated_at: bool,
+		/// Read the schema document from this file (written by `typegen` or
+		/// `compile`) instead of a database. Nothing connects.
+		#[arg(long, value_name = "SCHEMA_JSON")]
+		from: Option<PathBuf>,
+	},
+	/// Compile the schema modules to schema document v2 without a database.
+	///
+	/// Applies the selected modules, in dependency order, to a throwaway embedded
+	/// engine with no network access, and writes what it stored as schema document
+	/// v2 (and the TypeScript interfaces, when configured). Reads no connection
+	/// settings. Strict: an error diagnostic fails the command.
+	Compile {
+		/// Output path (default: `[typegen] json`, else
+		/// `{folder}/types/schema.json`).
+		#[arg(long)]
+		out: Option<PathBuf>,
+		/// Print the JSON to stdout instead of writing the JSON file.
+		#[arg(long)]
+		stdout: bool,
+		/// Emit compact (single-line) JSON instead of pretty-printed.
+		#[arg(long)]
+		compact: bool,
+		/// Write nothing; exit non-zero when any output is missing or differs from
+		/// what would be generated.
+		#[arg(long, conflicts_with = "stdout")]
+		check: bool,
+		/// Log error diagnostics instead of failing on them.
+		#[arg(long)]
+		lenient: bool,
+		/// Experimental capabilities the compile engine allows, adding to
+		/// `[typegen] experimental`: files, surrealism, gql.
+		#[arg(long = "allow-experimental", value_name = "FEATURE", value_delimiter = ',')]
+		allow_experimental: Vec<String>,
 	},
 }
 
@@ -340,40 +373,7 @@ impl Selection {
 		all: bool,
 		no_deps: bool,
 	) -> Result<Self> {
-		// Modules: explicit --schema, else every declared module, else the default.
-		let declared: Vec<String> = project.schema.keys().cloned().collect();
-		let declared_list = if declared.is_empty() {
-			"(none)".to_string()
-		} else {
-			declared.join(", ")
-		};
-		let wanted: Vec<String> = if !schemas.is_empty() {
-			for name in schemas {
-				if !project.schema.contains_key(name) && name != Module::DEFAULT_NAME {
-					bail!("unknown schema module {name:?}; declared modules are: {declared_list}");
-				}
-			}
-			schemas.to_vec()
-		} else if all || !declared.is_empty() {
-			declared
-		} else {
-			vec![Module::DEFAULT_NAME.to_string()]
-		};
-
-		// `--schema billing` pulls in `core` by default, like `cargo build -p`, so a
-		// module is never applied before what it depends on. --no-deps opts out.
-		let ordered = if no_deps {
-			let mut only = wanted;
-			only.sort();
-			only
-		} else {
-			project.module_order(&wanted)?
-		};
-		let modules = ordered
-			.into_iter()
-			.map(Module::new)
-			.collect::<Result<Vec<_>>>()
-			.context("resolving selected schema modules")?;
+		let modules = select_modules(project, schemas, all, no_deps)?;
 
 		// Targets: explicit --target, else --all, else primary, else the ambient one.
 		let resolved = if !targets.is_empty() {
@@ -459,6 +459,171 @@ impl Selection {
 				other.len()
 			),
 		}
+	}
+}
+
+/// The schema modules one invocation operates on, in dependency order: explicit
+/// `--schema`, else every declared module, else the default one.
+fn select_modules(
+	project: &ProjectConfig,
+	schemas: &[String],
+	all: bool,
+	no_deps: bool,
+) -> Result<Vec<Module>> {
+	let declared: Vec<String> = project.schema.keys().cloned().collect();
+	let declared_list = if declared.is_empty() {
+		"(none)".to_string()
+	} else {
+		declared.join(", ")
+	};
+	let wanted: Vec<String> = if !schemas.is_empty() {
+		for name in schemas {
+			if !project.schema.contains_key(name) && name != Module::DEFAULT_NAME {
+				bail!("unknown schema module {name:?}; declared modules are: {declared_list}");
+			}
+		}
+		schemas.to_vec()
+	} else if all || !declared.is_empty() {
+		declared
+	} else {
+		vec![Module::DEFAULT_NAME.to_string()]
+	};
+
+	// `--schema billing` pulls in `core` by default, like `cargo build -p`, so a
+	// module is never applied before what it depends on. --no-deps opts out.
+	let ordered = if no_deps {
+		let mut only = wanted;
+		only.sort();
+		only
+	} else {
+		project.module_order(&wanted)?
+	};
+	ordered
+		.into_iter()
+		.map(Module::new)
+		.collect::<Result<Vec<_>>>()
+		.context("resolving selected schema modules")
+}
+
+/// Warn that connection flags do nothing on a command that never connects.
+fn warn_unused_connection_flags(command: &str, args: &Cli) {
+	let used = !args.target.is_empty()
+		|| args.all
+		|| args.host.is_some()
+		|| args.ns.is_some()
+		|| args.db.is_some()
+		|| args.user.is_some()
+		|| args.pass.is_some()
+		|| args.auth_level.is_some()
+		|| args.connect_timeout_secs.is_some()
+		|| args.query_timeout_secs.is_some();
+	if used {
+		log::warn!(
+			"{command} never connects to a database, so the connection and target flags were \
+			 ignored"
+		);
+	}
+}
+
+/// The commands that read only files: `compile`, and `typegen --from`. They run before
+/// anything reads connection settings, so no `SURREALDB_*` variable or `.env` file can
+/// reach them. Returns `false` for every other command.
+async fn run_offline(args: &Cli) -> Result<bool> {
+	let folder =
+		args.folder.clone().unwrap_or_else(|| surrealkit::constants::DEFAULT_ROOT_DIR.to_string());
+	match &args.command {
+		Commands::Compile {
+			out,
+			stdout,
+			compact,
+			check,
+			lenient,
+			allow_experimental,
+		} => {
+			warn_unused_connection_flags("compile", args);
+			let project = ProjectConfig::load(None)?;
+			let modules = select_modules(&project, &args.schema, args.all, args.no_deps)?;
+			let typegen_cfg = surrealkit::variables::load_typegen_config(None)?;
+			// `sync` and `typegen` write the configured JSON in the configured version; compile
+			// writing v2 there would make the commands overwrite one another.
+			if out.is_none()
+				&& !*stdout && typegen_cfg.json_path()?.is_some()
+				&& typegen_cfg.schema_version()? != surrealkit::typegen::SchemaVersion::V2
+			{
+				anyhow::bail!(
+					"compile writes schema document v2, but [typegen] json is the v1 document \
+					 `sync` and `typegen` write (schema_version is 1 unless set); set [typegen] \
+					 schema_version = 2 so that every command writes v2 there, or pass --out or \
+					 --stdout"
+				);
+			}
+			let raw_vars: Vec<(String, String)> =
+				args.var.iter().map(|s| parse_var_flag(s)).collect::<anyhow::Result<_>>()?;
+			let mut experimental = typegen_cfg.experimental.clone();
+			experimental.extend(allow_experimental.iter().cloned());
+			surrealkit::compile::run_compile(
+				&project,
+				&folder,
+				&modules,
+				&surrealkit::compile::CompileOpts {
+					experimental,
+					// Files and flags only: no SURREALKIT_VAR_* from the environment.
+					vars: TemplateVars {
+						vars: build_project_vars(&raw_vars, None)?,
+					},
+					expected_engine: typegen_cfg.engine.clone(),
+				},
+				&TypegenOpts {
+					out: out.clone().or(typegen_cfg.json_path()?),
+					stdout: *stdout,
+					pretty: !compact,
+					ts_out: typegen_cfg.typescript_path()?,
+					ts_format: typegen_cfg.format.clone(),
+					strict: !lenient,
+					check: *check,
+					omit_generated_at: true,
+					schema_version: surrealkit::typegen::SchemaVersion::V2,
+				},
+			)
+			.await?;
+			Ok(true)
+		}
+		Commands::Typegen {
+			out,
+			stdout,
+			compact,
+			typescript,
+			check,
+			strict,
+			no_generated_at,
+			from: Some(from),
+		} => {
+			warn_unused_connection_flags("typegen --from", args);
+			let mut typegen_cfg = surrealkit::variables::load_typegen_config(None)?;
+			if let Some(typescript) = typescript {
+				if surrealkit::variables::is_typescript_file(typescript) {
+					typegen_cfg.filename = None;
+				}
+				typegen_cfg.typescript = Some(typescript.clone());
+			}
+			surrealkit::typegen::run_typegen_from(
+				from,
+				&folder,
+				TypegenOpts {
+					out: out.clone().or(typegen_cfg.json_path()?),
+					stdout: *stdout,
+					pretty: !compact,
+					ts_out: typegen_cfg.typescript_path()?,
+					ts_format: typegen_cfg.format.clone(),
+					strict: *strict || typegen_cfg.strict,
+					check: *check,
+					omit_generated_at: *no_generated_at || !typegen_cfg.stamps_generated_at(),
+					schema_version: typegen_cfg.schema_version()?,
+				},
+			)?;
+			Ok(true)
+		}
+		_ => Ok(false),
 	}
 }
 
@@ -614,6 +779,11 @@ async fn main() -> Result<()> {
 
 	let args = Cli::parse();
 	init_logging(args.verbose);
+	if run_offline(&args).await? {
+		let _ = std::io::stdout().flush();
+		let _ = std::io::stderr().flush();
+		std::process::exit(0);
+	}
 	let env = load_env();
 	let overrides = DbOverrides {
 		host: args.host,
@@ -992,6 +1162,7 @@ async fn main() -> Result<()> {
 			check,
 			strict,
 			no_generated_at,
+			from: _,
 		} => {
 			let mut typegen_cfg = surrealkit::variables::load_typegen_config(None)?;
 			if let Some(typescript) = typescript {
@@ -1023,6 +1194,10 @@ async fn main() -> Result<()> {
 			)
 			.await?;
 		}
+		// Handled by run_offline before anything reads connection settings.
+		Commands::Compile {
+			..
+		} => bail!("compile runs before connection settings are read"),
 	}
 
 	// Belt-and-braces (issue #55): bypass tokio runtime shutdown so the HTTP

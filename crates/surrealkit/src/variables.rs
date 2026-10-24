@@ -67,6 +67,25 @@ pub fn build_vars(
 	cli_vars: &[(String, String)],
 	toml_path: Option<&Path>,
 ) -> Result<HashMap<String, String>> {
+	merge_vars(cli_vars, toml_path, true)
+}
+
+/// [`build_vars`] without the environment: `cli_vars` > `surrealkit.toml [variables]`.
+/// `surrealkit compile` uses it, so its output depends only on files and flags, never on a
+/// `SURREALKIT_VAR_*` left in a shell or CI job.
+#[doc(hidden)]
+pub fn build_project_vars(
+	cli_vars: &[(String, String)],
+	toml_path: Option<&Path>,
+) -> Result<HashMap<String, String>> {
+	merge_vars(cli_vars, toml_path, false)
+}
+
+fn merge_vars(
+	cli_vars: &[(String, String)],
+	toml_path: Option<&Path>,
+	from_env: bool,
+) -> Result<HashMap<String, String>> {
 	let mut map: HashMap<String, String> = HashMap::new();
 
 	// Lowest priority: surrealkit.toml [variables]
@@ -80,7 +99,7 @@ pub fn build_vars(
 	}
 
 	// Middle priority: SURREALKIT_VAR_* environment variables
-	for (key, value) in std::env::vars() {
+	for (key, value) in std::env::vars().filter(|_| from_env) {
 		if let Some(stripped) = key.strip_prefix("SURREALKIT_VAR_")
 			&& !stripped.is_empty()
 		{
@@ -180,6 +199,14 @@ pub struct TypegenConfig {
 	/// (schema document v2, `docs/typegen/schema-document-v2.md`). TypeScript output is the
 	/// same either way.
 	pub schema_version: Option<u32>,
+	/// Experimental capabilities the `surrealkit compile` engine allows (`files`,
+	/// `surrealism`, `gql`), for schemas that use `DEFINE BUCKET` or `DEFINE MODULE`.
+	#[serde(default)]
+	pub experimental: Vec<String>,
+	/// The SurrealDB minor the project deploys to (`"3.2"`). `surrealkit compile` runs the
+	/// embedded engine whatever this says, and reports the error `compile-engine-mismatch`
+	/// when it is a different minor, since the document then describes the embedded engine.
+	pub engine: Option<String>,
 }
 
 impl TypegenConfig {
