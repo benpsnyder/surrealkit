@@ -178,7 +178,11 @@ fn header<'a>(stmt: &'a str, tokens: &[Token]) -> Option<(&'a str, &'a str, usiz
 
 /// The text of the tokens from `i` that touch one another (no whitespace in
 /// between): a name such as `phones[*].number` or `` `odd.name` ``.
-fn adjacent_run<'a>(stmt: &'a str, tokens: &[Token], i: usize) -> Option<(&'a str, usize)> {
+pub(super) fn adjacent_run<'a>(
+	stmt: &'a str,
+	tokens: &[Token],
+	i: usize,
+) -> Option<(&'a str, usize)> {
 	let first = tokens.get(i)?;
 	let mut end = first.end;
 	let mut j = i + 1;
@@ -200,7 +204,7 @@ fn unquote_name(name: &str) -> &str {
 /// Whether the word at `i` stands alone as a keyword: preceded by whitespace
 /// (or nothing) and not the first part of a path such as `type::is::string` or
 /// a record id such as `value:1`.
-fn is_clause_word(stmt: &str, tokens: &[Token], i: usize) -> bool {
+pub(super) fn is_clause_word(stmt: &str, tokens: &[Token], i: usize) -> bool {
 	let t = tokens[i];
 	let spaced_before = i == 0 || tokens[i - 1].end < t.start;
 	let path_follows = tokens

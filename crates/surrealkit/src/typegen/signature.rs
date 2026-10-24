@@ -65,7 +65,7 @@ fn extract_fn_name(stmt: &str) -> Option<String> {
 
 /// Byte offsets of the argument list's `(` and its matching `)`. Strings,
 /// quoted identifiers and nested brackets are skipped over correctly.
-fn arg_list_bounds(stmt: &str) -> Option<(usize, usize)> {
+pub(super) fn arg_list_bounds(stmt: &str) -> Option<(usize, usize)> {
 	let tokens = tokenize(stmt);
 	let open = tokens.iter().position(|t| t.kind == TokenKind::Open && t.text(stmt) == "(")?;
 	let mut depth = 0i32;

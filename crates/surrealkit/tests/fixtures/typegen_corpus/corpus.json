@@ -20,7 +20,7 @@
 		"3.2.4": "introspection/3.2.4",
 		"3.3.0": "introspection/3.3.0"
 	},
-	"semantics": ["semantics/field_presence.surql", "semantics/collections.surql"],
+	"semantics": ["semantics/field_presence.surql", "semantics/collections.surql", "semantics/access.v3.3.surql"],
 	"rejected": [
 		"rejected/id-record-kind.surql",
 		"rejected/references-kind.surql",

@@ -14,15 +14,25 @@
 //! reported as a [`Diagnostic`] instead of being dropped or typed `unknown`
 //! silently. A strict run fails on any diagnostic of [`Severity::Error`].
 
+mod build_v2;
+pub mod canonical;
 #[cfg(test)]
 mod corpus_tests;
+#[cfg(test)]
+mod corpus_v2_tests;
 mod define;
 mod diagnostics;
+pub mod document;
 mod emit;
+mod info_v2;
 mod introspect;
+pub mod introspect_v2;
+mod kind_v2;
 mod output;
+mod refine;
 mod scan;
 mod signature;
+mod structure;
 mod type_parser;
 mod types;
 
@@ -30,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 pub use diagnostics::{Diagnostic, Severity, Span, codes};
+pub use document::{SCHEMA_DOCUMENT_V2_JSON_SCHEMA, SCHEMA_DOCUMENT_VERSION, SchemaDocument};
 use output::{FileStatus, WriteOutcome};
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
@@ -39,6 +50,17 @@ pub use types::{
 	FieldDef, FieldType, FnArg, FunctionDef, LiteralType, NamedDef, ObjectField, ParamDef,
 	PrimitiveType, SchemaTypes, TableDef,
 };
+
+/// Which schema document `typegen` writes as JSON: `[typegen] schema_version`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SchemaVersion {
+	/// The original document ([`SchemaTypes`]). The default, byte for byte unchanged.
+	#[default]
+	V1,
+	/// Schema document v2 ([`SchemaDocument`]): the semantic interchange format read by
+	/// external emitters. See `docs/typegen/schema-document-v2.md`.
+	V2,
+}
 
 /// Options for the `typegen` command.
 #[derive(Debug, Clone, Default)]
@@ -69,6 +91,9 @@ pub struct TypegenOpts {
 	/// Leave `generatedAt` out of the JSON, so the same schema always produces the
 	/// same bytes. `--no-generated-at`, or `[typegen] generated_at = false`.
 	pub omit_generated_at: bool,
+	/// Which document the JSON output is: `[typegen] schema_version`. Version 2 has no
+	/// `generatedAt`, and the TypeScript interfaces are still emitted from version 1.
+	pub schema_version: SchemaVersion,
 }
 
 /// Render a [`SchemaTypes`] document as TypeScript. Re-exported so callers
@@ -119,6 +144,7 @@ pub fn write_typescript_formatted(
 	let path = typescript_file(out);
 	let artifacts = render(
 		doc,
+		None,
 		&Outputs {
 			json: None,
 			typescript: Some((&path, format)),
@@ -218,6 +244,9 @@ fn now_rfc3339() -> Result<String> {
 /// and it would corrupt the JSON there.
 #[doc(hidden)]
 pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> Result<()> {
+	if opts.schema_version == SchemaVersion::V2 {
+		return run_typegen_v2(db, folder, opts).await;
+	}
 	let (mut doc, diagnostics) = generate_with_diagnostics(db).await?;
 	report_diagnostics(&diagnostics, opts.strict)?;
 	let json_path = if opts.stdout {
@@ -251,11 +280,94 @@ pub async fn run_typegen(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> 
 		json: json_path.as_deref().map(|path| (path, opts.pretty)),
 		typescript: ts_path.as_deref().map(|path| (path, opts.ts_format.as_deref())),
 	};
-	let artifacts = render(&doc, &outputs, opts.strict, opts.check)?;
+	let artifacts = render(&doc, None, &outputs, opts.strict, opts.check)?;
 	if opts.check {
 		return check(&artifacts);
 	}
 	publish(&artifacts, progress, OnWriteError::Propagate)
+}
+
+/// `run_typegen` with `[typegen] schema_version = 2`: the JSON output is schema document
+/// v2, and strictness applies to its diagnostics. Configured TypeScript is still the v1
+/// interface emitter's output, unchanged.
+async fn run_typegen_v2(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> Result<()> {
+	let v2 = introspect_v2::introspect(db, document::EngineMode::Remote).await?;
+	report_diagnostics(&v2.diagnostics, opts.strict)?;
+	let v1 = match opts.ts_out {
+		Some(_) => v1_for_typescript(db, opts.strict).await?,
+		None => empty_v1(),
+	};
+	let json_path = if opts.stdout {
+		None
+	} else {
+		Some(opts.out.clone().unwrap_or_else(|| crate::constants::typegen_output_path(folder)))
+	};
+	let progress = if opts.stdout {
+		log::info!("{}", v2_json(&v2, opts.pretty)?);
+		log::Level::Debug
+	} else {
+		log::Level::Info
+	};
+	let ts_path = opts.ts_out.as_deref().map(typescript_file);
+	let outputs = Outputs {
+		json: json_path.as_deref().map(|path| (path, opts.pretty)),
+		typescript: ts_path.as_deref().map(|path| (path, opts.ts_format.as_deref())),
+	};
+	let artifacts = render(&v1, Some(&v2), &outputs, opts.strict, opts.check)?;
+	if opts.check {
+		return check(&artifacts);
+	}
+	publish(&artifacts, progress, OnWriteError::Propagate)
+}
+
+/// The v1 document the TypeScript interface emitter reads when the JSON is v2. Its own
+/// diagnostics are reported (and fail a strict run) as well: a kind v2 reads but v1 cannot
+/// parse is `unknown` in the TypeScript, which v2's diagnostics do not show.
+pub(crate) async fn v1_for_typescript(db: &Surreal<Any>, strict: bool) -> Result<SchemaTypes> {
+	let (v1, diagnostics) = generate_with_diagnostics(db).await?;
+	report_diagnostics(&diagnostics, strict)?;
+	Ok(v1)
+}
+
+/// A v1 document with nothing in it, for renders that emit no v1 output.
+fn empty_v1() -> SchemaTypes {
+	SchemaTypes {
+		version: 1,
+		generated_at: String::new(),
+		namespace: None,
+		database: None,
+		tables: vec![],
+		functions: vec![],
+		params: vec![],
+		analyzers: vec![],
+		accesses: vec![],
+		apis: vec![],
+		buckets: vec![],
+		sequences: vec![],
+		configs: vec![],
+		models: vec![],
+		users: vec![],
+	}
+}
+
+/// Schema document v2 as JSON text, pretty-printed or compact, without a trailing newline.
+pub fn v2_json(doc: &SchemaDocument, pretty: bool) -> Result<String> {
+	Ok(if pretty {
+		serde_json::to_string_pretty(doc)?
+	} else {
+		serde_json::to_string(doc)?
+	})
+}
+
+fn v2_bytes(doc: &SchemaDocument, pretty: bool) -> Result<Vec<u8>> {
+	let mut json = v2_json(doc, pretty)?;
+	json.push('\n');
+	Ok(json.into_bytes())
+}
+
+/// Introspect the connected database into schema document v2, without writing anything.
+pub async fn generate_v2(db: &Surreal<Any>) -> Result<SchemaDocument> {
+	introspect_v2::introspect(db, document::EngineMode::Remote).await
 }
 
 /// Regenerate the configured outputs after `sync` applied schema changes.
@@ -270,15 +382,32 @@ pub async fn regenerate_after_sync(
 	outputs: &Outputs<'_>,
 	strict: bool,
 	omit_generated_at: bool,
+	schema_version: SchemaVersion,
 ) -> Result<()> {
 	let result = async {
-		let (mut doc, diagnostics) =
-			generate_with_diagnostics(db).await.context("introspecting the schema")?;
-		report_diagnostics(&diagnostics, strict)?;
-		if !omit_generated_at {
-			doc.generated_at = now_rfc3339()?;
-		}
-		let artifacts = render(&doc, outputs, strict, false)?;
+		let (v1, v2) = match schema_version {
+			SchemaVersion::V1 => {
+				let (mut doc, diagnostics) =
+					generate_with_diagnostics(db).await.context("introspecting the schema")?;
+				report_diagnostics(&diagnostics, strict)?;
+				if !omit_generated_at {
+					doc.generated_at = now_rfc3339()?;
+				}
+				(doc, None)
+			}
+			SchemaVersion::V2 => {
+				let v2 = generate_v2(db).await.context("introspecting the schema")?;
+				report_diagnostics(&v2.diagnostics, strict)?;
+				let v1 = match outputs.typescript {
+					Some(_) => {
+						v1_for_typescript(db, strict).await.context("introspecting the schema")?
+					}
+					None => empty_v1(),
+				};
+				(v1, Some(v2))
+			}
+		};
+		let artifacts = render(&v1, v2.as_ref(), outputs, strict, false)?;
 		let on_error = if strict {
 			OnWriteError::Propagate
 		} else {
@@ -337,8 +466,11 @@ fn json_bytes(doc: &SchemaTypes, pretty: bool) -> Result<Vec<u8>> {
 /// When `checking`, the formatter only runs if the output's directory already
 /// exists: a missing directory means a missing file, and a check must not create
 /// one.
+///
+/// The JSON output is `v2` when given, otherwise `doc`; TypeScript always comes from `doc`.
 fn render(
 	doc: &SchemaTypes,
+	v2: Option<&SchemaDocument>,
 	outputs: &Outputs<'_>,
 	strict: bool,
 	checking: bool,
@@ -347,7 +479,10 @@ fn render(
 	if let Some((path, pretty)) = outputs.json {
 		artifacts.push(Artifact {
 			path: path.to_path_buf(),
-			bytes: json_bytes(doc, pretty)?,
+			bytes: match v2 {
+				Some(v2) => v2_bytes(v2, pretty)?,
+				None => json_bytes(doc, pretty)?,
+			},
 		});
 	}
 	if let Some((path, format)) = outputs.typescript {
@@ -533,10 +668,11 @@ mod tests {
 			typescript: Some((&ts, Some(&fail))),
 		};
 
-		let lenient = render(&doc(), &outputs, false, false).expect("a warning, not an error");
+		let lenient =
+			render(&doc(), None, &outputs, false, false).expect("a warning, not an error");
 		assert_eq!(lenient[0].bytes, emit::to_typescript(&doc()).unwrap().into_bytes());
 
-		let err = render(&doc(), &outputs, true, false).unwrap_err();
+		let err = render(&doc(), None, &outputs, true, false).unwrap_err();
 		assert!(format!("{err:#}").contains("exited with"), "{err:#}");
 		assert!(!ts.exists(), "a strict failure publishes nothing");
 	}
@@ -551,13 +687,13 @@ mod tests {
 			json: None,
 			typescript: Some((&ts, Some(&fmt))),
 		};
-		let artifacts = render(&doc(), &outputs, true, false).unwrap();
+		let artifacts = render(&doc(), None, &outputs, true, false).unwrap();
 		publish(&artifacts, log::Level::Debug, OnWriteError::Propagate).unwrap();
 		let written = std::fs::read_to_string(&ts).unwrap();
 		assert!(written.ends_with("// formatted\n"), "{written}");
 		// Formatting again gives the same bytes, so a check passes and nothing else
 		// was left in the directory.
-		let again = render(&doc(), &outputs, true, true).unwrap();
+		let again = render(&doc(), None, &outputs, true, true).unwrap();
 		check(&again).expect("formatted output is up to date");
 		let names: Vec<_> = std::fs::read_dir(tmp.path().join("types"))
 			.unwrap()
@@ -574,7 +710,7 @@ mod tests {
 			json: None,
 			typescript: Some((&ts, Some("surrealkit-no-such-formatter-xyz"))),
 		};
-		let artifacts = render(&doc(), &outputs, true, true).expect("no formatter run");
+		let artifacts = render(&doc(), None, &outputs, true, true).expect("no formatter run");
 		assert!(!tmp.path().join("absent").exists());
 		let err = check(&artifacts).unwrap_err().to_string();
 		assert!(err.contains("missing"), "{err}");

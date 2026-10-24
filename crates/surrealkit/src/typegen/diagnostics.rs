@@ -2,7 +2,7 @@
 //! loud instead of being dropped or silently typed as unknown.
 //!
 //! The shape and the codes are those of schema document v2
-//! (its section 14 lists them), so the v1 generator and
+//! (`docs/typegen/schema-document-v2.md`, section 14), so the v1 generator and
 //! the v2 document report problems the same way. Codes are stable identifiers;
 //! reasons are prose and may change.
 //!
@@ -23,6 +23,35 @@ pub mod codes {
 	pub const FIELD_COMPUTED_KIND_UNDECLARED: &str = "field-computed-kind-undeclared";
 	/// A non-computed field has no `TYPE`: it holds any value. Info.
 	pub const FIELD_KIND_UNDECLARED: &str = "field-kind-undeclared";
+
+	// Schema document v2 only.
+
+	/// The engine minor has no `INFO … STRUCTURE` adapter. Error.
+	pub const STRUCTURE_UNSUPPORTED_ENGINE: &str = "structure-unsupported-engine";
+	/// `INFO … STRUCTURE` returned a key the adapter does not map. Error.
+	pub const STRUCTURE_UNKNOWN_KEY: &str = "structure-unknown-key";
+	/// A `REFERENCE` whose `ON DELETE` action is not one the contract knows. Error.
+	pub const FIELD_REFERENCE_UNRECOGNIZED: &str = "field-reference-unrecognized";
+	/// `DEFINE FIELD id` carries clauses other than `TYPE`. Warning.
+	pub const FIELD_ID_CLAUSES_IGNORED: &str = "field-id-clauses-ignored";
+	/// `VALUE` reads its input and has a fallback; the conservative contract applies. Warning.
+	pub const FIELD_VALUE_INPUT_CONDITIONAL: &str = "field-value-input-conditional";
+	/// An optional function argument precedes a required one. Warning.
+	pub const FUNCTION_OPTIONAL_ARG_NOT_TRAILING: &str = "function-optional-arg-not-trailing";
+	/// The compiled modules define the same entity more than once. Warning.
+	pub const DEFINITION_DUPLICATE: &str = "definition-duplicate";
+	/// A nested field's parent path is not declared. Info.
+	pub const FIELD_PARENT_IMPLICIT: &str = "field-parent-implicit";
+	/// `ASSERT` is outside the recognised subset. Info.
+	pub const ASSERT_UNRECOGNIZED: &str = "assert-unrecognized";
+	/// A function declares no return kind. Info.
+	pub const FUNCTION_RETURN_UNDECLARED: &str = "function-return-undeclared";
+	/// A view: its row shape is not derived. Info.
+	pub const TABLE_VIEW_SHAPE: &str = "table-view-shape";
+	/// A lightweight relation: no content schemas, `relate` only. Info.
+	pub const TABLE_LIGHTWEIGHT_RELATION: &str = "table-lightweight-relation";
+	/// More than one middleware; their order is not preserved. Info.
+	pub const API_MIDDLEWARE_ORDER: &str = "api-middleware-order";
 }
 
 /// How serious a [`Diagnostic`] is.

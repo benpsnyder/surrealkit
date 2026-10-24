@@ -346,6 +346,7 @@ impl RunnerContext {
 						typegen_json_out: None,
 						typegen_strict: false,
 						typegen_omit_generated_at: false,
+						typegen_schema_version: crate::typegen::SchemaVersion::V1,
 					},
 				)
 				.await

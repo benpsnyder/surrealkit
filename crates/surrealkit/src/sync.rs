@@ -65,6 +65,8 @@ pub struct SyncOpts {
 	pub typegen_strict: bool,
 	/// `[typegen] generated_at = false`: leave `generatedAt` out of the JSON.
 	pub typegen_omit_generated_at: bool,
+	/// `[typegen] schema_version`: which document the JSON output is.
+	pub typegen_schema_version: crate::typegen::SchemaVersion,
 }
 
 /// A schema file embedded into the binary at compile time (via [`embed_schema!`](crate::embed_schema))
@@ -290,6 +292,7 @@ impl<'a> Sync<'a> {
 			typegen_json_out: None,
 			typegen_strict: false,
 			typegen_omit_generated_at: false,
+			typegen_schema_version: crate::typegen::SchemaVersion::V1,
 		};
 		sync_embedded(db, self.files, &opts).await
 	}
@@ -625,6 +628,7 @@ async fn run_sync_with_files(
 				&outputs,
 				opts.typegen_strict,
 				opts.typegen_omit_generated_at,
+				opts.typegen_schema_version,
 			)
 			.await?;
 		}
