@@ -344,6 +344,8 @@ impl RunnerContext {
 						typegen_ts_out: None,
 						typegen_ts_format: None,
 						typegen_json_out: None,
+						typegen_strict: false,
+						typegen_omit_generated_at: false,
 					},
 				)
 				.await

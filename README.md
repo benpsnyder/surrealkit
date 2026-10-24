@@ -379,14 +379,35 @@ typescript = "src/types"
 filename = "schema.generated.ts"
 
 # Optional formatter run on the generated file. The path is appended as the
-# final argument. Failures are warnings, not errors.
+# final argument. Failures are warnings, not errors, unless `strict` is set.
 format = "biome check --write"
 
 # Where the JSON schema document goes (written as schema.json in that
 # directory). Setting this makes `surrealkit sync` write it too, and
 # `surrealkit typegen` writes it here instead of database/types.
 json = "src/types"
+
+# Fail instead of warning when an output cannot be produced exactly as
+# configured: a failing formatter, and in `surrealkit sync`, any typegen failure
+# after the schema was applied (default: false).
+strict = true
+
+# Leave the `generatedAt` timestamp out of the JSON, so the same schema always
+# produces the same bytes (default: true).
+generated_at = false
 ```
+
+Generated files are written atomically (to a temporary sibling, then renamed),
+so a bundler or `tsc --watch` never reads half a file and a failure leaves the
+previous version in place. A file whose bytes would not change is not rewritten.
+The formatter runs on that temporary sibling, which has the same extension and
+directory as the real file, so it finds the project's own configuration.
+
+`surrealkit typegen --check` writes nothing and exits non-zero when any
+configured output is missing or differs from what would be generated, which
+suits a CI freshness check. It compares content: an unchanged schema passes even
+though `generatedAt` would be a new time. `--strict` and `--no-generated-at`
+turn on `strict` and `generated_at = false` for one run.
 
 `typescript` can also name the file itself, as in
 `typescript = "src/types/database.ts"` (any `.ts`, `.mts` or `.cts` path), in

@@ -300,7 +300,7 @@ Nothing to do. `[typegen]` takes a `filename` for the file inside the
 itself, e.g. `typescript = "src/types/database.ts"` (#75).
 `surrealkit typegen --typescript <path>` overrides it for one run.
 
-### 13. `typegen` reads the selected target (unreleased)
+### 13. Typegen reads the selected target and writes atomically (unreleased)
 
 `surrealkit typegen` used to connect through the ambient connection even when
 `surrealkit.toml` declared targets, so `--target` and `primary = true` were
@@ -312,6 +312,13 @@ meant, or remove the `[target.*]` section if it is not.
 
 Unknown keys in `[typegen]` are now an error instead of being ignored. Fix the
 key the error names. `typegen --stdout` now still writes configured TypeScript.
+
+Generated files are now written atomically and left untouched when their bytes
+would not change, and the formatter runs on a temporary sibling
+(`index.surrealkit-tmp-<pid>-<n>.ts`) instead of the file itself. If your
+formatter only accepts files matching a pattern, make sure that name matches
+too. New opt-ins: `[typegen] strict`, `[typegen] generated_at = false`, and
+`surrealkit typegen --check`.
 
 ## Opting into multiple schema modules
 

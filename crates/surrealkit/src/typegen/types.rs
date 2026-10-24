@@ -13,7 +13,11 @@ use serde::{Deserialize, Serialize};
 pub struct SchemaTypes {
 	/// Schema-document format version. Bump on breaking shape changes.
 	pub version: u32,
-	/// RFC3339 timestamp of when the document was generated.
+	/// RFC3339 timestamp of when the document was generated. Empty, and then
+	/// omitted from the JSON, when generation was asked not to stamp it
+	/// (`[typegen] generated_at = false`), so identical schemas produce identical
+	/// bytes.
+	#[serde(default, skip_serializing_if = "String::is_empty")]
 	pub generated_at: String,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub namespace: Option<String>,

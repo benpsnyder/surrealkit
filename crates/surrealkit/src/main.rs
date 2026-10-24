@@ -217,6 +217,18 @@ enum Commands {
 		/// filename`) in.
 		#[arg(long, value_name = "PATH")]
 		typescript: Option<PathBuf>,
+		/// Write nothing; exit non-zero when any generated file is missing or
+		/// differs from what would be generated.
+		#[arg(long, conflicts_with = "stdout")]
+		check: bool,
+		/// Fail instead of warning when an output cannot be produced exactly as
+		/// configured (e.g. the formatter fails). Same as `[typegen] strict`.
+		#[arg(long)]
+		strict: bool,
+		/// Leave `generatedAt` out of the JSON so identical schemas produce
+		/// identical bytes. Same as `[typegen] generated_at = false`.
+		#[arg(long)]
+		no_generated_at: bool,
 	},
 }
 
@@ -735,6 +747,8 @@ async fn main() -> Result<()> {
 						typegen_ts_out: typegen_ts_out.clone(),
 						typegen_ts_format: typegen_cfg.format.clone(),
 						typegen_json_out: typegen_json_out.clone(),
+						typegen_strict: typegen_cfg.strict,
+						typegen_omit_generated_at: !typegen_cfg.stamps_generated_at(),
 					};
 					let outcome =
 						sync::run_sync_with_filesystem_sources(&db, opts, layout, files).await;
@@ -972,6 +986,9 @@ async fn main() -> Result<()> {
 			stdout,
 			compact,
 			typescript,
+			check,
+			strict,
+			no_generated_at,
 		} => {
 			let mut typegen_cfg = surrealkit::variables::load_typegen_config(None)?;
 			if let Some(typescript) = typescript {
@@ -994,7 +1011,10 @@ async fn main() -> Result<()> {
 					stdout,
 					pretty: !compact,
 					ts_out,
-					ts_format: typegen_cfg.format,
+					ts_format: typegen_cfg.format.clone(),
+					strict: strict || typegen_cfg.strict,
+					check,
+					omit_generated_at: no_generated_at || !typegen_cfg.stamps_generated_at(),
 				},
 			)
 			.await?;

@@ -166,9 +166,23 @@ pub struct TypegenConfig {
 	/// `.json` is the file itself; anything else is a directory, and the file in
 	/// it is `schema.json`.
 	pub json: Option<PathBuf>,
+	/// Fail instead of warning when generated output cannot be produced exactly
+	/// as configured: a formatter that fails, and in `sync`, any typegen failure
+	/// after the schema was applied. Off by default, which keeps those failures
+	/// as log lines. `surrealkit typegen --strict` turns it on for one run.
+	#[serde(default)]
+	pub strict: bool,
+	/// Whether the JSON carries a `generatedAt` timestamp (default `true`).
+	/// `false` leaves it out, so the same schema always produces the same bytes.
+	pub generated_at: Option<bool>,
 }
 
 impl TypegenConfig {
+	/// Whether to stamp `generatedAt` into the JSON (`generated_at`, default true).
+	pub fn stamps_generated_at(&self) -> bool {
+		self.generated_at.unwrap_or(true)
+	}
+
 	/// The JSON schema file to write, if JSON output is configured.
 	pub fn json_path(&self) -> Result<Option<PathBuf>> {
 		let Some(json) = &self.json else {
@@ -517,9 +531,23 @@ mod tests {
 		TypegenConfig {
 			typescript: typescript.map(PathBuf::from),
 			filename: filename.map(str::to_string),
-			format: None,
-			json: None,
+			..TypegenConfig::default()
 		}
+	}
+
+	#[test]
+	fn load_typegen_config_reads_strict_and_generated_at() {
+		let tmp = TempDir::new().unwrap();
+		let cfg = tmp.path().join("surrealkit.toml");
+		std::fs::write(&cfg, "[typegen]\nstrict = true\ngenerated_at = false\n").unwrap();
+		let parsed = load_typegen_config(Some(&cfg)).unwrap();
+		assert!(parsed.strict);
+		assert!(!parsed.stamps_generated_at());
+
+		// Both default to today's behaviour: lenient, and stamped.
+		let defaults = TypegenConfig::default();
+		assert!(!defaults.strict);
+		assert!(defaults.stamps_generated_at());
 	}
 
 	#[test_case::test_case(Some("libs/db/types"), None, Some("libs/db/types/index.ts") ; "directory keeps index ts")]
