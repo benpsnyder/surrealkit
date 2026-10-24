@@ -1,7 +1,7 @@
 {
 	"name": "vite-plugin-surrealkit",
 	"version": "0.2.0",
-	"description": "Vite plugin to run SurrealKit schema sync during dev/build",
+	"description": "Vite plugin to run SurrealKit schema sync or type generation during dev/build",
 	"license": "Apache-2.0",
 	"type": "module",
 	"main": "./dist/index.cjs",
