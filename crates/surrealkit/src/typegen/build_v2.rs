@@ -258,6 +258,10 @@ fn build_table(raw: RawTable, diagnostics: &mut Vec<Diagnostic>) -> Table {
 	}
 	fields.sort_by(|a, b| a.path.cmp(&b.path));
 	implicit_parents(&name, &fields, diagnostics);
+	if raw.schemafull {
+		objects_without_fields(&name, &fields, diagnostics);
+	}
+	run_together_names(&name, &fields, diagnostics);
 
 	let mut indexes: Vec<Index> = raw.indexes.into_iter().map(build_index).collect();
 	indexes.sort_by(|a, b| a.name.cmp(&b.name));
@@ -480,6 +484,129 @@ fn implicit_parents(table: &str, fields: &[Field], diagnostics: &mut Vec<Diagnos
 				.on_table(table)
 				.on_field(field.path.clone()),
 			);
+		}
+	}
+}
+
+/// `kind` without the `option<…>` and `| null` around it, when that leaves a single kind.
+fn without_nullable(kind: &Kind) -> &Kind {
+	match kind {
+		Kind::Option {
+			item,
+		} => without_nullable(item),
+		Kind::Union {
+			variants,
+		} => {
+			let mut rest = variants.iter().filter(|v| !matches!(v, Kind::Null | Kind::None));
+			match (rest.next(), rest.next()) {
+				(Some(only), None) => without_nullable(only),
+				_ => kind,
+			}
+		}
+		_ => kind,
+	}
+}
+
+/// The field holds an object (possibly NONE or NULL instead).
+fn holds_object(field: &Field) -> bool {
+	field.kind.as_ref().is_some_and(|k| matches!(without_nullable(k), Kind::Object))
+}
+
+/// The field holds an array or set of objects (possibly NONE or NULL instead).
+fn holds_object_elements(field: &Field) -> bool {
+	field.kind.as_ref().is_some_and(|k| match without_nullable(k) {
+		Kind::Array {
+			item,
+			..
+		}
+		| Kind::Set {
+			item,
+			..
+		} => matches!(without_nullable(item), Kind::Object),
+		_ => false,
+	})
+}
+
+/// An error for every object position of a SCHEMAFULL table that is not FLEXIBLE and has no
+/// declared fields: SurrealDB 3.2 and 3.3 refuse every undeclared key of such an object, so
+/// it can hold only `{}`. An array or set of objects whose element is declared (`a.*`) is
+/// judged by that element field.
+fn objects_without_fields(table: &str, fields: &[Field], diagnostics: &mut Vec<Diagnostic>) {
+	let has_fields_under = |prefix: &[String]| {
+		fields.iter().any(|f| f.path.len() > prefix.len() && f.path.starts_with(prefix))
+	};
+	let flexible = |path: &[String]| fields.iter().any(|f| f.path == path && f.flexible);
+	// The engine synthesises `a.*` for `array<object>`; a FLEXIBLE array opens its elements.
+	let open = |field: &Field| {
+		field.flexible
+			|| field.path.last().is_some_and(|last| last == "*")
+				&& flexible(&field.path[..field.path.len() - 1])
+	};
+	for field in fields.iter().filter(|f| !open(f)) {
+		let position = if holds_object(field) {
+			field.path.clone()
+		} else if holds_object_elements(field) {
+			let element = [field.path.clone(), vec!["*".to_string()]].concat();
+			if fields.iter().any(|f| f.path == element) {
+				continue;
+			}
+			element
+		} else {
+			continue;
+		};
+		if has_fields_under(&position) {
+			continue;
+		}
+		let shown = position.join(".");
+		diagnostics.push(
+			Diagnostic::new(
+				Severity::Error,
+				codes::OBJECT_WITHOUT_FIELDS,
+				shown.clone(),
+				format!(
+					"On a SCHEMAFULL table an object that is not FLEXIBLE holds only {{}}: \
+					 SurrealDB refuses every undeclared key of it (`Found field '{shown}.<key>', \
+					 but no such field exists`). Declare its fields, make it FLEXIBLE, or \
+					 acknowledge this code with a reason."
+				),
+			)
+			.on_table(table)
+			.on_field(field.path.clone()),
+		);
+	}
+}
+
+/// A warning for a top-level field whose name is the name of an object field beside it run
+/// straight into a lowercase word (`envelopealgorithm` next to `envelope`): likely a child
+/// path written without its dot. Separated (`k_object_literal`) and camelCase names are left
+/// alone; the inference is heuristic, so never an error.
+fn run_together_names(table: &str, fields: &[Field], diagnostics: &mut Vec<Diagnostic>) {
+	let objects: Vec<&str> = fields
+		.iter()
+		.filter(|f| f.path.len() == 1 && holds_object(f))
+		.map(|f| f.path[0].as_str())
+		.collect();
+	for field in fields.iter().filter(|f| f.path.len() == 1) {
+		let name = field.path[0].as_str();
+		for object in &objects {
+			let Some(child) = name.strip_prefix(object) else {
+				continue;
+			};
+			if child.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit()) {
+				diagnostics.push(
+					Diagnostic::new(
+						Severity::Warning,
+						codes::FIELD_NAME_RUN_TOGETHER,
+						name,
+						format!(
+							"`{name}` begins with the object field `{object}`; if it is meant as \
+							 the child `{object}.{child}`, DEFINE FIELD needs the dot."
+						),
+					)
+					.on_table(table)
+					.on_field(field.path.clone()),
+				);
+			}
 		}
 	}
 }

@@ -17,9 +17,9 @@
 mod build_v2;
 pub mod canonical;
 #[cfg(test)]
-mod corpus_tests;
+pub(crate) mod corpus_tests;
 #[cfg(test)]
-mod corpus_v2_tests;
+pub(crate) mod corpus_v2_tests;
 mod define;
 mod diagnostics;
 pub mod document;
@@ -212,7 +212,7 @@ pub async fn generate_with_diagnostics(
 ///
 /// Without `strict`, errors and warnings are logged as warnings and infos at
 /// debug level, so a lenient run keeps today's output and says what it lost.
-fn report_diagnostics(diagnostics: &[Diagnostic], strict: bool) -> Result<()> {
+pub(crate) fn report_diagnostics(diagnostics: &[Diagnostic], strict: bool) -> Result<()> {
 	let errors: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.is_error()).collect();
 	if strict && !errors.is_empty() {
 		bail!(
@@ -297,13 +297,28 @@ async fn run_typegen_v2(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> R
 		Some(_) => v1_for_typescript(db, opts.strict).await?,
 		None => empty_v1(),
 	};
+	produce(&v1, Some(&v2), folder, &opts)
+}
+
+/// Write (or, with `check`, compare) the configured outputs of documents already generated:
+/// the JSON (`v2` when given, else `v1`) and the TypeScript interfaces from `v1`.
+#[doc(hidden)]
+pub fn produce(
+	v1: &SchemaTypes,
+	v2: Option<&SchemaDocument>,
+	folder: &str,
+	opts: &TypegenOpts,
+) -> Result<()> {
 	let json_path = if opts.stdout {
 		None
 	} else {
 		Some(opts.out.clone().unwrap_or_else(|| crate::constants::typegen_output_path(folder)))
 	};
 	let progress = if opts.stdout {
-		log::info!("{}", v2_json(&v2, opts.pretty)?);
+		match v2 {
+			Some(v2) => log::info!("{}", v2_json(v2, opts.pretty)?),
+			None => log::info!("{}", emit::to_json(v1, opts.pretty)?),
+		}
 		log::Level::Debug
 	} else {
 		log::Level::Info
@@ -313,7 +328,7 @@ async fn run_typegen_v2(db: &Surreal<Any>, folder: &str, opts: TypegenOpts) -> R
 		json: json_path.as_deref().map(|path| (path, opts.pretty)),
 		typescript: ts_path.as_deref().map(|path| (path, opts.ts_format.as_deref())),
 	};
-	let artifacts = render(&v1, Some(&v2), &outputs, opts.strict, opts.check)?;
+	let artifacts = render(v1, v2, &outputs, opts.strict, opts.check)?;
 	if opts.check {
 		return check(&artifacts);
 	}
@@ -327,6 +342,83 @@ pub(crate) async fn v1_for_typescript(db: &Surreal<Any>, strict: bool) -> Result
 	let (v1, diagnostics) = generate_with_diagnostics(db).await?;
 	report_diagnostics(&diagnostics, strict)?;
 	Ok(v1)
+}
+
+/// A schema document read from a file: version 1 or 2.
+#[derive(Debug, Clone)]
+pub enum LoadedDocument {
+	V1(Box<SchemaTypes>),
+	V2(Box<SchemaDocument>),
+}
+
+/// Read a schema document written by `typegen` or `compile`. A v2 document is decoded
+/// strictly and its `semanticDigest` recomputed: a document whose content no longer matches
+/// its digest was edited by hand (or truncated) and is refused.
+pub fn load_document(path: &Path) -> Result<LoadedDocument> {
+	let text =
+		std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+	let value: serde_json::Value =
+		serde_json::from_str(&text).with_context(|| format!("{} is not JSON", path.display()))?;
+	match value.get("version").and_then(serde_json::Value::as_u64) {
+		Some(1) => Ok(LoadedDocument::V1(Box::new(
+			serde_json::from_value(value)
+				.with_context(|| format!("{} is not a schema document v1", path.display()))?,
+		))),
+		Some(2) => {
+			let digest = canonical::semantic_digest(&value)?;
+			let doc: SchemaDocument = serde_json::from_value(value)
+				.with_context(|| format!("{} is not a valid schema document v2", path.display()))?;
+			if doc.semantic_digest != digest {
+				bail!(
+					"{}: semanticDigest is {} but the content digests to {digest}; the document \
+					 was changed after it was generated. Regenerate it instead of editing it",
+					path.display(),
+					doc.semantic_digest
+				);
+			}
+			Ok(LoadedDocument::V2(Box::new(doc)))
+		}
+		other => bail!(
+			"{} is not a schema document: version {} (expected 1 or 2)",
+			path.display(),
+			other.map_or("missing".to_string(), |v| v.to_string())
+		),
+	}
+}
+
+/// `surrealkit typegen --from <schema.json>`: produce the configured outputs from a schema
+/// document on disk instead of a database. Nothing connects.
+///
+/// A v1 document yields the v1 outputs exactly as `typegen` would have. A v2 document
+/// yields the v2 JSON; the TypeScript interface emitter reads v1 only, so asking for it
+/// from a v2 document is an error (`surrealkit compile` writes both from one engine).
+#[doc(hidden)]
+pub fn run_typegen_from(from: &Path, folder: &str, opts: TypegenOpts) -> Result<()> {
+	match load_document(from)? {
+		LoadedDocument::V1(mut doc) => {
+			if opts.omit_generated_at {
+				doc.generated_at.clear();
+			}
+			produce(&doc, None, folder, &opts)
+		}
+		LoadedDocument::V2(doc) => {
+			report_diagnostics(&doc.diagnostics, opts.strict)?;
+			if opts.ts_out.is_some() {
+				bail!(
+					"typegen --from {}: the TypeScript interfaces are generated from schema \
+					 document v1, and this is v2. Run `surrealkit compile` (which writes both) or \
+					 remove [typegen] typescript",
+					from.display()
+				);
+			}
+			produce(&empty_v1(), Some(&doc), folder, &opts)
+		}
+	}
+}
+
+/// A field name as path segments (`phones[*].number` → `["phones", "*", "number"]`).
+pub(crate) fn field_path_of(name: &str) -> Vec<String> {
+	scan::field_path(name)
 }
 
 /// A v1 document with nothing in it, for renders that emit no v1 output.
@@ -558,8 +650,8 @@ fn check(artifacts: &[Artifact]) -> Result<()> {
 	}
 	if !problems.is_empty() {
 		bail!(
-			"typegen --check: {} of {} generated file(s) out of date:\n{}\nrun `surrealkit typegen` \
-			 to regenerate them",
+			"typegen --check: {} of {} generated file(s) out of date:\n{}\nrerun the command \
+			 without --check to regenerate them",
 			problems.len(),
 			artifacts.len(),
 			problems.join("\n")

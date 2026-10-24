@@ -40,6 +40,16 @@ pub mod codes {
 	pub const FUNCTION_OPTIONAL_ARG_NOT_TRAILING: &str = "function-optional-arg-not-trailing";
 	/// The compiled modules define the same entity more than once. Warning.
 	pub const DEFINITION_DUPLICATE: &str = "definition-duplicate";
+	/// A compiled `DEFINE PARAM` stores a different value each time it is defined. Error.
+	pub const PARAM_VALUE_NONDETERMINISTIC: &str = "param-value-nondeterministic";
+	/// The project deploys to an engine minor other than the one compile embeds. Error.
+	pub const COMPILE_ENGINE_MISMATCH: &str = "compile-engine-mismatch";
+	/// An object of a SCHEMAFULL table is not FLEXIBLE and has no declared fields, so it
+	/// can hold only `{}`. Error.
+	pub const OBJECT_WITHOUT_FIELDS: &str = "object-without-fields";
+	/// A top-level field name begins with an object field's name (`envelopealgorithm`
+	/// beside `envelope`): perhaps a child path missing its dot. Warning.
+	pub const FIELD_NAME_RUN_TOGETHER: &str = "field-name-run-together";
 	/// A nested field's parent path is not declared. Info.
 	pub const FIELD_PARENT_IMPLICIT: &str = "field-parent-implicit";
 	/// `ASSERT` is outside the recognised subset. Info.

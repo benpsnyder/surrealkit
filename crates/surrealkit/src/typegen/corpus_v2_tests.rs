@@ -16,7 +16,7 @@ use super::document::{EngineMode, SchemaDocument, Source};
 use super::introspect_v2::{Origin, Snapshot, assemble, assemble_from_info};
 
 /// The captured `INFO` and `INFO … STRUCTURE` output for one engine version.
-pub(super) fn fixture_snapshot(version: &str) -> Snapshot {
+pub(crate) fn fixture_snapshot(version: &str) -> Snapshot {
 	let dir = corpus_dir().join("introspection").join(version);
 	let pairs = |file: &str| -> Vec<(String, Value)> {
 		read_json(&dir.join(file))
@@ -48,7 +48,7 @@ fn introspect_origin() -> Origin {
 	}
 }
 
-pub(super) fn fixture_document(version: &str) -> SchemaDocument {
+pub(crate) fn fixture_document(version: &str) -> SchemaDocument {
 	assemble(&fixture_snapshot(version), introspect_origin()).expect("assemble")
 }
 
@@ -73,11 +73,21 @@ fn diagnostic_lines(doc: &SchemaDocument) -> Vec<String> {
 		.collect()
 }
 
+/// The error codes the corpus acknowledges (`corpus.json` `acknowledge`), as
+/// `[typegen] acknowledge` would: each one is there on purpose, with its reason.
+pub(crate) fn corpus_acknowledged() -> Vec<String> {
+	read_json(&corpus_dir().join("corpus.json"))["acknowledge"]
+		.as_object()
+		.map(|codes| codes.keys().cloned().collect())
+		.unwrap_or_default()
+}
+
 fn assert_no_errors(label: &str, doc: &SchemaDocument) {
+	let acknowledged = corpus_acknowledged();
 	let errors: Vec<String> = doc
 		.diagnostics
 		.iter()
-		.filter(|d| d.severity == Severity::Error)
+		.filter(|d| d.severity == Severity::Error && !acknowledged.contains(&d.code))
 		.map(|d| d.to_string())
 		.collect();
 	assert!(errors.is_empty(), "{label}: error diagnostics:\n{}", errors.join("\n"));
@@ -93,11 +103,16 @@ fn the_corpus_reads_cleanly_through_both_structure_adapters() {
 	}
 }
 
+/// The 3.3.0 document's content is pinned once, by `compiled/corpus.v2.json`: compiling the
+/// corpus gives the same semantic content (`compile::corpus` checks that), so here its digest
+/// must equal that file's, and only its diagnostics, which differ between the readers, are
+/// pinned.
 #[test]
 fn the_3_3_0_document_is_pinned() {
 	let doc = fixture_document("3.3.0");
-	let mut text = semantic(&doc);
-	text.push_str("\n\ndiagnostics:\n");
+	let compiled = read_json(&corpus_dir().join("compiled/corpus.v2.json"));
+	assert_eq!(compiled["semanticDigest"].as_str(), Some(doc.semantic_digest.as_str()));
+	let mut text = String::from("diagnostics:\n");
 	text.push_str(&diagnostic_lines(&doc).join("\n"));
 	text.push_str(&format!("\n\n{}\n", doc.semantic_digest));
 	insta::assert_snapshot!("corpus_v2_3_3_0", text);
@@ -251,7 +266,7 @@ fn identical_inputs_give_identical_bytes() {
 }
 
 /// Apply the corpus modules the engine accepts to a fresh database.
-pub(super) async fn apply_corpus(
+pub(crate) async fn apply_corpus(
 	db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
 	experimental: bool,
 ) -> String {
@@ -275,7 +290,7 @@ pub(super) async fn apply_corpus(
 
 /// Whether a server at `SURREALKIT_TEST_URL` was started with the experimental capabilities
 /// the gated corpus modules need (`--allow-experimental=files,surrealism`).
-pub(super) fn remote_has_experimental() -> bool {
+pub(crate) fn remote_has_experimental() -> bool {
 	std::env::var("SURREALKIT_TEST_EXPERIMENTAL").is_ok_and(|v| v == "1")
 }
 
@@ -352,6 +367,73 @@ async fn access_definitions_read_alike_through_both_readers_on_3_3() {
 		serde_json::to_value(&remote.verify).expect("json")["url"],
 		"https://example.com/.well-known/jwks.json"
 	);
+}
+
+/// `semantics/objects.surql` on a live engine: every object position the document reports
+/// as `object-without-fields` refuses a keyed write and every other one keeps its keys
+/// (which is why it is an error), `field-name-run-together` flags only the name run into
+/// an object's, and the STRUCTURE and plain-`INFO` readers agree.
+#[tokio::test]
+async fn objects_without_fields_are_errors_because_the_engine_refuses_their_keys() {
+	use super::diagnostics::codes;
+	let db = crate::test_db::fresh("typegen_objects").await;
+	let sql =
+		std::fs::read_to_string(corpus_dir().join("semantics/objects.surql")).expect("module");
+	db.query(sql.as_str()).await.and_then(|r| r.check()).expect("applying the objects module");
+	let snapshot = super::introspect_v2::capture(&db).await.expect("capture");
+	let structured = assemble(&snapshot, introspect_origin()).expect("structure");
+	let fallback = assemble_from_info(&snapshot).expect("info");
+	let reported = |doc: &SchemaDocument, code: &str| -> Vec<String> {
+		let mut found: Vec<String> = doc
+			.diagnostics
+			.iter()
+			.filter(|d| d.code == code)
+			.map(|d| format!("{} {}.{}", d.severity, d.table.as_deref().unwrap_or("-"), d.source))
+			.collect();
+		found.sort();
+		found
+	};
+	let objects = [
+		"error shapes.items.*",
+		"error shapes.nullable",
+		"error shapes.parent.inner",
+		"error shapes.plain",
+	];
+	let run_together = ["warning shapes.envelopealgorithm"];
+	for doc in [&structured, &fallback] {
+		assert_eq!(reported(doc, codes::OBJECT_WITHOUT_FIELDS), objects);
+		assert_eq!(reported(doc, codes::FIELD_NAME_RUN_TOGETHER), run_together);
+	}
+
+	let write = |content: &'static str| {
+		let db = db.clone();
+		async move { db.query(format!("CREATE shapes CONTENT {content}")).await.and_then(|r| r.check()) }
+	};
+	for content in [
+		"{ plain: { k: 1 } }",
+		"{ nullable: { k: 1 } }",
+		"{ items: [{ k: 1 }] }",
+		"{ parent: { inner: { k: 1 } } }",
+	] {
+		let refused = write(content).await.expect_err(content).to_string();
+		assert!(refused.contains("no such field exists"), "{content}: {refused}");
+	}
+	for content in [
+		"{ plain: {} }",
+		"{ flex: { k: 1 } }",
+		"{ withkid: { k: 'v' } }",
+		"{ rows: [{ k: 'v' }] }",
+		"{ openrows: [{ k: 1 }] }",
+	] {
+		write(content).await.unwrap_or_else(|err| panic!("{content}: {err}"));
+	}
+	let mut kept = db
+		.query("CREATE loose CONTENT { plain: { k: 1 } } RETURN VALUE plain.k")
+		.await
+		.and_then(|r| r.check())
+		.expect("a SCHEMALESS object keeps its keys");
+	let k: Option<i64> = kept.take(0).expect("one value");
+	assert_eq!(k, Some(1));
 }
 
 #[tokio::test]

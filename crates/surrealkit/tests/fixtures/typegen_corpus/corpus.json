@@ -26,5 +26,8 @@
 		"rejected/references-kind.surql",
 		"rejected/syntax.surql"
 	],
+	"acknowledge": {
+		"object-without-fields": "kinds.k_object is the corpus's bare object kind: on a SCHEMAFULL table it holds only {} by design, which this error reports"
+	},
 	"hazards": ["rejected/poison-array-set-union.v3.3.surql", "rejected/crash-option-bounded-set.v3.3.surql"]
 }
