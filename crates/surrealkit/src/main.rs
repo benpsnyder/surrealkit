@@ -679,6 +679,7 @@ async fn main() -> Result<()> {
 			let typegen_cfg = surrealkit::variables::load_typegen_config(None)?;
 			let typegen_ts_out = typegen_cfg.typescript_path()?;
 			let typegen_json_out = typegen_cfg.json_path()?;
+			let typegen_schema_version = typegen_cfg.schema_version()?;
 			if selection.pairs() == 0 {
 				bail!(
 					"refusing filesystem sync: the selected targets accept none of the selected \
@@ -750,6 +751,7 @@ async fn main() -> Result<()> {
 						typegen_json_out: typegen_json_out.clone(),
 						typegen_strict: typegen_cfg.strict,
 						typegen_omit_generated_at: !typegen_cfg.stamps_generated_at(),
+						typegen_schema_version,
 					};
 					let outcome =
 						sync::run_sync_with_filesystem_sources(&db, opts, layout, files).await;
@@ -1016,6 +1018,7 @@ async fn main() -> Result<()> {
 					strict: strict || typegen_cfg.strict,
 					check,
 					omit_generated_at: no_generated_at || !typegen_cfg.stamps_generated_at(),
+					schema_version: typegen_cfg.schema_version()?,
 				},
 			)
 			.await?;

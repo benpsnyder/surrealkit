@@ -7,7 +7,7 @@
 //! - [`parse_type_prefix`] parses one kind at the start of a longer text.
 //! - `extract_type_clause` (tests only) pulls the `TYPE …` body out of a `DEFINE FIELD` statement.
 //!
-//! It accepts what SurrealDB 3.x renders (see schema document v2, section
+//! It accepts what SurrealDB 3.x renders (see `docs/typegen/schema-document-v2.md`, section
 //! 4): every primitive, `option<T>` and its `none | T` normal form, `array` and `set` with an
 //! optional exact length, `record`, `table`, `file` and `geometry` with their name lists
 //! (backtick-quoted names included), tuples `[A, B]`, object literals `{ a: int, "b c": T }`,

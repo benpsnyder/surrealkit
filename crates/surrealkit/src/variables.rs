@@ -176,9 +176,22 @@ pub struct TypegenConfig {
 	/// Whether the JSON carries a `generatedAt` timestamp (default `true`).
 	/// `false` leaves it out, so the same schema always produces the same bytes.
 	pub generated_at: Option<bool>,
+	/// Which schema document the JSON output is: `1` (the default, unchanged) or `2`
+	/// (schema document v2, `docs/typegen/schema-document-v2.md`). TypeScript output is the
+	/// same either way.
+	pub schema_version: Option<u32>,
 }
 
 impl TypegenConfig {
+	/// The configured schema document version. Anything but 1 or 2 is an error.
+	pub fn schema_version(&self) -> Result<crate::typegen::SchemaVersion> {
+		match self.schema_version {
+			None | Some(1) => Ok(crate::typegen::SchemaVersion::V1),
+			Some(2) => Ok(crate::typegen::SchemaVersion::V2),
+			Some(other) => bail!("[typegen] schema_version = {other} is not supported; use 1 or 2"),
+		}
+	}
+
 	/// Whether to stamp `generatedAt` into the JSON (`generated_at`, default true).
 	pub fn stamps_generated_at(&self) -> bool {
 		self.generated_at.unwrap_or(true)
@@ -549,6 +562,23 @@ mod tests {
 		let defaults = TypegenConfig::default();
 		assert!(!defaults.strict);
 		assert!(defaults.stamps_generated_at());
+	}
+
+	#[test]
+	fn schema_version_is_1_by_default_and_only_1_or_2() {
+		use crate::typegen::SchemaVersion;
+		let parse = |raw: &str| toml::from_str::<ProjectConfig>(raw).unwrap().typegen;
+		assert_eq!(TypegenConfig::default().schema_version().unwrap(), SchemaVersion::V1);
+		assert_eq!(
+			parse("[typegen]\nschema_version = 2\n").schema_version().unwrap(),
+			SchemaVersion::V2
+		);
+		assert_eq!(
+			parse("[typegen]\nschema_version = 1\n").schema_version().unwrap(),
+			SchemaVersion::V1
+		);
+		let err = parse("[typegen]\nschema_version = 3\n").schema_version().unwrap_err();
+		assert!(err.to_string().contains("use 1 or 2"), "{err}");
 	}
 
 	#[test_case::test_case(Some("libs/db/types"), None, Some("libs/db/types/index.ts") ; "directory keeps index ts")]

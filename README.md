@@ -396,6 +396,11 @@ strict = true
 # Leave the `generatedAt` timestamp out of the JSON, so the same schema always
 # produces the same bytes (default: true).
 generated_at = false
+
+# Which schema document the JSON is: 1 (the default, unchanged) or 2, the
+# semantic interchange format described below. TypeScript output is the same
+# either way.
+schema_version = 2
 ```
 
 Generated files are written atomically (to a temporary sibling, then renamed),
@@ -420,7 +425,7 @@ error (it fails a `strict` run), a `COMPUTED` field without `TYPE` or an `INFO`
 category the document does not model (such as `DEFINE MODULE`) is a warning, and
 a field without `TYPE` (still `unknown` in `schema.json` and TypeScript) is an
 info logged with `--verbose`. The
-codes are the ones schema document v2 uses.
+codes are those of [schema document v2](docs/typegen/schema-document-v2.md#14-diagnostics).
 
 `typescript` can also name the file itself, as in
 `typescript = "src/types/database.ts"` (any `.ts`, `.mts` or `.cts` path), in
@@ -434,6 +439,23 @@ path for one run.
 With `typescript` or `json` set, `surrealkit sync` regenerates them after
 applying schema changes, so the generated types never drift from the database.
 Use `json` when you generate your own types from the schema document.
+
+### Schema document v2
+
+With `schema_version = 2` the JSON is [schema document v2](docs/typegen/schema-document-v2.md),
+the format code generators read instead of SurrealQL. It describes what the
+engine stored, clause by clause: kinds as trees, `DEFAULT`/`VALUE`/`COMPUTED`/
+`ASSERT` (with the recognisable assertions structured), `REFERENCE`, permissions,
+relation endpoints, record-id key kinds, indexes, events, functions and every
+other `DEFINE` family, plus a diagnostic for anything not understood. It carries
+no timestamp; `semanticDigest` is a SHA-256 over its semantic content, so the
+same schema gives the same digest on every machine, and `provenance` records the
+engine and adapter that read it.
+
+The document is read through `INFO … STRUCTURE`, by an adapter for each
+supported engine minor (SurrealDB 3.2.x and 3.3.x). Any other minor is read from
+plain `INFO` instead, with the error diagnostic `structure-unsupported-engine`,
+so a `strict` run refuses it.
 
 ## Vite Plugin
 
