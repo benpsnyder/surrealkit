@@ -297,3 +297,21 @@ when one of these is set, and are skipped (with a notice) otherwise:
 SURREAL_BIN=/usr/local/bin/surreal bun run test          # starts `surreal start … memory`
 SURREAL_URL=ws://127.0.0.1:8000/rpc bun run test         # a throwaway container, root/root
 ```
+
+The round-trip properties (`test/roundtrip.test.ts`) run the generated corpus
+modules against a database prepared by `surrealkit test --exec`: create →
+select → merge → select for the corpus tables, every record-id key kind (int64
+extremes included, under the `bigint` profile), `relate` on an enforced
+relation and function calls, with values from `Arbitrary.schema` over the
+generated schemas and `Arbitrary.checkEffect` required to report `Passed`. The
+SurrealKit binary is the workspace build (`cargo build`) or `SURREALKIT_BIN`:
+
+```sh
+SURREAL_BIN=/usr/local/bin/surreal bun run test:roundtrip            # starts its own server
+SURREALDB_HOST=ws://127.0.0.1:8000 SURREALDB_USER=root SURREALDB_PASSWORD=root \
+  bun run test:roundtrip                                               # a disposable server
+```
+
+`scripts/roundtrip.mjs` compiles the corpus's portable modules, then runs
+`surrealkit test --exec`; the suite's first check is that the prepared
+database's `SURREALKIT_EXEC_SCHEMA_DIGEST` equals the compiled `semanticDigest`.

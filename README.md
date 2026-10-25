@@ -526,7 +526,7 @@ document v2 on stdin and print the files they generate.
 
 ```toml
 [typegen.emit.effect]
-command = "effect-surrealkit"
+command = "effect-surrealkit --store app"
 out = "src/generated/surreal"
 ```
 
@@ -552,6 +552,46 @@ off; the diagnostic stays in the document, and emitters receive the list too
 acknowledge = { "param-value-nondeterministic" = "$started is informational only" }
 ```
 
+### Effect schemas
+
+[`effect-surrealkit`](packages/effect-surrealkit) is the reference emitter: it
+turns schema document v2 into [Effect](https://effect.website) v4 schemas whose
+`Type` and `Encoded` match what the JavaScript SDK (`surrealdb` 2.x) returns
+and accepts, plus runtime codecs for every SurrealDB value.
+
+`effect-surrealkit` is not published to npm yet. Build it from this repository
+(`packages/effect-surrealkit`: `npm install && npm run build`) and depend on that
+directory, or on the package from a Git checkout (its `prepare` script builds it),
+with `effect` 4 (4.0.6 or later) and `surrealdb` 2 (2.1.1 or later) as peers.
+
+```toml
+# surrealkit.toml
+[typegen.emit.effect]
+command = "effect-surrealkit --store app"   # store: the brand of this schema's record ids
+out = "src/generated/surreal"
+```
+
+`surrealkit compile` (or `typegen`, or a `sync` that changed something) then
+writes, per table, a select schema for a stored row and one input schema per write
+operation — `PersonCreate`, `PersonMerge`, `PersonContent` — derived from the
+field-presence matrix of the contract, so a `READONLY` or `COMPUTED` field in a
+merge, a missing required field on create, a record id of the wrong table, a
+relation endpoint of the wrong table or a wrong function argument tuple are
+compile-time errors. Record ids are branded per store, relations get endpoint
+descriptors, `record<a | b>` a tagged representation, functions their argument
+tuples, and `manifest.ts` the `semanticDigest` the modules came from.
+Integers are safe JavaScript numbers by default and fail loudly beyond ±(2^53 − 1);
+`--int bigint` switches to exact int64. See the
+[package README](packages/effect-surrealkit/README.md) and the
+[example project](examples/effect-typegen).
+
+To test generated code against a real database, let `surrealkit test` prepare
+one: `surrealkit test --exec "<your test command>"` syncs the schema into a
+disposable database, hands the command its coordinates, a token scoped to that
+database and the schema digest, and removes the database afterwards (see
+[Running your own tests against the suite database](#running-your-own-tests-against-the-suite-database)).
+effect-surrealkit's own round-trip properties run that way.
+
 ## Vite Plugin
 
 [`vite-plugin-surrealkit`](packages/vite-plugin-surrealkit) runs `surrealkit sync`
@@ -574,6 +614,10 @@ export default defineConfig({
     ],
 });
 ```
+
+With `mode: 'generate'` it runs `surrealkit compile` instead, never `sync`: generated
+modules (for example the Effect schemas above) are rebuilt as you edit `.surql`
+files, without a database.
 
 Requires Vite 8. See the
 [plugin README](packages/vite-plugin-surrealkit/README.md) for all options.
