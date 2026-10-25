@@ -1003,7 +1003,50 @@ See [examples/rollout-testing](examples/rollout-testing).
 - `--base-url <url>`
 - `--timeout-ms <ms>`
 - `--keep-db`
-- `--schema-from <sync|rollouts|both>`
+- `--schema-from <sync|rollouts|both>` (wins over `schema_from` in a suite and in `[defaults]`)
+- `--exec <cmd>` (see below)
+- `--exec-root-token` (pass the server-wide root token to `--exec` too)
+
+### Running your own tests against the suite database
+
+`--exec <cmd>` runs a command against each suite's prepared database — set up,
+synced (or replayed) and seeded, after the suite's own cases — and before it is
+removed. Test code in any language can then run against exactly the schema
+SurrealKit prepared, with no credentials of its own:
+
+```bash
+surrealkit test --exec "npm run test:db"
+```
+
+The command is split on whitespace, with no quoting, so no argument can contain
+a space: put such a command in a script. It runs from the current directory, with
+the runner's stdin, stdout and stderr. On Windows the program is started
+directly, so an npm shim (`name.cmd`) must be named with its extension. It gets the
+parent environment without SurrealKit's credentials (`SURREALDB_USER` and
+`SURREALDB_PASSWORD`, and their `DATABASE_*` forms), and:
+
+| Variable | Value |
+| --- | --- |
+| `SURREALKIT_EXEC_ENDPOINT` | the server, as configured (`ws://127.0.0.1:8000`) |
+| `SURREALKIT_EXEC_NAMESPACE`, `SURREALKIT_EXEC_DATABASE` | the suite's disposable database |
+| `SURREALKIT_EXEC_TOKEN` | a token for `__surrealkit_exec`, a user SurrealKit defines as owner of that database only (valid for an hour) |
+| `SURREALKIT_EXEC_TOKEN_<ACTOR>` | an access token per actor of the suite (name upper-cased, other characters as `_`); the root actor's only with `--exec-root-token` |
+| `SURREALKIT_EXEC_ACTORS` | the names of those actors, comma-separated |
+| `SURREALKIT_EXEC_SCHEMA_DIGEST` | the `semanticDigest` of the database's [schema document v2](docs/typegen/schema-document-v2.md), equal to what `surrealkit compile` reports for the same files |
+| `SURREALKIT_EXEC_SUITE`, `SURREALKIT_EXEC_SCHEMA_FROM` | the suite name; `sync` or `rollouts` |
+| `SURREALKIT_EXEC_API_URL` | the suite's `/api/<ns>/<db>` base, when `--base-url` is set |
+
+The root actor's token (`SURREALKIT_EXEC_TOKEN_ROOT`) is valid for the whole
+server for its lifetime, not just the suite database, so it is passed only with
+`--exec-root-token`; prefer `SURREALKIT_EXEC_TOKEN`, especially against a shared
+server. The `__surrealkit_exec` user is defined after the schema digest is taken
+and goes away with the database.
+
+Its exit status is reported as one more case (`exec: <cmd>`). Without suite files,
+one implicit suite named `exec` runs it; a suite with no cases of its own still
+runs it. Teardown is unconditional: the database is removed (unless `--keep-db`)
+whether preparation, a case or the command failed, and Ctrl-C stops the command
+first, then removes the databases before exiting.
 
 ### Global Config
 
