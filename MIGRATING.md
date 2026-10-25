@@ -8,6 +8,7 @@ filesystem source set described below. Upgrading and running `surrealkit sync`
 on an existing project re-applies nothing and prunes nothing.
 
 Seven things do need attention, and 1.0.0-beta.6 adds five more (8 to 12).
+Unreleased changes are 13 to 15.
 Upgrading from 0.7.0 or any 1.0 beta carries existing state forward; CI checks
 that against every published release.
 
@@ -347,6 +348,42 @@ Library users matching on `FieldType` or `PrimitiveType` have new variants to
 handle, and `FieldType::Literal` has a `literal_type` field. Anything typegen
 still cannot represent is reported as a `Diagnostic`
 (`typegen::generate_with_diagnostics`), and `strict` fails on errors.
+
+### 15. Effect-native typegen (unreleased)
+
+Nothing to change. Relative to the parser fixes in entry 14 (and the behaviour
+changes in entry 13), every part is opt-in: with no new configuration,
+`schema.json` and the generated TypeScript interfaces are what entry 14 describes.
+
+What changes **without** opting in, across entries 13 and 14 and the tester
+section (everything else below is opt-in):
+
+- Unknown keys in `[typegen]` are an error, and `typegen` connects to the
+  selected (or only declared) target instead of the ambient connection (entry 13).
+- The formatter runs on a temporary sibling file, not the output file (entry 13).
+- v1 `schema.json` and the TypeScript interfaces change where the old parser was
+  wrong (entry 14), including a field whose VALUE, ASSERT or PERMISSIONS reads a
+  field named like a clause keyword (`type`, `value`, `comment`), which used to
+  be retyped; `FieldType` and `PrimitiveType` gain variants for library users.
+- `surrealkit test --schema-from` wins over a suite's `schema_from`, and a suite
+  whose preparation fails has its database removed (tester section).
+
+- `[typegen] schema_version = 2` writes [schema document v2](docs/typegen/schema-document-v2.md)
+  instead of the v1 JSON (the TypeScript interfaces do not change).
+- `surrealkit compile` builds that document from the schema files in an embedded,
+  network-free engine (it writes `[typegen] json` only with `schema_version = 2`,
+  since `sync` and `typegen` write that file too); `typegen --from <schema.json>`
+  works from a document on disk.
+- `[typegen.emit.<name>]` runs external emitters such as `effect-surrealkit`
+  ([protocol](docs/typegen/external-emitters.md)). A failing emitter fails every
+  `--check` and `compile`, even `compile --lenient`.
+- `[typegen] acknowledge = { "<code>" = "<reason>" }` lets an error diagnostic
+  through a strict run without turning strictness off; `[typegen] engine` names
+  the SurrealDB minor you deploy to, which `compile` compares with its embedded
+  engine.
+- `vite-plugin-surrealkit` gains `mode: 'generate'`, which compiles instead of syncing.
+- `surrealkit test --exec <cmd>` runs a command against each prepared suite database
+  (and `--schema-from` now wins over a suite's `schema_from`; see the tester section).
 
 ## Opting into multiple schema modules
 
