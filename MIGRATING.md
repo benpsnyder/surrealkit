@@ -474,6 +474,21 @@ Two behaviour changes:
   allowed to create. Test those creates with a `sql_expect` case that sets its
   own unique values.
 
+### `--schema-from` wins over the suite, and `--exec` (unreleased)
+
+- `surrealkit test --schema-from <source>` now overrides a suite's own
+  `schema_from`, as the documentation always said. Before, a suite that set
+  `schema_from` ignored the flag. If you relied on that, drop the flag for those
+  runs or select the suites with `--suite`.
+- A suite whose preparation fails (setup, sync, seed or fixtures) now has its
+  database removed like any other; before, it was left on the server.
+- New: `surrealkit test --exec <cmd>` runs a command against each prepared suite
+  database before teardown (see the README); it gets a token scoped to that
+  database, and the root token only with `--exec-root-token`. Library users
+  constructing `tester::TestOpts` with a struct literal add `exec: Vec::new()` and
+  `exec_root_token: false` (or use `..Default::default()`, which `TestOpts` now
+  implements).
+
 ## If you use the Rust library
 
 ### `Rollout` no longer writes to disk
