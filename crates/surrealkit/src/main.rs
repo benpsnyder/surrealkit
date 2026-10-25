@@ -195,6 +195,18 @@ enum Commands {
 		/// `both`, running every suite once on each.
 		#[arg(long, value_enum, value_name = "SOURCE")]
 		schema_from: Option<surrealkit::tester::SchemaSource>,
+		/// Run a command against each suite's prepared database, after its cases and before
+		/// the database is removed. The command is split on whitespace, with no quoting, so
+		/// no argument can contain a space (wrap such a command in a script). It gets the
+		/// endpoint, namespace, database, a token scoped to that database, the actor tokens
+		/// and the schema digest as `SURREALKIT_EXEC_*` variables; its exit status is a case.
+		/// Without suite files, one implicit suite `exec` runs.
+		#[arg(long, value_name = "CMD")]
+		exec: Option<String>,
+		/// Also pass the root actor's token to `--exec` as `SURREALKIT_EXEC_TOKEN_ROOT`. It is
+		/// valid for the whole server, not just the suite database.
+		#[arg(long, requires = "exec")]
+		exec_root_token: bool,
 	},
 	/// Introspect the database and generate a typed schema document (JSON).
 	///
@@ -1143,7 +1155,19 @@ async fn main() -> Result<()> {
 			timeout_ms,
 			keep_db,
 			schema_from,
+			exec,
+			exec_root_token,
 		} => {
+			let exec: Vec<String> = match exec {
+				Some(cmd) => {
+					let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+					if argv.is_empty() {
+						bail!("--exec needs a command");
+					}
+					argv
+				}
+				None => Vec::new(),
+			};
 			run_test(
 				env.as_ref(),
 				TestOpts {
@@ -1160,6 +1184,8 @@ async fn main() -> Result<()> {
 					timeout_ms,
 					keep_db,
 					schema_from,
+					exec,
+					exec_root_token,
 				},
 				template_vars,
 				&overrides,

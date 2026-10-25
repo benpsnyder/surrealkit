@@ -176,8 +176,10 @@ jobs:
             # A feature dropped from the step above compiles those checks out, and
             # the step still passes; a live test that finds no server returns
             # early and passes too. So list the tests that build, and fail unless
-            # the compile-versus-server check is among them and
-            # SURREALKIT_TEST_URL points at this job's server.
+            # the compile-versus-server checks are among them and
+            # SURREALKIT_TEST_URL points at this job's server. (Features are
+            # package-wide: with kv-mem built here, the exec test also compares
+            # its digest with `surrealkit compile`.)
             - name: The compile-versus-server checks are built and have a server
               shell: bash
               run: |
@@ -190,7 +192,8 @@ jobs:
                     --features cli,kv-mem \
                     --locked \
                     -- --list > /tmp/tests.txt
-                for t in a_hermetic_compile_equals_live_introspection; do
+                for t in a_hermetic_compile_equals_live_introspection \
+                    exec_runs_against_the_prepared_database_before_teardown; do
                     grep -q "$t: test" /tmp/tests.txt \
                         || { echo "::error::$t is not built"; exit 1; }
                 done
