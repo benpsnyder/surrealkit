@@ -262,6 +262,17 @@ fn every_generated_corpus_document_validates() {
 	}
 }
 
+#[test]
+fn legacy_access_documents_without_authenticate_round_trip_unchanged() {
+	let value = serde_json::to_value(fixture_document("3.3.0")).unwrap();
+	assert!(value["accesses"].as_array().unwrap().iter().all(|a| a.get("authenticate").is_none()));
+	let decoded: super::document::SchemaDocument = serde_json::from_value(value.clone()).unwrap();
+	assert!(decoded.accesses.iter().all(|a| a.authenticate.is_none()));
+	let encoded = serde_json::to_value(decoded).unwrap();
+	assert_eq!(encoded, value);
+	assert_eq!(super::canonical::semantic_digest(&encoded).unwrap(), value["semanticDigest"]);
+}
+
 /// The validator is not vacuous: each of these breaks the contract and must be caught.
 #[test]
 fn contract_violations_are_rejected() {
@@ -303,6 +314,11 @@ fn contract_violations_are_rejected() {
 			}),
 		),
 		("secret on an access", Box::new(|d| d["accesses"][0]["key"] = Value::from("[REDACTED]"))),
+		("null authenticate", Box::new(|d| d["accesses"][0]["authenticate"] = Value::Null)),
+		(
+			"non-string authenticate",
+			Box::new(|d| d["accesses"][0]["authenticate"] = Value::from(1)),
+		),
 		(
 			"unknown adapter",
 			Box::new(|d| d["provenance"]["adapter"] = Value::from("structure-9.9")),

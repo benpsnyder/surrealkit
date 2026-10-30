@@ -456,7 +456,7 @@ are descriptive metadata, not typed application contracts.
 | Collection | Entry | Notes |
 | --- | --- | --- |
 | `params` | `{ name, value, permissions, comment? }` | `name` without `$`. The engine evaluates `VALUE` **once, at definition time**, and stores the result (`math::max([1, 2, 3])` reads back as `3`). A non-deterministic expression such as `time::now()` puts a timestamp into the document and makes the digest unstable; authored params SHOULD be literals, and `surrealkit compile` reports such a param as the error `param-value-nondeterministic`. |
-| `accesses` | `{ name, method, signup?, signin?, refresh?, verify?, subject?, durations, comment? }` | `method` is `record`, `jwt` or `bearer`. `signup`, `signin` and `refresh` (always present, `false` without `WITH REFRESH`) belong to `record`. `verify` is `{ alg }` or `{ url }`, for `record` and `jwt` only: a bearer access signs with an engine-internal key that plain `INFO` does not show either. `subject` (`record`/`user`) for bearer. Keys and issuer material are dropped, never copied as `[REDACTED]`. Durations are the engine's normalised strings (`30d` → `4w2d`); null durations are omitted. `AUTHENTICATE`, and on SurrealDB 3.3 `CONTEXT` and a JWT `AUDIENCE`, are not modelled: both readers report the warning `definition-unsupported` for each. Accesses and users defined `ON NAMESPACE` or `ON ROOT` are outside the database and not part of the document; `compile` reports each one it finds in its engine as `definition-unsupported`. |
+| `accesses` | `{ name, method, signup?, signin?, authenticate?, refresh?, verify?, subject?, durations, comment? }` | `method` is `record`, `jwt` or `bearer`. `signup`, `signin` and `refresh` (always present, `false` without `WITH REFRESH`) belong to `record`. `authenticate` is the engine-rendered `AUTHENTICATE` expression, for any access method that declares one; omission means no expression was captured. `verify` is `{ alg }` or `{ url }`, for `record` and `jwt` only: a bearer access signs with an engine-internal key that plain `INFO` does not show either. `subject` (`record`/`user`) for bearer. Keys and issuer material are dropped, never copied as `[REDACTED]`. Durations are the engine's normalised strings (`30d` → `4w2d`); null durations are omitted. On SurrealDB 3.3 `CONTEXT` and a JWT `AUDIENCE` are not modelled: both readers report the warning `definition-unsupported` for each. Accesses and users defined `ON NAMESPACE` or `ON ROOT` are outside the database and not part of the document; `compile` reports each one it finds in its engine as `definition-unsupported`. |
 | `analyzers` | `{ name, function?, tokenizers, filters, comment? }` | `function` gets its `fn::` prefix back. Filter and tokenizer order is kept (it is a pipeline). |
 | `sequences` | `{ name, batch, start, timeout? }` | Strings, as the engine reports them. Allocation state (3.3's `resume`) is never copied. |
 | `buckets` | `{ name, backend, readonly, permissions, comment? }` | Requires the experimental `files` capability. Generators MUST NOT embed `backend` in browser output. |
@@ -498,6 +498,15 @@ Everything left is semantic: identical schemas compiled from different checkouts
 or operating systems produce the same digest, while any change to a kind, clause,
 expression, permission or comment changes it. Generator improvements to recognition or
 diagnostics do not move it.
+
+An access's optional `authenticate` expression is included in this projection:
+`AUTHENTICATE (RETURN $auth)` and `AUTHENTICATE (RETURN NONE)` have different
+digests. This property is an additive v2 extension. Readers accept older v2
+documents without it and do not insert a default, preserving those documents'
+bytes and digests. Such a document does not establish authentication-policy
+parity; regenerate it from its authored schema or catalog before using its
+digest to compare that policy. Digest comparison does not replace exact source
+or access-catalog comparison for clauses the document does not carry.
 
 Values that never enter the document at all, so they cannot disturb the digest: timestamps,
 physical namespace and database names, internal table ids, sequence allocation state,
@@ -566,7 +575,7 @@ Both adapters read the same STRUCTURE shape; differences found by applying the c
 
 | Area | 3.2.4 | 3.3.0 | Adapter rule |
 | --- | --- | --- | --- |
-| Event `then` items and access `signin`/`signup` that are statements | `CREATE audit_log SET …` | `(CREATE audit_log SET …)` | `structure-3.3` removes one enclosing pair of parentheses when the inner text starts with a statement keyword (`CREATE`, `UPDATE`, `UPSERT`, `DELETE`, `SELECT`, `INSERT`, `RELATE`). Canonical form is unparenthesised. Blocks `{ … }` and other expressions are untouched. |
+| Event `then` items and access `signin`/`signup`/`authenticate` that are statements | `CREATE audit_log SET …` | `(CREATE audit_log SET …)` | `structure-3.3` removes one enclosing pair of parentheses when the inner text starts with a statement keyword (`CREATE`, `UPDATE`, `UPSERT`, `DELETE`, `SELECT`, `INSERT`, `RELATE`). Canonical form is unparenthesised. Blocks `{ … }` and other expressions are untouched. |
 | `LIGHTWEIGHT` relations | parse error | supported; reported `enforced: true` | `lightweight: false` on 3.2. |
 | `INLINE` relation fields | parse error | `inline: true` | `inline: false` on 3.2. |
 | `DEFINE MODULE` | `AS f"…"` | `FROM f"…" UNSIGNED` (the 3.2 form is a parse error) | Same entry; `unsigned` not carried. |

@@ -11,7 +11,7 @@
 //! differ only where the engines do (section 15): 3.3 adds `lightweight`, `inline`, a module's
 //! `unsigned`, a sequence's `resume`, a user's `scram`, an access's `context` and a JWT's
 //! `audience` (both reported as `definition-unsupported`), and parenthesises statements in
-//! event `THEN` lists and access `SIGNUP`/`SIGNIN`, which `structure-3.3` removes.
+//! event `THEN` lists and access `SIGNUP`/`SIGNIN`/`AUTHENTICATE`, which `structure-3.3` removes.
 //!
 //! Plain `INFO` text, when the caller has it, is attached to tables and fields as `define`
 //! evidence. It is never the source of a semantic value.
@@ -755,11 +755,9 @@ fn read_access(r: &mut Reader, value: &Value) -> Option<Access> {
 		None,
 	)?;
 	let name = map.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
-	// Known, and not modelled: the same warnings the plain-INFO reader gives.
-	for (key, clause) in [("authenticate", "AUTHENTICATE"), ("context", "CONTEXT")] {
-		if map.contains_key(key) {
-			unsupported_access_clause(r, &name, clause);
-		}
+	// Known, and not modelled: the same warning the plain-INFO reader gives.
+	if map.contains_key("context") {
+		unsupported_access_clause(r, &name, "CONTEXT");
 	}
 	let kind = map.get("kind").and_then(|k| {
 		r.object(
@@ -775,6 +773,7 @@ fn read_access(r: &mut Reader, value: &Value) -> Option<Access> {
 		method: AccessMethod::Jwt,
 		signup: None,
 		signin: None,
+		authenticate: r.string(map, "authenticate", "access", None).map(|s| r.statement(s)),
 		refresh: None,
 		verify: None,
 		subject: None,
@@ -991,10 +990,9 @@ mod tests {
 		assert_eq!(sources, vec!["table.surprise", "table.kind.lightweight"]);
 	}
 
-	/// What 3.2.4 and 3.3.0 return for `DEFINE ACCESS … AUTHENTICATE`: a key both adapters
-	/// know, and a warning (as the plain-INFO reader gives), never an error.
+	/// Both adapters preserve the engine-rendered authentication expression.
 	#[test]
-	fn access_authenticate_is_known_and_unsupported() {
+	fn access_authenticate_is_preserved() {
 		let db = serde_json::json!({
 			"accesses": [{
 				"authenticate": "{ RETURN $auth }",
@@ -1010,16 +1008,14 @@ mod tests {
 			tables_info: &[],
 		};
 		for adapter in [Adapter::Structure32, Adapter::Structure33] {
-			let diagnostics = read(adapter, &input).diagnostics;
-			assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-			assert_eq!(diagnostics[0].code, codes::DEFINITION_UNSUPPORTED);
-			assert_eq!(diagnostics[0].severity, Severity::Warning);
-			assert_eq!(diagnostics[0].source, "access acc");
+			let raw = read(adapter, &input);
+			assert!(raw.diagnostics.is_empty(), "{:?}", raw.diagnostics);
+			assert_eq!(raw.accesses[0].authenticate.as_deref(), Some("{ RETURN $auth }"));
 		}
 	}
 
 	/// What 3.3.0 returns for `CONTEXT` and a JWT `AUDIENCE`: keys the 3.3 adapter knows and
-	/// reports as warnings, like `authenticate`. 3.2 has neither clause.
+	/// reports as warnings. 3.2 has neither clause.
 	#[test]
 	fn access_context_and_audience_are_known_on_3_3_and_unsupported() {
 		let db = serde_json::json!({

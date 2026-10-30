@@ -419,6 +419,7 @@ export const SchemaDocument = Schema.Struct({
 			method: Schema.Literals(['record', 'jwt', 'bearer']),
 			signup: Schema.optionalKey(Expr),
 			signin: Schema.optionalKey(Expr),
+			authenticate: Schema.optionalKey(Expr),
 			refresh: Schema.optionalKey(Schema.Boolean),
 			verify: Schema.optionalKey(Schema.Union([verify, verifyUrl])),
 			subject: Schema.optionalKey(Schema.Literals(['record', 'user'])),

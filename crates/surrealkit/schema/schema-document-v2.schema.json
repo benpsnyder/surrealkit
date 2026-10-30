@@ -646,6 +646,7 @@
 				"method": { "enum": ["record", "jwt", "bearer"] },
 				"signup": { "$ref": "#/$defs/expr" },
 				"signin": { "$ref": "#/$defs/expr" },
+				"authenticate": { "$ref": "#/$defs/expr" },
 				"refresh": { "type": "boolean" },
 				"verify": {
 					"oneOf": [

@@ -70,6 +70,67 @@ describe('input documents', () => {
 	}
 });
 
+describe('access authentication policy', () => {
+	const withAuthenticate = (authenticate: unknown) => {
+		const document = readJson(examplePath);
+		return {
+			...document,
+			accesses: [
+				{
+					name: 'sample',
+					method: 'record',
+					signin: 'RETURN principal:one',
+					authenticate,
+					durations: { token: '15m', session: '1h' },
+				},
+			],
+		};
+	};
+
+	it('accepts AUTHENTICATE and carries its distinction into the generated manifest', async () => {
+		const digests: string[] = [];
+		for (const expression of ['RETURN $auth', 'RETURN NONE']) {
+			const input = withAuthenticate(expression);
+			const document = {
+				...input,
+				semanticDigest: semanticDigest(input, sha256),
+			};
+			const decoded = await run(decodeDocument(document));
+			expect(decoded.accesses[0]?.authenticate).toBe(expression);
+			const generated = await run(
+				generate(document, { ...corpusOptions }, { sha256 }),
+			);
+			expect(
+				generated.files.find((file) => file.path === 'manifest.ts')
+					?.content,
+			).toContain(document.semanticDigest);
+			digests.push(document.semanticDigest);
+		}
+		expect(digests[0]).not.toBe(digests[1]);
+	});
+
+	it('keeps legacy absent-field documents and their digests unchanged', async () => {
+		const document = readJson(examplePath);
+		const decoded = await run(decodeDocument(document));
+		expect(
+			decoded.accesses.every(
+				(access) => access.authenticate === undefined,
+			),
+		).toBe(true);
+		expect(decoded).toEqual(document);
+		expect(semanticDigest(decoded, sha256)).toBe(document.semanticDigest);
+	});
+
+	it.each([
+		null,
+		1,
+		true,
+	])('rejects a malformed authenticate value: %s', async (value) => {
+		const error = await failure(decodeDocument(withAuthenticate(value)));
+		expect(error.message).toContain('authenticate');
+	});
+});
+
 describe('golden generated output', () => {
 	for (const golden of goldens) {
 		it(`${golden.name} matches test/golden/${golden.name}`, async () => {

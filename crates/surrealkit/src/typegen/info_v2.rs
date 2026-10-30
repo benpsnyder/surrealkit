@@ -9,7 +9,7 @@
 //!
 //! The engine renders every definition in a fixed clause order, which is what makes this
 //! tractable without a SurrealQL parser. Plain `INFO` parenthesises statements in event `THEN`
-//! lists and access `SIGNUP`/`SIGNIN` on every version; they are normalised away as in
+//! lists and access `SIGNUP`/`SIGNIN`/`AUTHENTICATE` on every version; they are normalised away as in
 //! `structure-3.3`. A bearer access's JWT settings are not shown by `INFO`, and are not carried
 //! by either reader.
 
@@ -693,7 +693,7 @@ fn access(define: &str, diagnostics: &mut Vec<Diagnostic>) -> Access {
 		_ => AccessMethod::Jwt,
 	};
 	// Known clauses the document does not carry; the STRUCTURE adapters give the same warnings.
-	for unsupported in ["AUTHENTICATE", "CONTEXT", "AUDIENCE"] {
+	for unsupported in ["CONTEXT", "AUDIENCE"] {
 		if has(&cs, unsupported) {
 			diagnostics.push(Diagnostic::new(
 				Severity::Warning,
@@ -722,6 +722,7 @@ fn access(define: &str, diagnostics: &mut Vec<Diagnostic>) -> Access {
 			.then(|| clause(&cs, "SIGNIN").map(strip_statement_parens))
 			.flatten(),
 		refresh: (method == AccessMethod::Record).then(|| has(&cs, "WITH REFRESH")),
+		authenticate: clause(&cs, "AUTHENTICATE").map(strip_statement_parens),
 		verify: if method == AccessMethod::Bearer {
 			None
 		} else {
@@ -1014,6 +1015,7 @@ mod tests {
 			}))
 		);
 		assert_eq!(members.refresh, Some(true));
+		assert_eq!(members.authenticate.as_deref(), Some("{ RETURN $auth }"));
 		assert_eq!(members.durations.grant.as_deref(), Some("4w2d"));
 		assert!(
 			diagnostics
@@ -1023,7 +1025,6 @@ mod tests {
 		assert_eq!(
 			reasons(&diagnostics),
 			vec![
-				"AUTHENTICATE is not carried by schema document v2",
 				"CONTEXT is not carried by schema document v2",
 				"AUDIENCE is not carried by schema document v2",
 			]

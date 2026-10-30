@@ -1,6 +1,7 @@
 -- Access definitions on SurrealDB 3.3: every key INFO … STRUCTURE reports for an access.
--- `audience`, `context` and `authenticate` are known keys that schema document v2 does not
--- carry: both readers report them as `definition-unsupported` warnings, never errors.
+-- `audience` and `context` are known keys that schema document v2 does not carry:
+-- both readers report them as `definition-unsupported` warnings, never errors.
+-- `authenticate` is preserved as an expression by both readers.
 -- Key material is a fixture value; neither reader may carry it.
 
 DEFINE TABLE account SCHEMAFULL;

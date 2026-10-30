@@ -85,6 +85,11 @@ not touched, and generated files no longer produced are removed (files without
 the generated header are never touched). `--check` writes nothing and exits 1
 when the directory is missing, edited, out of date or has stale files.
 
+Access definitions may include an `authenticate` expression. It contributes to
+the document digest and generated manifest, while older v2 documents without
+the property remain accepted with their original digest. Regenerate older
+documents to capture any `AUTHENTICATE` policy declared in their schema.
+
 ### What is generated
 
 ```text

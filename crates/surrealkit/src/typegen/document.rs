@@ -630,6 +630,9 @@ pub struct Access {
 	pub signup: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub signin: Option<String>,
+	/// The engine-rendered authentication expression, when the access declares one.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub authenticate: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub refresh: Option<bool>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]

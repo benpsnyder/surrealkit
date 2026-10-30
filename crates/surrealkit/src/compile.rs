@@ -917,7 +917,7 @@ mod corpus {
 		compile(&[module], &opts).await.expect("with the files capability");
 	}
 
-	/// Access clauses the document does not carry (AUDIENCE, AUTHENTICATE, CONTEXT) compile
+	/// Access clauses the document does not carry (AUDIENCE, CONTEXT) compile
 	/// with warnings, never errors, so a strict compile succeeds; on a 3.3 server the compiled
 	/// and live documents agree.
 	#[tokio::test]
@@ -940,7 +940,7 @@ mod corpus {
 			.iter()
 			.filter(|d| d.code == codes::DEFINITION_UNSUPPORTED && d.source.starts_with("access "))
 			.count();
-		assert_eq!(unsupported, 6, "{:?}", document.diagnostics);
+		assert_eq!(unsupported, 4, "{:?}", document.diagnostics);
 		if !crate::test_db::is_remote() {
 			return;
 		}

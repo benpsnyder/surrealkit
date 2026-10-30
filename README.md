@@ -452,6 +452,11 @@ no timestamp; `semanticDigest` is a SHA-256 over its semantic content, so the
 same schema gives the same digest on every machine, and `provenance` records the
 engine and adapter that read it.
 
+Database access definitions carry their optional `AUTHENTICATE` expression, so
+changing that policy changes the semantic digest. Older v2 documents without
+the property still decode with their existing digest; regenerate them to
+include any authentication expressions their schema declares.
+
 The document is read through `INFO … STRUCTURE`, by an adapter for each
 supported engine minor (SurrealDB 3.2.x and 3.3.x). Any other minor is read from
 plain `INFO` instead, with the error diagnostic `structure-unsupported-engine`,

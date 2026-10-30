@@ -333,7 +333,7 @@ async fn typegen_v2_writes_the_v2_document_and_unchanged_typescript() {
 
 /// `semantics/access.v3.3.surql` on a live 3.3 engine: every key STRUCTURE reports for an
 /// access is known, and the STRUCTURE and plain-`INFO` readers give the same document and the
-/// same warnings for the clauses the document does not carry (AUDIENCE, AUTHENTICATE, CONTEXT).
+/// same warnings for the clauses the document does not carry (AUDIENCE, CONTEXT).
 #[tokio::test]
 async fn access_definitions_read_alike_through_both_readers_on_3_3() {
 	let db = crate::test_db::fresh("typegen_access").await;
@@ -360,8 +360,12 @@ async fn access_definitions_read_alike_through_both_readers_on_3_3() {
 	assert_eq!(from_info, from_structure);
 	let unsupported =
 		from_structure.iter().filter(|l| *l == "warning definition-unsupported -").count();
-	// issuer_jwt: AUDIENCE, AUTHENTICATE; remote_audience: AUDIENCE; members: all three.
-	assert_eq!(unsupported, 6, "{from_structure:?}");
+	// issuer_jwt: AUDIENCE; remote_audience: AUDIENCE; members: AUDIENCE, CONTEXT.
+	assert_eq!(unsupported, 4, "{from_structure:?}");
+	for name in ["issuer_jwt", "members"] {
+		let access = structured.accesses.iter().find(|a| a.name == name).expect("access");
+		assert_eq!(access.authenticate.as_deref(), Some("{ RETURN $auth }"));
+	}
 	let remote = structured.accesses.iter().find(|a| a.name == "remote_audience").expect("access");
 	assert_eq!(
 		serde_json::to_value(&remote.verify).expect("json")["url"],
@@ -455,4 +459,63 @@ async fn a_live_engine_agrees_with_its_snapshot_v2() {
 	let snapshot = fixture_document(&exact);
 	assert_eq!(semantic(&doc), semantic(&snapshot), "live {exact} differs from its snapshot");
 	assert_eq!(doc.semantic_digest, snapshot.semantic_digest);
+}
+
+/// Authentication policy is semantic content, including when it is a RETURN statement.
+/// A released server must agree with the hermetic compiler through both INFO readers.
+#[tokio::test]
+async fn access_authenticate_changes_the_semantic_digest() {
+	use super::introspect_v2::capture;
+	use crate::compile::{CompileModule, CompileOpts, compile};
+	use crate::schema_state::SchemaFile;
+	let mut digests = Vec::new();
+	for expression in ["RETURN $auth", "RETURN NONE", "{ RETURN $auth }", "SELECT * FROM principal"]
+	{
+		let sql = format!(
+			"DEFINE TABLE principal SCHEMAFULL; \
+			 DEFINE ACCESS sample ON DATABASE TYPE RECORD SIGNIN (RETURN principal:one) \
+			 WITH JWT ALGORITHM HS512 KEY 'synthetic-compile-only-key-never-used' \
+			 AUTHENTICATE ({expression}) DURATION FOR TOKEN 15m, FOR SESSION 1h;"
+		);
+		let module = CompileModule {
+			name: "access".into(),
+			files: vec![SchemaFile {
+				path: "schema/access.surql".into(),
+				hash: crate::core::sha256_hex(sql.as_bytes()),
+				sql,
+			}],
+		};
+		let document = compile(std::slice::from_ref(&module), &CompileOpts::default())
+			.await
+			.expect("compile")
+			.document;
+		assert!(document.diagnostics.is_empty(), "{:?}", document.diagnostics);
+		assert_eq!(document.accesses[0].authenticate.as_deref(), Some(expression));
+		crate::typegen::json_schema_tests::assert_valid(
+			"compiled authentication policy",
+			&serde_json::to_value(&document).unwrap(),
+		);
+		let repeated = compile(std::slice::from_ref(&module), &CompileOpts::default())
+			.await
+			.expect("repeat compile")
+			.document;
+		assert_eq!(
+			serde_json::to_value(&document).unwrap(),
+			serde_json::to_value(repeated).unwrap()
+		);
+		if crate::test_db::is_remote() {
+			let db = crate::test_db::fresh("compile_authenticate_vs_live").await;
+			db.query(module.files[0].sql.as_str()).await.and_then(|r| r.check()).expect("apply");
+			let snapshot = capture(&db).await.expect("capture");
+			let live = super::introspect_v2::introspect(&db, super::document::EngineMode::Remote)
+				.await
+				.expect("structure");
+			let fallback =
+				crate::typegen::introspect_v2::assemble_from_info(&snapshot).expect("plain INFO");
+			assert_eq!(document.semantic_digest, live.semantic_digest);
+			assert_eq!(document.semantic_digest, fallback.semantic_digest);
+		}
+		digests.push(document.semantic_digest);
+	}
+	assert_ne!(digests[0], digests[1]);
 }
