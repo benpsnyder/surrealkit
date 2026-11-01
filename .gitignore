@@ -11,3 +11,6 @@ node_modules
 # `run_setup` scaffolds `<folder>/setup.surql` into the process cwd. A stray one
 # under crates/ is the leak that tests/library_api.rs guards against, not an asset.
 crates/*/database/
+
+# effect-surrealkit ships its build so it installs with lifecycle scripts disabled.
+!packages/effect-surrealkit/dist/
