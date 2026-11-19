@@ -3169,6 +3169,7 @@ var analyzeUses = (tokens, free) => {
               kind: "field",
               table,
               field,
+              role: inWhere ? "compare" : "assign",
               line: tokens[op.next].line
             });
           continue;
@@ -3182,6 +3183,7 @@ var analyzeUses = (tokens, free) => {
               kind: "field",
               table,
               field: other,
+              role: "compare",
               line: token.line
             });
         }
@@ -3645,7 +3647,7 @@ var lines = (throwsAt) => {
   const entries = Object.entries(throwsAt);
   return entries.length === 0 ? "{}" : `{ ${entries.map(([message, at]) => `${JSON.stringify(message)}: [${at.join(", ")}]`).join(", ")} }`;
 };
-var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function: ${JSON.stringify(use.function)}, index: ${use.index}, line: ${use.line} }` : use.kind === "key" ? `{ kind: "key", table: ${JSON.stringify(use.table)}, line: ${use.line} }` : `{ kind: "field", table: ${JSON.stringify(use.table)}, field: ${JSON.stringify(use.field)}, line: ${use.line} }`;
+var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function: ${JSON.stringify(use.function)}, index: ${use.index}, line: ${use.line} }` : use.kind === "key" ? `{ kind: "key", table: ${JSON.stringify(use.table)}, line: ${use.line} }` : `{ kind: "field", table: ${JSON.stringify(use.table)}, field: ${JSON.stringify(use.field)}, ${use.role === void 0 ? "" : `role: ${JSON.stringify(use.role)}, `}line: ${use.line} }`;
 var usesField = (uses) => `{ ${Object.entries(uses).map(
   ([name, list3]) => `${JSON.stringify(name)}: [${list3.map(useEntry).join(", ")}]`
 ).join(", ")} }`;
@@ -3676,7 +3678,7 @@ var resolve = (use, detail) => {
     return { kind: "kind", text: `record<${use.table}>` };
   return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
     kind: "problem",
-    message: `compares \`${use.field}\` of \`${use.table}\`, which declares no such field`
+    message: `${use.role === "assign" ? "assigns" : "compares"} \`${use.field}\` of \`${use.table}\`, which declares no such field`
   };
 };
 var checkUses = (uses, detail) => {

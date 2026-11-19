@@ -1,11 +1,11 @@
-import { B as BindingUses } from './uses-Dlr8c45N.js';
-export { a as BindingUse } from './uses-Dlr8c45N.js';
-import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as Comparable, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-k1EY0-n5.js';
-export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-k1EY0-n5.js';
+import { B as BindingUses } from './uses-BXJXI3if.js';
+export { a as BindingUse } from './uses-BXJXI3if.js';
+import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as Comparable, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-DzANUzBu.js';
+export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-DzANUzBu.js';
 import { Schema } from 'effect';
 import { N as NoneAsAbsent, c as DateTime$1, e as Duration } from './temporal-s2ISz75j.js';
-import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-DYSFV0D8.js';
-export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-DYSFV0D8.js';
+import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-CkM3Zd8F.js';
+export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-CkM3Zd8F.js';
 import { RecordId, Decimal, DateTime } from 'surrealdb';
 import { a as Float, I as Int64, D as Decimal$1, o as Int, S as SurrealNumber, v as SurrealString, A as Uuid, y as SurrealValue } from './value-Zktp5N5S.js';
 
@@ -1238,7 +1238,9 @@ type UseText<U> = U extends {
     readonly kind: 'field';
     readonly table: infer T extends string;
     readonly field: infer F extends string;
-} ? `is compared with \`${T}.${F}\`` : U extends {
+} ? U extends {
+    readonly role: 'assign';
+} ? `is assigned to \`${T}.${F}\`` : `is compared with \`${T}.${F}\`` : U extends {
     readonly kind: 'argument';
     readonly function: infer F extends string;
     readonly index: infer I extends number;
@@ -1252,14 +1254,19 @@ type UseText<U> = U extends {
  * two operands. `never` when every entry fits.
  */
 type Misfits<E, C> = E extends BindEntry ? C extends Codec ? Comparable<KindStored<E['kind']>, C['Encoded'], true> extends true ? never : `binding \`${E['name']}\` ${UseText<E['use']>} (${E['kind']}), which its codec cannot hold` : never : never;
-/** `P`, with each codec its binding's kind cannot be stored as replaced by a message. */
-type Fitted<P, E extends BindEntry> = {
-    readonly [K in keyof P]: K extends E['name'] ? [Misfits<Extract<E, {
+/** The message of each binding in `P` whose codec cannot hold its kind. */
+type MisfitsIn<P, E extends BindEntry> = {
+    readonly [K in keyof P]: K extends E['name'] ? Misfits<Extract<E, {
         readonly name: K;
-    }>, P[K]>] extends [never] ? P[K] : Misfits<Extract<E, {
-        readonly name: K;
-    }>, P[K]> : P[K];
-};
+    }>, P[K]> : never;
+}[keyof P];
+/** One member of a union, so a message names one binding. */
+type OneOf<U> = ((U extends unknown ? (member: () => U) => void : never) extends (member: infer I) => void ? I : never) extends () => infer M ? M & string : never;
+/**
+ * `P`, when each codec can hold its binding's kind. Otherwise the message
+ * for one binding whose codec cannot, so the compiler's first line names it.
+ */
+type Fitted<P, E extends BindEntry> = [MisfitsIn<P, E>] extends [never] ? P : OneOf<MisfitsIn<P, E>>;
 /** The messages any part of a sequence can `THROW`. */
 type ThrownBy<Parts extends ReadonlyArray<Part>> = Parts[number]['throws'][number];
 /**
@@ -1281,7 +1288,7 @@ type Exactly<Names extends string, P> = [
  */
 type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [Extract<Parts[number], {
     readonly binds: object;
-}>] extends [never] ? Exactly<Unbound<Parts>, P> : Exactly<Unbound<Parts>, Fitted<P, BindsOf<Parts>>>;
+}>] extends [never] ? Exactly<Unbound<Parts>, P> : [Exactly<Unbound<Parts>, P>] extends [P] ? Fitted<P, BindsOf<Parts>> : Exactly<Unbound<Parts>, P>;
 /**
  * Authored SurrealQL texts run one after another in a single request, sharing
  * one variable scope, as a statement.

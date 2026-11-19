@@ -6,7 +6,7 @@ import {
   analyzeTargets,
   holeDelimiters,
   lex
-} from "./chunk-QYJJODSM.js";
+} from "./chunk-DGHDFJTS.js";
 import "./chunk-PZ5AY32C.js";
 
 // src/analyze/pin.ts
@@ -109,7 +109,7 @@ var lines = (throwsAt) => {
   const entries = Object.entries(throwsAt);
   return entries.length === 0 ? "{}" : `{ ${entries.map(([message, at]) => `${JSON.stringify(message)}: [${at.join(", ")}]`).join(", ")} }`;
 };
-var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function: ${JSON.stringify(use.function)}, index: ${use.index}, line: ${use.line} }` : use.kind === "key" ? `{ kind: "key", table: ${JSON.stringify(use.table)}, line: ${use.line} }` : `{ kind: "field", table: ${JSON.stringify(use.table)}, field: ${JSON.stringify(use.field)}, line: ${use.line} }`;
+var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function: ${JSON.stringify(use.function)}, index: ${use.index}, line: ${use.line} }` : use.kind === "key" ? `{ kind: "key", table: ${JSON.stringify(use.table)}, line: ${use.line} }` : `{ kind: "field", table: ${JSON.stringify(use.table)}, field: ${JSON.stringify(use.field)}, ${use.role === void 0 ? "" : `role: ${JSON.stringify(use.role)}, `}line: ${use.line} }`;
 var usesField = (uses) => `{ ${Object.entries(uses).map(
   ([name, list2]) => `${JSON.stringify(name)}: [${list2.map(useEntry).join(", ")}]`
 ).join(", ")} }`;
@@ -140,7 +140,7 @@ var resolve = (use, detail) => {
     return { kind: "kind", text: `record<${use.table}>` };
   return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
     kind: "problem",
-    message: `compares \`${use.field}\` of \`${use.table}\`, which declares no such field`
+    message: `${use.role === "assign" ? "assigns" : "compares"} \`${use.field}\` of \`${use.table}\`, which declares no such field`
   };
 };
 var checkUses = (uses, detail) => {

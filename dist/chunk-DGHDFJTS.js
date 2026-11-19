@@ -949,6 +949,7 @@ var analyzeUses = (tokens, free) => {
               kind: "field",
               table,
               field,
+              role: inWhere ? "compare" : "assign",
               line: tokens[op.next].line
             });
           continue;
@@ -962,6 +963,7 @@ var analyzeUses = (tokens, free) => {
               kind: "field",
               table,
               field: other,
+              role: "compare",
               line: token.line
             });
         }
@@ -1413,4 +1415,4 @@ export {
   analyzeSync,
   analyze
 };
-//# sourceMappingURL=chunk-QYJJODSM.js.map
+//# sourceMappingURL=chunk-DGHDFJTS.js.map

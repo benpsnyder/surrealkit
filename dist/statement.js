@@ -11,7 +11,7 @@ import {
 } from "./chunk-F4HWMI2D.js";
 import {
   analyzeSync
-} from "./chunk-QYJJODSM.js";
+} from "./chunk-DGHDFJTS.js";
 import {
   TraversalTypeId,
   andAll,
@@ -833,8 +833,8 @@ var listDifferences = (field, declared, derived, verb) => {
     );
   return out;
 };
-var useText = (use) => use.kind === "argument" ? `argument ${use.index} of \`${use.function}\` on line ${use.line}` : use.kind === "key" ? `key of \`${use.table}\` on line ${use.line}` : `field \`${use.table}.${use.field}\` on line ${use.line}`;
-var useKey = (use) => use.kind === "argument" ? `a\0${use.function}\0${use.index}\0${use.line}` : use.kind === "key" ? `k\0${use.table}\0${use.line}` : `f\0${use.table}\0${use.field}\0${use.line}`;
+var useText = (use) => use.kind === "argument" ? `argument ${use.index} of \`${use.function}\` on line ${use.line}` : use.kind === "key" ? `key of \`${use.table}\` on line ${use.line}` : `field \`${use.table}.${use.field}\`${use.role === "assign" ? " (assigned)" : ""} on line ${use.line}`;
+var useKey = (use, role = true) => use.kind === "argument" ? `a\0${use.function}\0${use.index}\0${use.line}` : use.kind === "key" ? `k\0${use.table}\0${use.line}` : `f\0${use.table}\0${use.field}\0${use.line}${role && use.role !== void 0 ? `\0${use.role}` : ""}`;
 var usesDifferences = (declared, derived) => {
   if (declared === void 0) return [];
   const out = [];
@@ -844,9 +844,13 @@ var usesDifferences = (declared, derived) => {
   for (const name of names2) {
     const mine = declared[name] ?? [];
     const theirs = derived[name] ?? [];
-    const own = new Set(mine.map(useKey));
-    const found = new Set(theirs.map(useKey));
-    const missing = theirs.filter((use) => !own.has(useKey(use)));
+    const own = new Set(mine.map((use) => useKey(use)));
+    const found = new Set(
+      theirs.flatMap((use) => [useKey(use), useKey(use, false)])
+    );
+    const missing = theirs.filter(
+      (use) => !own.has(useKey(use)) && !own.has(useKey(use, false))
+    );
     const extra = mine.filter((use) => !found.has(useKey(use)));
     if (missing.length > 0)
       out.push(

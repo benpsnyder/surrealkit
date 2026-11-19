@@ -1,5 +1,5 @@
 import { Schema } from 'effect';
-import { B as BindingUses } from './uses-Dlr8c45N.js';
+import { B as BindingUses } from './uses-BXJXI3if.js';
 
 /**
  * A statement: one request to SurrealDB, described as a value.

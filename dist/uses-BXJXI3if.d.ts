@@ -20,6 +20,11 @@ type BindingUse = {
     readonly kind: 'field';
     readonly table: string;
     readonly field: string;
+    /**
+     * A `WHERE` comparison or a `SET` assignment; the analyzer always
+     * says which, and a declared use may leave it out.
+     */
+    readonly role?: 'compare' | 'assign';
     readonly line: number;
 };
 /** The uses of each binding, keyed by name without `$`. */
