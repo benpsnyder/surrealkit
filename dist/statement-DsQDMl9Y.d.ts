@@ -84,6 +84,11 @@ declare const StatementTypeId = "~effect-surrealkit/Statement";
  *   messages and tracing.
  * - `throwSites`: for a `THROW` message, the source and lines of the
  *   first part that declares it with both.
+ * - `tables`, `functions` and `openTargets`: the static tables the text
+ *   reads and writes, the custom functions it calls, and whether some
+ *   target is not a static name, so the lists may be incomplete.
+ *   `sequence` sets them, the union over its parts; builders leave them
+ *   out; `make` takes them as declared.
  */
 interface Statement<P extends Params = Params, R extends Codec = Codec, Throws extends string = never> {
     readonly [StatementTypeId]: typeof StatementTypeId;
@@ -100,6 +105,12 @@ interface Statement<P extends Params = Params, R extends Codec = Codec, Throws e
     readonly nonEmpty?: boolean;
     readonly sources?: ReadonlyArray<string>;
     readonly throwSites?: Readonly<Record<string, ThrowSite>>;
+    readonly tables?: {
+        readonly read: ReadonlyArray<string>;
+        readonly written: ReadonlyArray<string>;
+    };
+    readonly functions?: ReadonlyArray<string>;
+    readonly openTargets?: boolean;
 }
 /** Where a declared `THROW` message comes from. */
 interface ThrowSite {
@@ -148,6 +159,15 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     readonly sources?: ReadonlyArray<string>;
     /** The source and lines of each declared `THROW` message. */
     readonly throwSites?: Readonly<Record<string, ThrowSite>>;
+    /** The static tables the text reads and writes. Default unknown. */
+    readonly tables?: {
+        readonly read: ReadonlyArray<string>;
+        readonly written: ReadonlyArray<string>;
+    };
+    /** The custom functions the text calls. Default unknown. */
+    readonly functions?: ReadonlyArray<string>;
+    /** Some target is not a static table name. Default unknown. */
+    readonly openTargets?: boolean;
 }) => Statement<P, R, Throws>;
 
 export { type AnyStatement as A, type Codec as C, type Input as I, type NoParams as N, type Params as P, type Result as R, type Statement as S, type ThrowSite as T, type Simplify as a, type CheckedInput as b, StatementTypeId as c, type Thrown as d, isStatement as i, make as m };

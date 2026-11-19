@@ -514,6 +514,10 @@ var SchemaDocument = Schema.Struct({
   ),
   diagnostics: Schema.Array(Diagnostic)
 });
+var declaredNames = (document) => ({
+  tables: [...new Set(document.tables.map((table) => table.name))].sort(),
+  functions: [...new Set(document.functions.map((fn) => fn.name))].sort()
+});
 var DocumentError = class extends Data.TaggedError("DocumentError") {
 };
 var formatter = SchemaIssue.makeFormatterDefault();
@@ -2038,6 +2042,7 @@ export {
   OptionsError,
   PEER_VERSIONS,
   canonicalJson,
+  declaredNames,
   decodeDocument,
   decodeOptions,
   emit,

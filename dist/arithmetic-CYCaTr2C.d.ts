@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 import { DateTime, Decimal, Duration, Uuid } from 'surrealdb';
 import { F as FunctionDescriptor, a as Float, S as SurrealNumber, D as Decimal$1, I as Int64 } from './value-Zktp5N5S.js';
-import { C as Codec, P as Params, N as NoParams } from './statement-C2GeTaZ5.js';
+import { C as Codec, P as Params, N as NoParams } from './statement-DsQDMl9Y.js';
 
 /**
  * Expressions: SurrealQL fragments as plain values.

@@ -5,13 +5,13 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-N4VIWHRU.js";
+} from "./chunk-XRXZZF4N.js";
 import {
   SurrealValue
 } from "./chunk-F4HWMI2D.js";
 import {
   analyzeSync
-} from "./chunk-73CJ3SZK.js";
+} from "./chunk-DCP4NMOJ.js";
 import {
   TraversalTypeId,
   andAll,
@@ -48,7 +48,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-F5XU4U3W.js";
+} from "./chunk-FBUUQ2IX.js";
 import {
   NoneAsAbsent
 } from "./chunk-FN4HR4GU.js";
@@ -98,7 +98,7 @@ import {
   sqlOf,
   unsafeExpr,
   withRefs
-} from "./chunk-7JBQRPBJ.js";
+} from "./chunk-N3B3YCSK.js";
 import {
   Decimal,
   Float,
@@ -817,6 +817,22 @@ var checked = /* @__PURE__ */ new WeakMap();
 var names = (values) => values.map((name) => `$${name}`).join(", ");
 var messages = (values) => values.map((message) => `'${message}'`).join(", ");
 var missingFrom = (values, other) => [...new Set(values)].filter((value) => !other.includes(value)).sort();
+var quoted = (values) => values.map((value) => `\`${value}\``).join(", ");
+var listDifferences = (field, declared, derived, verb) => {
+  if (declared === void 0) return [];
+  const out = [];
+  const undeclared = missingFrom(derived, declared);
+  if (undeclared.length > 0)
+    out.push(
+      `${field}: the text ${verb} ${quoted(undeclared)}, which is not declared`
+    );
+  const absent = missingFrom(declared, derived);
+  if (absent.length > 0)
+    out.push(
+      `${field}: declared ${quoted(absent)}, which the text never ${verb}`
+    );
+  return out;
+};
 var isWordChar = (c) => c !== void 0 && (c >= "A" && c <= "Z" || c >= "a" && c <= "z" || c >= "0" && c <= "9" || c === "_");
 var reads = (sql, name) => {
   const needle = `$${name}`;
@@ -903,6 +919,31 @@ var verify = (item, label) => {
       analysis.writes ? "writes: declared false, the text writes" : "writes: declared true, the text does not write"
     );
   }
+  differences.push(
+    ...listDifferences(
+      "tables.read",
+      item.tables?.read,
+      analysis.tables.read,
+      "reads"
+    ),
+    ...listDifferences(
+      "tables.written",
+      item.tables?.written,
+      analysis.tables.written,
+      "writes"
+    ),
+    ...listDifferences(
+      "functions",
+      item.functions,
+      analysis.functions,
+      "calls"
+    )
+  );
+  if (item.openTargets !== void 0 && item.openTargets !== analysis.openTargets) {
+    differences.push(
+      analysis.openTargets ? "openTargets: declared false, a target of the text is not a static table name" : "openTargets: declared true, every target of the text is a static table name"
+    );
+  }
   if (differences.length > 0) {
     throw new RangeError(
       `${label} does not declare what its text does: ${differences.join("; ")}`
@@ -925,10 +966,23 @@ var part = (options) => {
     },
     throws: options.throws ?? [],
     ...options.throwsAt !== void 0 && { throwsAt: options.throwsAt },
-    ...options.writes !== void 0 && { writes: options.writes }
+    ...options.writes !== void 0 && { writes: options.writes },
+    ...options.tables !== void 0 && { tables: options.tables },
+    ...options.functions !== void 0 && {
+      functions: options.functions
+    },
+    ...options.openTargets !== void 0 && {
+      openTargets: options.openTargets
+    }
   };
   const analysis = verify(declared, nameOf(options.name, "part"));
-  const result = analysis.writes ? { ...declared, writes: true } : declared;
+  const result = {
+    ...declared,
+    ...analysis.writes && { writes: true },
+    tables: analysis.tables,
+    functions: analysis.functions,
+    openTargets: analysis.openTargets
+  };
   checked.set(result, analysis);
   return result;
 };
@@ -1008,6 +1062,18 @@ var sequence = (...parts) => ({
       ],
       defines: [...new Set(parts.flatMap((item) => item.defines))].sort(),
       transactional: analyses.some((analysis) => analysis.transactional),
+      tables: {
+        read: [
+          ...new Set(analyses.flatMap((a) => a.tables.read))
+        ].sort(),
+        written: [
+          ...new Set(analyses.flatMap((a) => a.tables.written))
+        ].sort()
+      },
+      functions: [
+        ...new Set(analyses.flatMap((a) => a.functions))
+      ].sort(),
+      openTargets: analyses.some((analysis) => analysis.openTargets),
       ...writes !== void 0 && { writes },
       sources: [
         ...new Set(

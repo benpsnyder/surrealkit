@@ -259,6 +259,13 @@ var make = (options) => {
     ...options.sources !== void 0 && options.sources.length > 0 && { sources: options.sources },
     ...options.throwSites !== void 0 && {
       throwSites: options.throwSites
+    },
+    ...options.tables !== void 0 && { tables: options.tables },
+    ...options.functions !== void 0 && {
+      functions: options.functions
+    },
+    ...options.openTargets !== void 0 && {
+      openTargets: options.openTargets
     }
   };
   assertStatement(statement);
@@ -820,4 +827,4 @@ export {
   cast,
   call
 };
-//# sourceMappingURL=chunk-7JBQRPBJ.js.map
+//# sourceMappingURL=chunk-N3B3YCSK.js.map

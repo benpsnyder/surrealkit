@@ -87,6 +87,22 @@ interface Analysis {
      * statement or a subquery somewhere in it, outside strings and comments.
      */
     readonly writes: boolean;
+    /**
+     * The static tables the text reads and writes, each sorted and without
+     * duplicates; a table both read and written is in both.
+     */
+    readonly tables: {
+        readonly read: ReadonlyArray<string>;
+        readonly written: ReadonlyArray<string>;
+    };
+    /** The custom functions (`fn::…`) the text calls, as written, sorted. */
+    readonly functions: ReadonlyArray<string>;
+    /**
+     * Some statement's target is not a static table name (a parameter, a
+     * function call, a construct the lexer cannot read with certainty), so
+     * `tables` may be incomplete.
+     */
+    readonly openTargets: boolean;
     readonly diagnostics: ReadonlyArray<Diagnostic>;
 }
 /** {@link analyze}, throwing its {@link AnalyzeError}. */
@@ -112,6 +128,18 @@ interface StatementSourceFile {
 interface StatementScope {
     readonly name: string;
     readonly files: ReadonlyArray<StatementSourceFile>;
+    /**
+     * The tables and custom functions the schema declares. When given, a
+     * table or function a file of this scope names that is not declared, and
+     * that the same text does not create with `DEFINE TABLE` or `DEFINE
+     * FUNCTION`, is a problem. Names behind an open target are not checked.
+     */
+    readonly declared?: DeclaredNames;
+}
+/** The tables and custom functions (`fn::…`) a schema declares. */
+interface DeclaredNames {
+    readonly tables: ReadonlyArray<string>;
+    readonly functions: ReadonlyArray<string>;
 }
 interface RenderStatementModulesInput {
     readonly scopes: ReadonlyArray<StatementScope>;
@@ -141,9 +169,11 @@ interface StatementWarning {
  * file (`line`, `column` and `code` set). `name`: the file name is not an
  * identifier, is a reserved word, or differs only in case from another in
  * its scope. `scope`: the same for the scope name (`file` absent).
+ * `undeclared`: the file names a table or function its scope's `declared`
+ * names do not include (`line` of the first use set).
  */
 interface StatementProblem {
-    readonly kind: 'analysis' | 'name' | 'scope';
+    readonly kind: 'analysis' | 'name' | 'scope' | 'undeclared';
     readonly scope: string;
     readonly file?: string;
     readonly line?: number;
@@ -176,9 +206,53 @@ declare const renderStatementModulesSync: (input: RenderStatementModulesInput) =
  * for each scope, then `index.ts`, exactly as `effect-surrealkit statements`
  * writes them, with the analyzer's warnings. Fails with every problem: a
  * file the analyzer rejects, an invalid, reserved or case-colliding file
- * name, an invalid scope name. Reads and writes nothing.
+ * name, an invalid scope name, and, for a scope with `declared` names, a
+ * table or function the schema does not declare. Reads and writes nothing.
  */
 declare const renderStatementModules: (input: RenderStatementModulesInput) => Effect.Effect<StatementModules, StatementModulesError>;
+
+/** What a pin needs from a statement. */
+interface PinnableStatement {
+    readonly name: string;
+    readonly sql: string;
+}
+/** Why the pins could not be rendered; `text` is the printed line. */
+interface PinnedStatementProblem {
+    readonly kind: 'unnamed' | 'duplicate' | 'path' | 'segment';
+    readonly name: string;
+    readonly path?: string;
+    readonly message: string;
+    readonly text: string;
+}
+declare const PinnedStatementsError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
+    readonly _tag: "PinnedStatementsError";
+} & Readonly<A>;
+/** Every problem with the statements; `message` holds one `text` per line. */
+declare class PinnedStatementsError extends PinnedStatementsError_base<{
+    readonly problems: ReadonlyArray<PinnedStatementProblem>;
+    readonly message: string;
+}> {
+}
+/** A pin that is not current, at a path relative to the pin directory. */
+interface PinnedStatementDrift {
+    readonly path: string;
+    readonly name?: string;
+    readonly kind: 'missing' | 'changed' | 'stale';
+}
+/**
+ * One `.surql` file per statement, sorted by path: the name with each `.`
+ * a `/`, plus `.surql`, holding the statement's `sql` and one newline.
+ * Throws a {@link PinnedStatementsError} with every unnamed, duplicate,
+ * colliding or invalid name. Reads and writes nothing.
+ */
+declare const renderPinnedStatements: (statements: Iterable<PinnableStatement>) => ReadonlyArray<StatementModule>;
+/**
+ * How the `.surql` files on disk (paths relative to the pin directory,
+ * forward slashes) differ from {@link renderPinnedStatements}: `missing`,
+ * `changed` (content compared exactly) or `stale` (no statement). Other
+ * files are ignored. Empty when the pins are current.
+ */
+declare const pinnedStatementProblems: (statements: Iterable<PinnableStatement>, files: ReadonlyArray<StatementModule>) => ReadonlyArray<PinnedStatementDrift>;
 
 /** A fragment or template, as the `statements` command writes it. */
 interface Text<Holes extends string = string> {
@@ -231,4 +305,4 @@ type Fills<T> = T extends Text<infer Holes> ? string extends Holes ? Readonly<Re
  */
 declare const fill: <const T extends string | Text>(template: T, fills: Fills<T>, options?: FillOptions) => Effect.Effect<string, FillError>;
 
-export { type Analysis, AnalyzeError, type AnalyzeOptions, DEFAULT_HOLE_DELIMITERS, type Diagnostic, FillError, type FillOptions, type Fills, type HoleDelimiters, type RenderStatementModulesInput, STATEMENTS_MARK, type StatementModule, type StatementModules, StatementModulesError, type StatementProblem, type StatementScope, type StatementSourceFile, type StatementWarning, type Text, analyze, analyzeSync, fill, renderStatementModules, renderStatementModulesSync, text };
+export { type Analysis, AnalyzeError, type AnalyzeOptions, DEFAULT_HOLE_DELIMITERS, type DeclaredNames, type Diagnostic, FillError, type FillOptions, type Fills, type HoleDelimiters, type PinnableStatement, type PinnedStatementDrift, type PinnedStatementProblem, PinnedStatementsError, type RenderStatementModulesInput, STATEMENTS_MARK, type StatementModule, type StatementModules, StatementModulesError, type StatementProblem, type StatementScope, type StatementSourceFile, type StatementWarning, type Text, analyze, analyzeSync, fill, pinnedStatementProblems, renderPinnedStatements, renderStatementModules, renderStatementModulesSync, text };

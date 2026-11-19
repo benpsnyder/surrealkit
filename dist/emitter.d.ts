@@ -530,6 +530,14 @@ declare const SchemaDocument: Schema.Struct<{
     }>>;
 }>;
 type SchemaDocument = typeof SchemaDocument.Type;
+/**
+ * The tables (edge tables included) and custom functions a schema document
+ * declares, each sorted: the `declared` names of a statement scope.
+ */
+declare const declaredNames: (document: SchemaDocument) => {
+    readonly tables: ReadonlyArray<string>;
+    readonly functions: ReadonlyArray<string>;
+};
 declare const DocumentError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "DocumentError";
 } & Readonly<A>;
@@ -634,4 +642,4 @@ declare const PEER_VERSIONS: {
     readonly surrealdb: "2.1.1";
 };
 
-export { DocumentError, EMITTER_VERSION, EmitterOptions, Field, GenerateError, type GenerateHooks, type GenerateResult, type GeneratedFile, type Kind, OptionsError, PEER_VERSIONS, SchemaDocument, Table, canonicalJson, decodeDocument, decodeOptions, emit, generate, semanticDigest, semanticProjection };
+export { DocumentError, EMITTER_VERSION, EmitterOptions, Field, GenerateError, type GenerateHooks, type GenerateResult, type GeneratedFile, type Kind, OptionsError, PEER_VERSIONS, SchemaDocument, Table, canonicalJson, declaredNames, decodeDocument, decodeOptions, emit, generate, semanticDigest, semanticProjection };
