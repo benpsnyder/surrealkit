@@ -342,6 +342,13 @@ exports[`type diagnostics > read-view/unknown-stored-field 1`] = `
 ]
 `;
 
+exports[`type diagnostics > read-view/wrong-record-table 1`] = `
+[
+  "TS2345: Argument of type 'Struct<{ readonly id: brand<declareConstructor<_RecordId<"team">, _RecordId<"team">, readonly [declareConstructor<RecordIdValue, RecordIdValue, readonly [], RecordIdValue>], _RecordId<...>>, "corpus/team">; }>' is not assignable to parameter of type 'Struct<{ readonly id: brand<declareConstructor<_RecordId<"team">, _RecordId<"team">, readonly [declareConstructor<RecordIdValue, RecordIdValue, readonly [], RecordIdValue>], _RecordId<...>>, "corpus/team">; }> & { ...; }'.
+  Property 'incompatibleRecordLinks' is missing in type 'Struct<{ readonly id: brand<declareConstructor<_RecordId<"team">, _RecordId<"team">, readonly [declareConstructor<RecordIdValue, RecordIdValue, readonly [], RecordIdValue>], _RecordId<...>>, "corpus/team">; }>' but required in type '{ readonly incompatibleRecordLinks: "id"; }'.",
+]
+`;
+
 exports[`type diagnostics > relate/not-a-relation 1`] = `
 [
   "TS2345: Argument of type '{ readonly name: "person"; readonly type: "normal"; readonly schemafull: true; readonly drop: false; readonly id: Schema.brand<Schema.declareConstructor<_RecordId<"person">, _RecordId<"person">, readonly [Schema.declareConstructor<RecordIdValue, RecordIdValue, readonly [], RecordIdValue>], _RecordId<...>>, "corpus/p...' is not assignable to parameter of type 'RelationTable'.

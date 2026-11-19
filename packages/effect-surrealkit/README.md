@@ -601,7 +601,8 @@ empty results.
   Declare the row that session really gets and build from
   `readAs(table, schema)`, or project the fields it may read. For a generated
   SCHEMAFULL table, TypeScript checks the view's declared top-level field names
-  against the descriptor. A view may refine a field's codec or brand. For
+  against the descriptor. A view may refine a field's codec or brand; native
+  record links must still encode to the declared table and key type. For
   example, `param('email', codecOf(row.email))` takes its input type from the
   visible field and preserves its brand through the statement.
 - **Authored text.** The analyzer derives a part's names, result count and
