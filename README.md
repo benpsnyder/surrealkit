@@ -751,6 +751,15 @@ it commits; no lock is held. SurrealDB 3.3 and 4.0 accept it only on a
 record id held by a parameter, so the id is a binding or a local (`LET` a
 field such as `$.invite.team` first).
 
+`test/block-engine.test.ts` races a write against a block that reads a
+wallet `FOR UPDATE` and then records its balance elsewhere. Without the
+lock the block commits with the balance it read, which has since changed.
+With it, the block in a `transaction` fails with a `StatementConflict` on
+SurrealDB 3.3 and 4.0 and writes nothing. Run alone, it fails the same way
+on 3.3, while 4.0 runs the statement again itself and the block reads the
+new balance. With `{ retry: schedule }` both forms succeed on both, having
+read the balance after the write.
+
 The whole block is one SurrealQL statement, `{ … }`, and never writes
 `RETURN`. SurrealDB 3.3.4 and 4.0.1 agree on what that gives
 (`test/conformance.test.ts`):
@@ -1007,6 +1016,35 @@ regenerates on change; `--import-extension .ts` changes the index's imports;
 hole (default `__` and `__`). Any error stops
 generation with its file, line and column; warnings are printed.
 
+#### Rendering in process
+
+The command is a thin wrapper over `renderStatementModules` from
+`effect-surrealkit/analyze`: it reads the tree, refuses anything that is not
+a `.surql` file, and writes, checks or watches; analysis, naming checks and
+rendering are all the function's. Call it directly to generate the modules
+without the CLI or a filesystem:
+
+```ts
+import { Effect } from 'effect';
+import { renderStatementModules } from 'effect-surrealkit/analyze';
+
+const program = renderStatementModules({
+	scopes: [
+		{ name: 'accounts', files: [{ name: 'bindOwner', sql: 'LET $owner = $boundOwner;' }] },
+	],
+	importExtension: '.ts', // default .js
+	// holes: { open: '{{', close: '}}' },
+});
+// Succeeds with { files: [{ path: 'accounts/statements.ts', content }, { path: 'index.ts', content }],
+// warnings: [{ scope, file, line, column, code, message, text }] }, the same
+// bytes the command writes; fails with a StatementModulesError whose
+// `problems` hold every rejected file, invalid, reserved or case-colliding
+// name and invalid scope.
+const { files, warnings } = await Effect.runPromise(program);
+```
+
+`renderStatementModulesSync` is the same, throwing the error.
+
 The analyzer is `effect-surrealkit/analyze`, pure and host-neutral:
 `analyze(sql, { holes? })` returns `{ kind, sql, free, defines, slots,
 throws, throwsAt, holes, provisional, transactional, writes, diagnostics }` or fails
@@ -1118,8 +1156,9 @@ unsafeSkipValueCheck: true }` turns it off.
 `{ retry: schedule }` takes an Effect `Schedule` and sends the same,
 already encoded request again while the engine reports a
 `StatementConflict`; no other error is retried. SurrealDB 4 already retries
-a single conflicting statement on the server, so this matters most for
-transactions and for SurrealDB 3.
+a single conflicting statement on the server (a block run alone that loses
+a conflict there succeeds, as `test/block-engine.test.ts` shows), so this
+matters most for transactions and for SurrealDB 3.
 
 ```ts
 yield* transaction([bind(bump)], { retry: Schedule.recurs(3) });
