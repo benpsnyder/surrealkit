@@ -1,0 +1,67 @@
+{
+	"name": "effect-surrealkit",
+	"version": "0.1.0",
+	"description": "Effect v4 schemas for SurrealDB values (SDK 2.x), an Effect emitter for SurrealKit schema documents, and typed statements built from the generated modules or analysed from .surql files",
+	"license": "Apache-2.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./emitter": {
+			"types": "./dist/emitter.d.ts",
+			"import": "./dist/emitter.js"
+		},
+		"./statement": {
+			"types": "./dist/statement.d.ts",
+			"import": "./dist/statement.js"
+		},
+		"./client": {
+			"types": "./dist/client.d.ts",
+			"import": "./dist/client.js"
+		},
+		"./analyze": {
+			"types": "./dist/analyze.d.ts",
+			"import": "./dist/analyze.js"
+		}
+	},
+	"bin": {
+		"effect-surrealkit": "dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"sideEffects": false,
+	"engines": {
+		"node": "^20.19.0 || >=22.12.0"
+	},
+	"keywords": [
+		"effect",
+		"schema",
+		"surrealdb",
+		"surrealkit"
+	],
+	"peerDependencies": {
+		"effect": "^4.0.6",
+		"surrealdb": "^2.1.1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/surrealdb/surrealkit.git",
+		"directory": "packages/effect-surrealkit"
+	},
+	"homepage": "https://github.com/surrealdb/surrealkit/tree/main/packages/effect-surrealkit#readme",
+	"bugs": {
+		"url": "https://github.com/surrealdb/surrealkit/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"gitHead": "4fcb80124cc804ddde7bf55c4f8cd05c912f915e"
+}
