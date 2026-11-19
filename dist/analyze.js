@@ -122,6 +122,7 @@ var simpleKind = (kind) => {
   const inner = /^option<(.*)>$/u.exec(kind)?.[1] ?? kind;
   return SIMPLE.test(inner) ? inner : void 0;
 };
+var acceptsNone = (use, kind) => use.kind === "field" && use.role !== "assign" ? true : use.kind !== "key" && kind !== void 0 && /^option<.*>$/u.test(kind);
 var resolve = (use, detail) => {
   if (use.kind === "argument") {
     const args = Object.hasOwn(detail.functions, use.function) ? detail.functions[use.function] : void 0;
@@ -148,16 +149,21 @@ var checkUses = (uses, detail) => {
   const binds = {};
   for (const [name, list2] of Object.entries(uses)) {
     const kinds = /* @__PURE__ */ new Set();
+    let none = true;
     for (const use of list2) {
       const resolved = resolve(use, detail);
       if (resolved.kind === "problem") {
         problems.push({ line: use.line, message: resolved.message });
         kinds.add(void 0);
       } else if (resolved.kind === "unchecked") kinds.add(void 0);
-      else kinds.add(simpleKind(resolved.text));
+      else {
+        kinds.add(simpleKind(resolved.text));
+        if (!acceptsNone(use, resolved.text)) none = false;
+      }
     }
     const [only] = kinds;
-    if (kinds.size === 1 && only !== void 0) binds[name] = only;
+    if (kinds.size === 1 && only !== void 0)
+      binds[name] = none ? `option<${only}>` : only;
   }
   return { problems, binds };
 };

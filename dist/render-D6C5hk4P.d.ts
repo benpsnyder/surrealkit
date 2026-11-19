@@ -55,7 +55,8 @@ interface DeclaredNames {
      * given, every use of a binding the analyzer finds must resolve (a field
      * the table declares or accepts, an argument the function takes), and
      * each part states, in `binds`, the simple kind of each binding whose
-     * every use resolves to the same one.
+     * every use resolves to the same one (`option<K>` when every use accepts
+     * NONE).
      */
     readonly detail?: DeclaredDetail;
 }
