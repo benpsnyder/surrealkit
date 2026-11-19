@@ -522,8 +522,11 @@ parses `type::record(…)`. The conformance suite pins all of it.
 descriptor: `values` holds one operand per field of the index, a nested
 field by its path, and is rendered as
 `SELECT * FROM ONLY ⟨member⟩ WITH INDEX member_region_number WHERE region = $region AND number = $number LIMIT 1`.
-An index that is not unique, a missing or extra field and a value that
-never compares with its field are compile errors:
+A nested path reads through an object field, optional or not. An index
+that is not unique, a missing or extra field, a value that never compares
+with its field, and a path through a field that is not one object (a
+union of objects, a nullable object) are compile errors, and are refused
+when built:
 
 ```ts
 const byRegionNumber = select(MemberTable, 'member_region_number', {
@@ -747,9 +750,13 @@ a binding only a later step reads, which is refused when the block is built
 (every check runs again then). A select by id can read the record
 `FOR UPDATE` (call `.forUpdate()` first): a transaction that read it fails
 with a `StatementConflict` when a concurrent write changes the record before
-it commits; no lock is held. SurrealDB 3.3 and 4.0 accept it only on a
-record id held by a parameter, so the id is a binding or a local (`LET` a
-field such as `$.invite.team` first).
+it commits; no lock is held. SurrealDB 3.3 and 4.0 accept it only on one
+record id given as a parameter (a binding or a local), a literal record id
+or a `recordId(table, key)` (`type::record(…)`), and a concurrent write
+conflicts with the read through each of the three
+(`test/block-engine.test.ts` races one against each). They refuse a field
+path, a subquery, a table and a range, so `LET` a field such as
+`$.invite.team` first.
 
 `test/block-engine.test.ts` races a write against a block that reads a
 wallet `FOR UPDATE` and then records its balance elsewhere. Without the

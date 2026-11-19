@@ -1130,14 +1130,18 @@ var keyOf = (key2) => {
 var typeRecord = (table, inner) => `type::record(${sqlOf(literal(table.name))}, ${inner})`;
 var recordId = (table, key2) => {
   const built = keyOf(key2);
-  return derive(
+  const id = derive(
     table.id,
     typeRecord(table, built.sql),
     Level.atom,
     built.parts,
     built.params
   );
+  builtIds.add(id);
+  return id;
 };
+var builtIds = /* @__PURE__ */ new WeakSet();
+var isBuiltRecordId = (expr) => typeof expr === "object" && expr !== null && builtIds.has(expr);
 var IdRangeTypeId = "~effect-surrealkit/IdRange";
 var isIdRange = (value) => typeof value === "object" && value !== null && IdRangeTypeId in value;
 var idRange = (table, bounds) => {
@@ -1820,6 +1824,8 @@ var rebuild = (row, fields) => "records" in row && "schema" in row ? Schema5.Str
 var readsMany = (state) => state.source === void 0 || state.range === true;
 var resultOf = (state) => state.only ? Schema5.UndefinedOr(state.out) : Schema5.Array(state.out);
 var parameter = /^\$[A-Za-z_][A-Za-z0-9_]*$/u;
+var recordLiteral = /^r"(?:[^"\\]|\\.)*"$/u;
+var lockable = (id) => parameter.test(sqlOf(id)) || recordLiteral.test(sqlOf(id)) || isBuiltRecordId(id);
 var builder = (state) => {
   const row = state.row;
   const bounded = (rows2) => isExpr(rows2) ? mergeParams(state.params, paramsOf(rows2)) : state.params;
@@ -2115,9 +2121,9 @@ var select = (table, id, values) => {
   return {
     ...builder(record),
     forUpdate: () => {
-      if (!parameter.test(sqlOf(id))) {
+      if (!lockable(id)) {
         throw new RangeError(
-          `FOR UPDATE reads one record from a binding or a local (\`$name\`), and SurrealDB refuses \`${sqlOf(id)}\` as its target; LET the id in a block first`
+          `FOR UPDATE reads one record from a binding or a local (\`$name\`), a literal record id or a \`recordId(\u2026)\`, and SurrealDB refuses \`${sqlOf(id)}\` as its target; LET the id in a block first`
         );
       }
       return builder({

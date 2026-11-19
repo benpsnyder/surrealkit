@@ -1381,6 +1381,14 @@ type ExprAt<R, P> = P extends readonly [
     ...infer Rest extends ReadonlyArray<string>
 ] ? H extends keyof R ? Rest extends readonly [] ? R[H] : ExprAt<R[H], Rest> : never : never;
 /**
+ * The index fields whose path the row of `T` does not expose: a segment
+ * under a field that is not one object (a union of objects, a nullable
+ * object), which the run-time lookup cannot resolve either.
+ */
+type Unaddressable<T extends PureTable, C> = {
+    [K in keyof C]-?: [ExprAt<RowExprs<T>, C[K]>] extends [never] ? K : never;
+}[keyof C] & string;
+/**
  * `N`, when it names a unique index of `T` over field paths; otherwise a
  * message saying why it cannot be looked up by.
  */
@@ -1388,7 +1396,7 @@ type UniqueIndex<T extends PureTable, N> = N extends keyof IndexesOf$1<T> ? Inde
     readonly type: 'unique';
 } ? [
     Extract<keyof ColumnsOf<IndexesOf$1<T>[N]>, `${string}*${string}`>
-] extends [never] ? N : `\`${N & string}\` indexes array elements, which a unique lookup cannot address` : `\`${N & string}\` is a ${IndexesOf$1<T>[N] extends {
+] extends [never] ? [Unaddressable<T, ColumnsOf<IndexesOf$1<T>[N]>>] extends [never] ? N : `\`${Unaddressable<T, ColumnsOf<IndexesOf$1<T>[N]>>}\` of the unique index \`${N & string}\` is no field path of \`${T['name']}\` a lookup can read: a field on it is not one object (a union or a nullable object has no fields to address)` : `\`${N & string}\` indexes array elements, which a unique lookup cannot address` : `\`${N & string}\` is a ${IndexesOf$1<T>[N] extends {
     readonly type: infer K extends string;
 } ? K : 'non-unique'} index of \`${T['name']}\`, not a unique one` : `\`${T['name']}\` has no index \`${N & string}\``;
 /** The index fields whose value never compares with what `V` gives. */
@@ -1618,9 +1626,10 @@ interface RecordSelect<T extends PureTable, P extends Params> extends Select<T, 
      * `FOR UPDATE`: a transaction that reads the record this way fails with
      * a conflict (`StatementConflict`) when a concurrent write changes the
      * record before it commits; no lock is held (SurrealDB 3.3 and 4.0). The
-     * id must be a binding or a block's local (`$name`): SurrealDB refuses a
-     * table, a field path or any other expression as the target, so a
-     * {@link recordId} expression and an {@link idRange} are refused here.
+     * id must be a binding or a block's local (`$name`), a literal record id
+     * or a {@link recordId} expression (`type::record(…)`): SurrealDB refuses
+     * a table, a field path, a subquery or any other expression as the
+     * target, so those and an {@link idRange} are refused here.
      */
     readonly forUpdate: () => Select<T, P, StoredRow<T>, false>;
 }
@@ -1647,8 +1656,10 @@ declare const select: {
      * `'profile.bio'`), so the result is the row or NONE. `WITH INDEX`
      * makes the engine read that index: with `LIMIT 1` it otherwise reads
      * any index on a prefix of the fields whose name sorts first. An index
-     * that is not unique, a missing or extra field and a value that never
-     * compares with its field are compile errors, as is a value that may be
+     * that is not unique, a missing or extra field, a value that never
+     * compares with its field and a path through a field that is not one
+     * object (a union of objects, a nullable object) are compile errors, as
+     * is a value that may be
      * an array on a field that may hold an array or another kind: SurrealDB
      * 3.3 finds no array through such an index, and 4.0 does.
      */
