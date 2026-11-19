@@ -1,7 +1,8 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Schema, Effect } from 'effect';
-import { b as DeclaredNames } from './render-D6C5hk4P.js';
+import { a as DeclaredNames } from './render-CvQvIZRb.js';
+import './lexer-BEI0-7pQ.js';
 
 /**
  * semanticDigest (schema document v2, section 13): SHA-256 over the RFC 8785

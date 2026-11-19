@@ -3,7 +3,7 @@ import { Surreal, SurrealSession } from 'surrealdb';
 import { Client, SurrealClient, StatementError } from './client.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { P as Params, C as Codec, S as Statement, I as Input } from './statement-CkM3Zd8F.js';
+import { P as Params, C as Codec, S as Statement, I as Input } from './statement-CW7bavvY.js';
 import './uses-BXJXI3if.js';
 
 declare const TestingError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {

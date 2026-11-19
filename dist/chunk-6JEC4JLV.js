@@ -519,7 +519,7 @@ var metrics = {
   })
 };
 var { runs, duration: durations, retries } = metrics;
-var traced = (name, sql, sources, rows, sent, effect) => Effect.gen(function* () {
+var traced = (name, sql, sources, variant, rows, sent, effect) => Effect.gen(function* () {
   const started = yield* Clock.currentTimeNanos;
   const record = (outcome) => Effect.gen(function* () {
     const ended = yield* Clock.currentTimeNanos;
@@ -558,6 +558,10 @@ var traced = (name, sql, sources, rows, sent, effect) => Effect.gen(function* ()
         "db.query.text": sql,
         ...sources !== void 0 && sources.length > 0 && {
           "code.file.path": sources.join(", ")
+        },
+        // A family variant's declared key: never a binding value.
+        ...variant !== void 0 && {
+          "effect_surrealkit.statement.variant": variant
         }
       }
     }),
@@ -634,6 +638,7 @@ var makeWith = (transport) => ({
       statement.name,
       statement.sql,
       statement.sources,
+      statement.variant,
       true,
       sent,
       Effect.gen(function* () {
@@ -680,6 +685,7 @@ var makeWith = (transport) => ({
       name,
       sql,
       sources,
+      void 0,
       false,
       sent,
       Effect.gen(function* () {
@@ -788,4 +794,4 @@ export {
   run,
   transaction
 };
-//# sourceMappingURL=chunk-VRNODB5B.js.map
+//# sourceMappingURL=chunk-6JEC4JLV.js.map

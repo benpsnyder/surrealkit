@@ -6,7 +6,7 @@ import {
   analyzeTargets,
   holeDelimiters,
   lex
-} from "./chunk-DGHDFJTS.js";
+} from "./chunk-774SB3OG.js";
 import "./chunk-PZ5AY32C.js";
 
 // src/analyze/pin.ts
@@ -105,6 +105,9 @@ var checkName = (name, what, seen) => {
 };
 var templateLiteral = (text2) => `\`${text2.replace(/\\/gu, "\\\\").replace(/`/gu, "\\`").replace(/\$\{/gu, "\\${").replace(/\r/gu, "\\r")}\``;
 var list = (values) => `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+var scopesField = (scopes) => `{ ${Object.entries(scopes).map(
+  ([hole, scope]) => `${JSON.stringify(hole)}: { bound: ${list(scope.bound)}, binds: ${list(scope.binds)} }`
+).join(", ")} }`;
 var lines = (throwsAt) => {
   const entries = Object.entries(throwsAt);
   return entries.length === 0 ? "{}" : `{ ${entries.map(([message, at]) => `${JSON.stringify(message)}: [${at.join(", ")}]`).join(", ")} }`;
@@ -180,6 +183,7 @@ var renderConstant = (scope, name, analysis, binds) => {
     `free: ${list(analysis.free)}`,
     `defines: ${list(analysis.defines)}`,
     ...complete ? [] : [`provisional: ${analysis.provisional}`],
+    ...analysis.holes.length > 0 ? [`scopes: ${scopesField(analysis.holeScopes)}`] : [],
     `slots: ${analysis.slots}`,
     `throws: ${list(analysis.throws)}`,
     `throwsAt: ${lines(analysis.throwsAt)}`,

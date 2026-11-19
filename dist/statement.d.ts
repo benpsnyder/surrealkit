@@ -1,13 +1,17 @@
 import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
-import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as Comparable, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-DzANUzBu.js';
-export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-DzANUzBu.js';
+import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as Comparable, d as ParamsOf, F as FloatOrDecimalOf, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-DMedW_8A.js';
+export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-DMedW_8A.js';
 import { Schema } from 'effect';
-import { N as NoneAsAbsent, c as DateTime$1, e as Duration } from './temporal-s2ISz75j.js';
-import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-CkM3Zd8F.js';
-export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-CkM3Zd8F.js';
-import { RecordId, Decimal, DateTime } from 'surrealdb';
-import { a as Float, I as Int64, D as Decimal$1, o as Int, S as SurrealNumber, v as SurrealString, A as Uuid, y as SurrealValue } from './value-Zktp5N5S.js';
+import { N as NoneAsAbsent, c as DateTime, e as Duration } from './temporal-s2ISz75j.js';
+import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-CW7bavvY.js';
+export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-CW7bavvY.js';
+import { RecordId, Decimal, DateTime as DateTime$1 } from 'surrealdb';
+import { T as Text, d as TextHoleScopes, c as TextHoleScope } from './text-Dh74bkFB.js';
+import { v as SurrealString, o as Int, I as Int64, a as Float, S as SurrealNumber, A as Uuid, D as Decimal$1, y as SurrealValue } from './value-Zktp5N5S.js';
+import 'effect/Cause';
+import 'effect/Types';
+import './lexer-BEI0-7pQ.js';
 
 /**
  * Rows as expressions, and the codecs rows come back through.
@@ -447,6 +451,468 @@ interface Block<P extends Params, L extends Locals, Throws extends string> exten
  *   .build('pay');
  */
 declare const block: () => Block<NoParams, NoLocals, never>;
+
+/**
+ * Authored SurrealQL as statements: a `part` is one text with what it reads,
+ * defines, returns and throws, checked against the text by the package's own
+ * analyzer; a `sequence` runs parts in one scope as one statement.
+ *
+ * This is the only module of `effect-surrealkit/statement` that imports the
+ * analyzer, so code that only uses the builders does not carry it.
+ */
+
+/**
+ * One authored SurrealQL text and what it does with variables:
+ *
+ * - `free`: the `$names` it reads and does not define itself;
+ * - `defines`: the names it `LET`s at the top level, which later parts of a
+ *   sequence can read;
+ * - `slots`: how many results it returns (one per top-level statement);
+ * - `throws`: the messages it can `THROW`;
+ * - optionally `name` and `source` (where the text came from) and `throwsAt`
+ *   (the lines each message is thrown on), for messages and tooling;
+ * - `writes`: `true` when the text certainly changes data or schema,
+ *   `false` when it certainly does not, absent when that is unknown (text
+ *   can call a function that writes). {@link part} sets `true` when the
+ *   analyzer finds a write; only a declaration makes it `false`, and a
+ *   declared value is checked against the text.
+ * - `tables`, `functions` and `openTargets`: the static tables the text
+ *   reads and writes, the custom functions it calls, and whether some
+ *   target is not a static name (so the lists may be incomplete). Optional
+ *   in a declaration and checked against the text when given; {@link part}
+ *   always sets them to what the analyzer derives.
+ * - `uses`: what each free binding is used as, where the analyzer can tell
+ *   (see `Analysis.uses` in `effect-surrealkit/analyze`). Checked against
+ *   the text when given; {@link part} always sets it.
+ * - `binds`: for a binding whose every use resolves, in the schema, to the
+ *   same simple kind, that kind's text (`string`, `int`, `record<t>`, …),
+ *   as `option<K>` when every use accepts NONE.
+ *   `effect-surrealkit statements` writes it when given the schema;
+ *   `sequence(...).define` then refuses, at compile time, a codec whose
+ *   stored type cannot hold it.
+ *
+ * `effect-surrealkit statements` derives these from `.surql` files
+ * (`effect-surrealkit/analyze`). Written by hand they are checked against
+ * the text by {@link part}, and again by {@link sequence} for a part that
+ * was not declared with `part`.
+ */
+interface Part<Free extends string = string, Defines extends string = string, Throws extends string = string> {
+    readonly name?: string;
+    readonly source?: string;
+    readonly sql: string;
+    readonly free: ReadonlyArray<Free>;
+    readonly defines: ReadonlyArray<Defines>;
+    readonly slots: number;
+    /**
+     * The 1-based position of the last result that is not `BEGIN`, `COMMIT`
+     * or `CANCEL`, 0 when there is none. Optional: derived from the text
+     * when absent, checked against it when declared.
+     */
+    readonly valueSlot?: number;
+    readonly throws: ReadonlyArray<Throws>;
+    readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
+    readonly writes?: boolean;
+    readonly tables?: Tables;
+    readonly functions?: ReadonlyArray<string>;
+    readonly openTargets?: boolean;
+    readonly uses?: BindingUses;
+    readonly binds?: Binds;
+}
+/** The kind text each binding's every use resolves to; see {@link Part}. */
+type Binds = Readonly<Record<string, string>>;
+/** The static tables a text reads and writes. */
+interface Tables {
+    readonly read: ReadonlyArray<string>;
+    readonly written: ReadonlyArray<string>;
+}
+/**
+ * Declares a {@link Part}, keeping its names as literal types, and checks it
+ * against its text: a `free`, `defines`, `slots` or `throws` that differs
+ * from what the analyzer derives from `sql` is refused, naming the
+ * difference, and so is a text with holes (a template).
+ *
+ * @throws RangeError for a part its text contradicts, or `AnalyzeError`
+ *   (from `effect-surrealkit/analyze`) for a text it cannot analyse.
+ */
+declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never, const U extends BindingUses = Record<never, never>, const B extends Binds = Record<never, never>>(options: {
+    readonly name?: string;
+    readonly source?: string;
+    readonly sql: string;
+    readonly free?: ReadonlyArray<Free>;
+    readonly defines?: ReadonlyArray<Defines>;
+    readonly slots?: number;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly valueSlot?: number;
+    readonly throws?: ReadonlyArray<Throws>;
+    readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
+    /**
+     * `false` declares that the text certainly does not write, which the
+     * analyzer cannot prove (a function it calls may write); refused when
+     * the analyzer finds a write. `true` is refused when it finds none.
+     * Left out, it is `true` when the analyzer finds a write and unknown
+     * otherwise.
+     */
+    readonly writes?: boolean;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly tables?: Tables;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly functions?: ReadonlyArray<string>;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly openTargets?: boolean;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly uses?: U;
+    /**
+     * The kind each binding's uses resolve to in the schema; see
+     * {@link Part}. Each name must be a binding the text uses.
+     */
+    readonly binds?: B;
+}) => Part<Free, Defines, Throws> & Fitting<U, B>;
+/**
+ * The bindings a sequence still needs from its caller: each part's free
+ * names, minus what earlier parts define.
+ */
+type Unbound<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
+    infer Head extends Part,
+    ...infer Tail extends ReadonlyArray<Part>
+] ? Exclude<Head['free'][number], Defined> | Unbound<Tail, Defined | Head['defines'][number]> : never;
+/**
+ * What a part declared with `binds` carries at the type level: its uses
+ * and binds as literal types, which {@link Contract} checks codecs
+ * against. Nothing for a part without `binds`.
+ */
+type Fitting<U, B> = [keyof B] extends [never] ? unknown : {
+    readonly uses: U;
+    readonly binds: B;
+};
+/**
+ * The stored type of each simple kind, as the package's own codec for it
+ * encodes it: the representation comparisons check (see `Comparable` in
+ * the builders). `int` is either profile's.
+ */
+interface KindStorage {
+    readonly string: (typeof SurrealString)['Encoded'];
+    readonly bool: boolean;
+    readonly int: (typeof Int)['Encoded'] | (typeof Int64)['Encoded'];
+    readonly float: (typeof Float)['Encoded'];
+    readonly number: (typeof SurrealNumber)['Encoded'];
+    readonly decimal: Decimal;
+    readonly datetime: (typeof DateTime)['Encoded'];
+    readonly duration: (typeof Duration)['Encoded'];
+    readonly uuid: (typeof Uuid)['Encoded'];
+}
+/** The stored type of a simple kind's text. */
+type KindStored<K> = K extends keyof KindStorage ? KindStorage[K] : K extends `record<${infer T}>` ? RecordId<T> : never;
+/** One binding a part's `binds` states, with the uses it came from. */
+interface BindEntry {
+    readonly name: string;
+    readonly kind: string;
+    readonly use: unknown;
+}
+/**
+ * The entries of one part's `binds`, without the index signature `Part`
+ * declares and without the names in `Defined`.
+ */
+type Entries<B, U, Defined extends string> = {
+    [K in keyof B as string extends K ? never : K extends Defined ? never : K]: {
+        readonly name: K;
+        readonly kind: B[K];
+        readonly use: K extends keyof U ? U[K] extends readonly [infer First, ...unknown[]] ? First : never : never;
+    };
+} extends infer M ? M[keyof M] : never;
+/**
+ * The `binds` entries of a sequence's parts, for the names that remain
+ * bindings: a name an earlier part defines is not one.
+ */
+type BindsOf<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
+    infer Head extends Part,
+    ...infer Tail extends ReadonlyArray<Part>
+] ? (Head extends {
+    readonly binds: infer B;
+    readonly uses: infer U;
+} ? Entries<B, U, Defined> : never) | BindsOf<Tail, Defined | Head['defines'][number]> : never;
+/** How a message names a use. */
+type UseText<U> = U extends {
+    readonly kind: 'field';
+    readonly table: infer T extends string;
+    readonly field: infer F extends string;
+} ? U extends {
+    readonly role: 'assign';
+} ? `is assigned to \`${T}.${F}\`` : `is compared with \`${T}.${F}\`` : U extends {
+    readonly kind: 'argument';
+    readonly function: infer F extends string;
+    readonly index: infer I extends number;
+} ? `is passed to \`${F}\` at index ${I}` : U extends {
+    readonly kind: 'key';
+    readonly table: infer T extends string;
+} ? `is the key of a \`${T}\` record` : 'is used';
+/**
+ * A message for each entry whose kind the codec `C` cannot hold: their
+ * stored types do not overlap, exactly as {@link Comparable} decides for
+ * two operands. For `option<K>` the codec's `undefined` (NONE) is set
+ * aside first. `never` when every entry fits.
+ */
+type Misfits<E, C> = E extends BindEntry ? C extends Codec ? (E['kind'] extends `option<${infer K}>` ? Comparable<KindStored<K>, Exclude<C['Encoded'], undefined>, true> : Comparable<KindStored<E['kind']>, C['Encoded'], true>) extends true ? never : `binding \`${E['name']}\` ${UseText<E['use']>} (${E['kind']}), which its codec cannot hold` : never : never;
+/** The message of each binding in `P` whose codec cannot hold its kind. */
+type MisfitsIn<P, E extends BindEntry> = {
+    readonly [K in keyof P]: K extends E['name'] ? Misfits<Extract<E, {
+        readonly name: K;
+    }>, P[K]> : never;
+}[keyof P];
+/** One member of a union, so a message names one binding. */
+type OneOf<U> = ((U extends unknown ? (member: () => U) => void : never) extends (member: infer I) => void ? I : never) extends () => infer M ? M & string : never;
+/**
+ * `P`, when each codec can hold its binding's kind. Otherwise the message
+ * for one binding whose codec cannot, so the compiler's first line names it.
+ */
+type Fitted<P, E extends BindEntry> = [MisfitsIn<P, E>] extends [never] ? P : OneOf<MisfitsIn<P, E>>;
+/** The messages any part of a sequence can `THROW`. */
+type ThrownBy<Parts extends ReadonlyArray<Part>> = Parts[number]['throws'][number];
+/**
+ * `P`, the codecs a contract declares, when they name exactly `Names`.
+ * Otherwise a binding nothing reads is typed as a message naming it, and
+ * when none is extra, the contract's expected type is a message naming each
+ * binding it leaves without a codec.
+ */
+type Exactly<Names extends string, P> = [
+    Exclude<keyof P, Names>
+] extends [never] ? [Exclude<Names, keyof P>] extends [never] ? P : `binding \`$${Exclude<Names, keyof P>}\` is read by this sequence and has no codec` : {
+    readonly [K in keyof P]: K extends Names ? P[K] : `binding \`$${K & string}\` is not read by this sequence`;
+};
+/**
+ * The contract of a sequence: `P`, checked by {@link Exactly} against the
+ * names the parts leave unbound. Parts that are not typed as literals (a
+ * widened list, names typed `string`) cannot be checked by the compiler, so
+ * they are left to the check `define` makes when it runs.
+ */
+type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [Extract<Parts[number], {
+    readonly binds: object;
+}>] extends [never] ? Exactly<Unbound<Parts>, P> : [Exactly<Unbound<Parts>, P>] extends [P] ? Fitted<P, BindsOf<Parts>> : Exactly<Unbound<Parts>, P>;
+/**
+ * Authored SurrealQL texts run one after another in a single request, sharing
+ * one variable scope, as a statement.
+ *
+ * `define` takes a codec for exactly the names the sequence still needs:
+ * leaving one out, or declaring one no part reads, is a compile error, and
+ * the same check runs again when the statement is defined, in case the parts
+ * were not typed as literals. A part that was not declared with {@link part}
+ * is checked against its text here.
+ *
+ * @example
+ * const guarded = sequence(bindWrite, requireOwner, readCutover).define({
+ *   params: { boundProducer: Producer },
+ *   result: Cutover,
+ * });
+ */
+declare const sequence: <const Parts extends ReadonlyArray<Part>>(...parts: Parts) => {
+    define: <const P extends Params, R extends Codec>(contract: {
+        readonly name?: string;
+        /**
+         * What the sequence writes, when its parts leave it unknown: `false`
+         * declares that it certainly does not write, `true` that it does.
+         * Refused when it contradicts what the parts say. Default derived
+         * from the parts.
+         */
+        readonly writes?: boolean;
+        readonly params: Contract<Parts, P>;
+        readonly result: R;
+    }) => Statement<P, R, ThrownBy<Parts>>;
+};
+
+declare const TextNodeTypeId = "~effect-surrealkit/TextNode";
+type AnyText = Text<string, string, string, string, TextHoleScopes>;
+/** Fills a hole with nothing: an absent clause is left out of the text. */
+interface Empty {
+    readonly [TextNodeTypeId]: 'empty';
+}
+/** A template with every hole filled. */
+interface Composite<T extends AnyText = AnyText, F extends CompositeFills = CompositeFills> {
+    readonly [TextNodeTypeId]: 'compose';
+    readonly template: T;
+    readonly fills: F;
+}
+/** One of several texts, by the value of one axis of the key. */
+interface Choice<A extends string = string, O extends ChoiceOptions = ChoiceOptions> {
+    readonly [TextNodeTypeId]: 'choose';
+    readonly axis: A;
+    readonly options: O;
+}
+/** What fills a hole: a part (statements) fills one that starts a statement. */
+type TextNode = AnyText | Part<string, string, string> | Composite | Choice | Empty | Expr<Codec, NoParams>;
+type CompositeFills = {
+    readonly [hole: string]: TextNode;
+};
+type ChoiceOptions = {
+    readonly [option: string]: TextNode;
+};
+/** The value an axis may take. */
+type AxisValue = string | number | boolean;
+/** The axes of a family: each a list of the values it may take. */
+type Axes = {
+    readonly [axis: string]: ReadonlyArray<AxisValue>;
+};
+/** A key: one value per axis. Union-valued properties select any of them. */
+type KeyOf<A extends Axes> = {
+    readonly [X in keyof A]: A[X][number];
+};
+declare const empty: Empty;
+type OptionKey<V> = V extends AxisValue ? `${V}` : never;
+type ScopeAt<T, H> = T extends {
+    readonly scopes?: infer S;
+} ? H extends keyof NonNullable<S> ? NonNullable<S>[H] : never : never;
+type BoundAt<T, H> = ScopeAt<T, H> extends TextHoleScope<infer B, string> ? B : never;
+type BindsAt<T, H> = ScopeAt<T, H> extends TextHoleScope<string, infer B> ? B : never;
+type Selected<O, A extends string, K> = A extends keyof K ? O[OptionKey<K[A]> & keyof O] : never;
+/**
+ * The bindings node `N` reads when the key is `K`. For a key whose axes are
+ * unions, every name some selectable variant reads.
+ */
+type FreeOf<N, K> = N extends Empty ? never : N extends Choice<infer A, infer O> ? string extends keyof O ? string : FreeOf<Selected<O, A, K>, K> : N extends Composite<infer T, infer F> ? string extends keyof F ? string : Exclude<T['free'][number], {
+    [H in keyof F]: DefinesOf<F[H], K> & BindsAt<T, H>;
+}[keyof F]> | {
+    [H in keyof F]: Exclude<FreeOf<F[H], K>, BoundAt<T, H>>;
+}[keyof F] : N extends Text<string, infer Free, string, string, TextHoleScopes> ? Free : N extends Part<infer Free, string, string> ? Free : never;
+/** Whether `Name` is missing from the defines of some selectable option. */
+type MissingFrom<Name, O, Keys, K> = Keys extends keyof O ? Name extends DefinesOf<O[Keys], K> ? never : Keys : never;
+/** The names every selectable option of a choice defines. */
+type DefinesOfChoice<O, Keys, K, All = Keys extends keyof O ? DefinesOf<O[Keys], K> : never> = All extends string ? [MissingFrom<All, O, Keys, K>] extends [never] ? All : never : never;
+/**
+ * The names node `N` `LET`s at its top level when the key is `K`: for a key
+ * whose axes are unions, those every selectable variant defines.
+ */
+type DefinesOf<N, K> = N extends Choice<infer A, infer O> ? string extends keyof O ? string : A extends keyof K ? DefinesOfChoice<O, OptionKey<K[A]> & keyof O, K> : never : N extends Composite<infer T, CompositeFills> ? T['defines'][number] : N extends Text<string, string, infer D, string, TextHoleScopes> ? D : N extends Part<string, infer D, string> ? D : never;
+/** The messages node `N` can `THROW` when the key is `K`. */
+type ThrowsOf<N, K> = N extends Choice<infer A, infer O> ? string extends keyof O ? string : ThrowsOf<Selected<O, A, K>, K> : N extends Composite<infer T, infer F> ? string extends keyof F ? string : T['throws'][number] | {
+    [H in keyof F]: ThrowsOf<F[H], K>;
+}[keyof F] : N extends Text<string, string, string, infer T, TextHoleScopes> ? T : N extends Part<string, string, infer T> ? T : never;
+type IsUnion$2<T, U = T> = T extends unknown ? [U] extends [T] ? false : true : never;
+/**
+ * Why `V` cannot fill a hole, or `never`. A fill typed as a union of texts
+ * is refused: the compiler could not tell which one a variant holds, so
+ * what it reads would not be exact; `choose` between them instead.
+ */
+type FillProblem<V> = true extends IsUnion$2<V> ? 'this fill is typed as one of several texts, so the compiler cannot tell which a variant holds: choose between them with `choose(…)`' : SingleFillProblem<V>;
+type SingleFillProblem<V> = V extends Expr<Codec, infer P> ? [keyof P] extends [never] ? never : 'a constant fill binds nothing: put the binding in a `.surql` fragment' : V extends Text<infer Holes, string, string, string, TextHoleScopes> ? [Holes] extends [never] ? never : `this fill is a template with holes (${Holes}): compose it first` : V extends TextNode ? never : 'a hole takes a generated text or part, `compose(…)`, `choose(…)`, `literal(…)` or `empty`, not raw SurrealQL';
+/**
+ * `F`, when it fills exactly the holes of `T`. Otherwise a fill for a hole
+ * the template does not have, or a template given as a fill, is typed as a
+ * message naming it, and when nothing is extra, the fills' expected type is
+ * a message naming each hole left without one.
+ */
+type CheckedFills<T extends AnyText, F> = [F] extends [never] ? F : string extends T['holes'][number] ? F : [
+    Exclude<keyof F, T['holes'][number]> | {
+        [H in keyof F]: FillProblem<F[H]>;
+    }[keyof F]
+] extends [never] ? [Exclude<T['holes'][number], keyof F>] extends [never] ? F : `hole \`${Exclude<T['holes'][number], keyof F>}\` has no fill` : {
+    readonly [H in keyof F]: H extends T['holes'][number] ? [FillProblem<F[H]>] extends [never] ? F[H] : FillProblem<F[H]> : `\`${H & string}\` is not a hole of this template`;
+};
+type AxesUsed<N> = N extends Choice<infer A, infer O> ? string extends keyof O ? string : A | AxesUsed<O[keyof O]> : N extends Composite<AnyText, infer F> ? string extends keyof F ? string : AxesUsed<F[keyof F]> : never;
+type ChoiceProblems<A extends Axes, X extends string, O> = X extends keyof A ? ([Exclude<OptionKey<A[X][number]>, keyof O>] extends [never] ? never : `choose('${X}', …) has no text for \`${Exclude<OptionKey<A[X][number]>, keyof O>}\``) | ([Exclude<keyof O & string, OptionKey<A[X][number]>>] extends [
+    never
+] ? never : `choose('${X}', …) has a text for \`${Exclude<keyof O & string, OptionKey<A[X][number]>>}\`, which is not a value of the axis`) : `choose('${X}', …) names an axis this family does not declare`;
+type TreeProblems<A extends Axes, N> = N extends Choice<infer X, infer O> ? string extends keyof O ? never : ChoiceProblems<A, X, O> | TreeProblems<A, O[keyof O]> : N extends Composite<AnyText, infer F> ? string extends keyof F ? never : TreeProblems<A, F[keyof F]> : never;
+type AxisProblems<A extends Axes, N> = TreeProblems<A, N> | ([Exclude<keyof A & string, AxesUsed<N>>] extends [never] ? never : `axis \`${Exclude<keyof A & string, AxesUsed<N>>}\` is never chosen on, so every value of it gives the same text`);
+/**
+ * `A`, or a message naming each problem between the axes and the texts that
+ * choose on them: a choice on an axis `A` does not declare, a value of an
+ * axis a choice has no text for, a text for no value, an axis nothing
+ * chooses on. Checked on the axes, whose type is short, so the first line of
+ * the diagnostic is the message.
+ */
+type CheckedAxes<A extends Axes, N> = [A] extends [never] ? A : [AxisProblems<A, N>] extends [never] ? A : AxisProblems<A, N> & string;
+/**
+ * `P`, the codecs of a family, when they name exactly what its variants
+ * read; otherwise as `Exactly` does for a sequence.
+ */
+type FamilyContract<Names extends string, P> = string extends Names ? P : [Exclude<keyof P, Names>] extends [never] ? [Exclude<Names, keyof P>] extends [never] ? P : `binding \`$${Exclude<Names, keyof P> & string}\` is read by a variant of this family and has no codec` : {
+    readonly [X in keyof P]: X extends Names ? P[X] : `binding \`$${X & string}\` is not read by any variant of this family`;
+};
+/** The key `K`, or a message naming a property that is not an axis. */
+type CheckedVariantKey<A extends Axes, K> = [K] extends [never] ? K : [Exclude<keyof K, keyof A>] extends [never] ? K : {
+    readonly [X in keyof K]: X extends keyof A ? K[X] : `\`${X & string}\` is not an axis of this family`;
+};
+/** The codecs of `P` a variant reading `Names` binds. */
+type ParamsAt<P, Names> = {
+    readonly [X in keyof P as X extends Names ? X : never]: P[X];
+};
+/** A family: every variant its axes span, each a statement. */
+interface Family<A extends Axes, N, P extends Params, R extends Codec> {
+    readonly name: string;
+    readonly axes: A;
+    /**
+     * The statement of the variant `key` selects. A key known only at run
+     * time (an axis typed as a union) is typed as the statement that reads
+     * every name some variant it can select reads: an input must give each
+     * of them that is required, and the selected variant sends only what it
+     * reads.
+     */
+    readonly select: <const K extends KeyOf<A>>(key: CheckedVariantKey<A, K>) => Statement<ParamsAt<P, FreeOf<N, K>>, R, ThrowsOf<N, K> & string>;
+    /**
+     * Every variant, built, with its key: for a build step, tests and
+     * pinning. Each entry is a pinnable statement: `name` is the family's
+     * name and one `axis-value` segment per axis (`listings.price-true.…`),
+     * and `sql` the variant's text, so `renderPinnedStatements` and
+     * `pinnedStatementProblems` take the list as it is.
+     */
+    readonly variants: () => ReadonlyArray<{
+        readonly key: KeyOf<A>;
+        readonly name: string;
+        readonly sql: string;
+        readonly statement: Statement<Params, R, ThrowsOf<N, KeyOf<A>> & string>;
+    }>;
+}
+/**
+ * Fills every hole of `template`. Each fill is a text without holes (a
+ * generated fragment or part), another composite, a {@link choose}, a
+ * constant (`literal(…)`) or {@link empty}. A hole without a fill, a fill for
+ * a hole the template does not have, and a template given as a fill are
+ * compile errors, and are refused here.
+ */
+declare const compose: <const T extends AnyText, const F extends {
+    readonly [hole: string]: unknown;
+}>(template: T, fills: CheckedFills<T, F>) => F extends CompositeFills ? Composite<T, F> : never;
+/**
+ * `O` with its keys as strings: `{ 1: … }` is keyed by the number 1, and a
+ * key's axis value is looked up as text.
+ */
+type StringKeyed<O> = [Extract<keyof O, number>] extends [never] ? O : {
+    readonly [X in keyof O as `${X & (string | number)}`]: O[X];
+};
+/** `O`, or each option that cannot be a fill typed as a message saying why. */
+type CheckedOptions<O> = [O] extends [never] ? O : [{
+    [X in keyof O]: FillProblem<O[X]>;
+}[keyof O]] extends [never] ? O : {
+    readonly [X in keyof O]: [FillProblem<O[X]>] extends [never] ? O[X] : FillProblem<O[X]>;
+};
+/** One of `options`, by the value of `axis` in the key a family selects with. */
+declare const choose: <const A extends string, const O extends {
+    readonly [option: string]: unknown;
+}>(axis: A, options: CheckedOptions<O>) => O extends ChoiceOptions ? Choice<A, StringKeyed<O>> : never;
+/**
+ * Every variant the axes span of the text `root`, as statements.
+ *
+ * `define` takes one codec for each name any variant reads, and the result
+ * codec every variant decodes with. It checks at once that every text
+ * declares what its SQL does, that the axes are the ones the texts choose
+ * on, and that the codecs are exactly the names the variants read by the
+ * compiler's rule. A variant is built on its first selection (or by
+ * `variants()`, or by `define` with `build: 'eager'`): its text is
+ * rendered and analysed, and refused unless the analyzer reads exactly the
+ * names the rule says (so the types of `select` are what is sent), throws
+ * what it says, and the text has no holes and no errors.
+ *
+ * Every variant's statement is named after the family, so its metrics and
+ * span are the family's; its `variant` is the key that selected it, which a
+ * run records on its span.
+ */
+declare const family: <const A extends Axes, const N extends TextNode>(checkedAxes: CheckedAxes<A, N>, root: N) => {
+    define: <const P extends Params, R extends Codec>(contract: {
+        readonly name?: string;
+        readonly params: FamilyContract<FreeOf<N, KeyOf<A>> & string, P>;
+        readonly result: R;
+        readonly writes?: boolean;
+        readonly build?: "eager" | "lazy";
+    }) => Family<A, N, P, R>;
+};
 
 /**
  * Record links and graph traversal, typed from the generated descriptors
@@ -999,9 +1465,9 @@ declare const max: <V extends RowValue>(value: Taking<V, NumberField, "`math::ma
 /** What `time::min` and `time::max` return: the field's value, or NONE for none. */
 type TimeCodec<S extends Codec, E> = E extends true ? Schema.UndefinedOr<S> : S;
 /** `time::min(field)`: the earliest datetime, NONE for a group with no value. */
-declare const timeMin: <V extends RowValue>(value: Taking<V, DateTime, "`time::min` takes a datetime field">) => Aggregate<TimeCodec<CodecOfValue<V>, MayBeEmpty<V>>>;
+declare const timeMin: <V extends RowValue>(value: Taking<V, DateTime$1, "`time::min` takes a datetime field">) => Aggregate<TimeCodec<CodecOfValue<V>, MayBeEmpty<V>>>;
 /** `time::max(field)`: the latest datetime, NONE for a group with no value. */
-declare const timeMax: <V extends RowValue>(value: Taking<V, DateTime, "`time::max` takes a datetime field">) => Aggregate<TimeCodec<CodecOfValue<V>, MayBeEmpty<V>>>;
+declare const timeMax: <V extends RowValue>(value: Taking<V, DateTime$1, "`time::max` takes a datetime field">) => Aggregate<TimeCodec<CodecOfValue<V>, MayBeEmpty<V>>>;
 /** What `array::group` and `array::distinct` return: the distinct values. */
 type DistinctCodec<V> = Schema.$Array<V extends RowValue<infer S, infer O, boolean> ? O extends true ? OrNone<S> : S : never>;
 type ScalarValue<V> = V extends RowValue ? [CodecOfValue<V>['Encoded']] extends [
@@ -1055,272 +1521,6 @@ interface GroupAll<T extends PureTable, P extends Params> {
     /** The aggregates of the one group. */
     readonly aggregate: <const F>(fields: (row: GroupRow<T, true>) => CheckedAggregates<F, NoParams>) => GroupedSelect<T, P & ParamsOfAll<F[keyof F]>, F, true>;
 }
-
-/**
- * Authored SurrealQL as statements: a `part` is one text with what it reads,
- * defines, returns and throws, checked against the text by the package's own
- * analyzer; a `sequence` runs parts in one scope as one statement.
- *
- * This is the only module of `effect-surrealkit/statement` that imports the
- * analyzer, so code that only uses the builders does not carry it.
- */
-
-/**
- * One authored SurrealQL text and what it does with variables:
- *
- * - `free`: the `$names` it reads and does not define itself;
- * - `defines`: the names it `LET`s at the top level, which later parts of a
- *   sequence can read;
- * - `slots`: how many results it returns (one per top-level statement);
- * - `throws`: the messages it can `THROW`;
- * - optionally `name` and `source` (where the text came from) and `throwsAt`
- *   (the lines each message is thrown on), for messages and tooling;
- * - `writes`: `true` when the text certainly changes data or schema,
- *   `false` when it certainly does not, absent when that is unknown (text
- *   can call a function that writes). {@link part} sets `true` when the
- *   analyzer finds a write; only a declaration makes it `false`, and a
- *   declared value is checked against the text.
- * - `tables`, `functions` and `openTargets`: the static tables the text
- *   reads and writes, the custom functions it calls, and whether some
- *   target is not a static name (so the lists may be incomplete). Optional
- *   in a declaration and checked against the text when given; {@link part}
- *   always sets them to what the analyzer derives.
- * - `uses`: what each free binding is used as, where the analyzer can tell
- *   (see `Analysis.uses` in `effect-surrealkit/analyze`). Checked against
- *   the text when given; {@link part} always sets it.
- * - `binds`: for a binding whose every use resolves, in the schema, to the
- *   same simple kind, that kind's text (`string`, `int`, `record<t>`, …),
- *   as `option<K>` when every use accepts NONE.
- *   `effect-surrealkit statements` writes it when given the schema;
- *   `sequence(...).define` then refuses, at compile time, a codec whose
- *   stored type cannot hold it.
- *
- * `effect-surrealkit statements` derives these from `.surql` files
- * (`effect-surrealkit/analyze`). Written by hand they are checked against
- * the text by {@link part}, and again by {@link sequence} for a part that
- * was not declared with `part`.
- */
-interface Part<Free extends string = string, Defines extends string = string, Throws extends string = string> {
-    readonly name?: string;
-    readonly source?: string;
-    readonly sql: string;
-    readonly free: ReadonlyArray<Free>;
-    readonly defines: ReadonlyArray<Defines>;
-    readonly slots: number;
-    /**
-     * The 1-based position of the last result that is not `BEGIN`, `COMMIT`
-     * or `CANCEL`, 0 when there is none. Optional: derived from the text
-     * when absent, checked against it when declared.
-     */
-    readonly valueSlot?: number;
-    readonly throws: ReadonlyArray<Throws>;
-    readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
-    readonly writes?: boolean;
-    readonly tables?: Tables;
-    readonly functions?: ReadonlyArray<string>;
-    readonly openTargets?: boolean;
-    readonly uses?: BindingUses;
-    readonly binds?: Binds;
-}
-/** The kind text each binding's every use resolves to; see {@link Part}. */
-type Binds = Readonly<Record<string, string>>;
-/** The static tables a text reads and writes. */
-interface Tables {
-    readonly read: ReadonlyArray<string>;
-    readonly written: ReadonlyArray<string>;
-}
-/**
- * Declares a {@link Part}, keeping its names as literal types, and checks it
- * against its text: a `free`, `defines`, `slots` or `throws` that differs
- * from what the analyzer derives from `sql` is refused, naming the
- * difference, and so is a text with holes (a template).
- *
- * @throws RangeError for a part its text contradicts, or `AnalyzeError`
- *   (from `effect-surrealkit/analyze`) for a text it cannot analyse.
- */
-declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never, const U extends BindingUses = Record<never, never>, const B extends Binds = Record<never, never>>(options: {
-    readonly name?: string;
-    readonly source?: string;
-    readonly sql: string;
-    readonly free?: ReadonlyArray<Free>;
-    readonly defines?: ReadonlyArray<Defines>;
-    readonly slots?: number;
-    /** Checked against the text when given; see {@link Part}. */
-    readonly valueSlot?: number;
-    readonly throws?: ReadonlyArray<Throws>;
-    readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
-    /**
-     * `false` declares that the text certainly does not write, which the
-     * analyzer cannot prove (a function it calls may write); refused when
-     * the analyzer finds a write. `true` is refused when it finds none.
-     * Left out, it is `true` when the analyzer finds a write and unknown
-     * otherwise.
-     */
-    readonly writes?: boolean;
-    /** Checked against the text when given; see {@link Part}. */
-    readonly tables?: Tables;
-    /** Checked against the text when given; see {@link Part}. */
-    readonly functions?: ReadonlyArray<string>;
-    /** Checked against the text when given; see {@link Part}. */
-    readonly openTargets?: boolean;
-    /** Checked against the text when given; see {@link Part}. */
-    readonly uses?: U;
-    /**
-     * The kind each binding's uses resolve to in the schema; see
-     * {@link Part}. Each name must be a binding the text uses.
-     */
-    readonly binds?: B;
-}) => Part<Free, Defines, Throws> & Fitting<U, B>;
-/**
- * The bindings a sequence still needs from its caller: each part's free
- * names, minus what earlier parts define.
- */
-type Unbound<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
-    infer Head extends Part,
-    ...infer Tail extends ReadonlyArray<Part>
-] ? Exclude<Head['free'][number], Defined> | Unbound<Tail, Defined | Head['defines'][number]> : never;
-/**
- * What a part declared with `binds` carries at the type level: its uses
- * and binds as literal types, which {@link Contract} checks codecs
- * against. Nothing for a part without `binds`.
- */
-type Fitting<U, B> = [keyof B] extends [never] ? unknown : {
-    readonly uses: U;
-    readonly binds: B;
-};
-/**
- * The stored type of each simple kind, as the package's own codec for it
- * encodes it: the representation comparisons check (see `Comparable` in
- * the builders). `int` is either profile's.
- */
-interface KindStorage {
-    readonly string: (typeof SurrealString)['Encoded'];
-    readonly bool: boolean;
-    readonly int: (typeof Int)['Encoded'] | (typeof Int64)['Encoded'];
-    readonly float: (typeof Float)['Encoded'];
-    readonly number: (typeof SurrealNumber)['Encoded'];
-    readonly decimal: Decimal;
-    readonly datetime: (typeof DateTime$1)['Encoded'];
-    readonly duration: (typeof Duration)['Encoded'];
-    readonly uuid: (typeof Uuid)['Encoded'];
-}
-/** The stored type of a simple kind's text. */
-type KindStored<K> = K extends keyof KindStorage ? KindStorage[K] : K extends `record<${infer T}>` ? RecordId<T> : never;
-/** One binding a part's `binds` states, with the uses it came from. */
-interface BindEntry {
-    readonly name: string;
-    readonly kind: string;
-    readonly use: unknown;
-}
-/**
- * The entries of one part's `binds`, without the index signature `Part`
- * declares and without the names in `Defined`.
- */
-type Entries<B, U, Defined extends string> = {
-    [K in keyof B as string extends K ? never : K extends Defined ? never : K]: {
-        readonly name: K;
-        readonly kind: B[K];
-        readonly use: K extends keyof U ? U[K] extends readonly [infer First, ...unknown[]] ? First : never : never;
-    };
-} extends infer M ? M[keyof M] : never;
-/**
- * The `binds` entries of a sequence's parts, for the names that remain
- * bindings: a name an earlier part defines is not one.
- */
-type BindsOf<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
-    infer Head extends Part,
-    ...infer Tail extends ReadonlyArray<Part>
-] ? (Head extends {
-    readonly binds: infer B;
-    readonly uses: infer U;
-} ? Entries<B, U, Defined> : never) | BindsOf<Tail, Defined | Head['defines'][number]> : never;
-/** How a message names a use. */
-type UseText<U> = U extends {
-    readonly kind: 'field';
-    readonly table: infer T extends string;
-    readonly field: infer F extends string;
-} ? U extends {
-    readonly role: 'assign';
-} ? `is assigned to \`${T}.${F}\`` : `is compared with \`${T}.${F}\`` : U extends {
-    readonly kind: 'argument';
-    readonly function: infer F extends string;
-    readonly index: infer I extends number;
-} ? `is passed to \`${F}\` at index ${I}` : U extends {
-    readonly kind: 'key';
-    readonly table: infer T extends string;
-} ? `is the key of a \`${T}\` record` : 'is used';
-/**
- * A message for each entry whose kind the codec `C` cannot hold: their
- * stored types do not overlap, exactly as {@link Comparable} decides for
- * two operands. For `option<K>` the codec's `undefined` (NONE) is set
- * aside first. `never` when every entry fits.
- */
-type Misfits<E, C> = E extends BindEntry ? C extends Codec ? (E['kind'] extends `option<${infer K}>` ? Comparable<KindStored<K>, Exclude<C['Encoded'], undefined>, true> : Comparable<KindStored<E['kind']>, C['Encoded'], true>) extends true ? never : `binding \`${E['name']}\` ${UseText<E['use']>} (${E['kind']}), which its codec cannot hold` : never : never;
-/** The message of each binding in `P` whose codec cannot hold its kind. */
-type MisfitsIn<P, E extends BindEntry> = {
-    readonly [K in keyof P]: K extends E['name'] ? Misfits<Extract<E, {
-        readonly name: K;
-    }>, P[K]> : never;
-}[keyof P];
-/** One member of a union, so a message names one binding. */
-type OneOf<U> = ((U extends unknown ? (member: () => U) => void : never) extends (member: infer I) => void ? I : never) extends () => infer M ? M & string : never;
-/**
- * `P`, when each codec can hold its binding's kind. Otherwise the message
- * for one binding whose codec cannot, so the compiler's first line names it.
- */
-type Fitted<P, E extends BindEntry> = [MisfitsIn<P, E>] extends [never] ? P : OneOf<MisfitsIn<P, E>>;
-/** The messages any part of a sequence can `THROW`. */
-type ThrownBy<Parts extends ReadonlyArray<Part>> = Parts[number]['throws'][number];
-/**
- * `P`, the codecs a contract declares, when they name exactly `Names`.
- * Otherwise a binding nothing reads is typed as a message naming it, and
- * when none is extra, the contract's expected type is a message naming each
- * binding it leaves without a codec.
- */
-type Exactly<Names extends string, P> = [
-    Exclude<keyof P, Names>
-] extends [never] ? [Exclude<Names, keyof P>] extends [never] ? P : `binding \`$${Exclude<Names, keyof P>}\` is read by this sequence and has no codec` : {
-    readonly [K in keyof P]: K extends Names ? P[K] : `binding \`$${K & string}\` is not read by this sequence`;
-};
-/**
- * The contract of a sequence: `P`, checked by {@link Exactly} against the
- * names the parts leave unbound. Parts that are not typed as literals (a
- * widened list, names typed `string`) cannot be checked by the compiler, so
- * they are left to the check `define` makes when it runs.
- */
-type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [Extract<Parts[number], {
-    readonly binds: object;
-}>] extends [never] ? Exactly<Unbound<Parts>, P> : [Exactly<Unbound<Parts>, P>] extends [P] ? Fitted<P, BindsOf<Parts>> : Exactly<Unbound<Parts>, P>;
-/**
- * Authored SurrealQL texts run one after another in a single request, sharing
- * one variable scope, as a statement.
- *
- * `define` takes a codec for exactly the names the sequence still needs:
- * leaving one out, or declaring one no part reads, is a compile error, and
- * the same check runs again when the statement is defined, in case the parts
- * were not typed as literals. A part that was not declared with {@link part}
- * is checked against its text here.
- *
- * @example
- * const guarded = sequence(bindWrite, requireOwner, readCutover).define({
- *   params: { boundProducer: Producer },
- *   result: Cutover,
- * });
- */
-declare const sequence: <const Parts extends ReadonlyArray<Part>>(...parts: Parts) => {
-    define: <const P extends Params, R extends Codec>(contract: {
-        readonly name?: string;
-        /**
-         * What the sequence writes, when its parts leave it unknown: `false`
-         * declares that it certainly does not write, `true` that it does.
-         * Refused when it contradicts what the parts say. Default derived
-         * from the parts.
-         */
-        readonly writes?: boolean;
-        readonly params: Contract<Parts, P>;
-        readonly result: R;
-    }) => Statement<P, R, ThrownBy<Parts>>;
-};
 
 /**
  * Record ids and id ranges built from their key parts.
@@ -2521,4 +2721,4 @@ declare const insert: <T extends PureTable, D extends Codec, P extends Params>(t
  */
 declare const insertRelation: <T extends RelationTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRelationRow<T>, D, Expr<D, P>, T["name"], "INSERT RELATION">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
 
-export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedCount, type CheckedFetch, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVector, type CheckedWeights, Codec, CodecOf, type CollectOptions, Comparable, type Condition, type Contract, type Count, type Create, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type ThrownBy, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, collect, count, create, deleteFrom, destructure, edges, evaluate, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };
+export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, type Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StringKeyed, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };

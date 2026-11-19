@@ -3315,6 +3315,15 @@ var analyzeLexed = (sql, lexed) => {
   const holes = /* @__PURE__ */ new Set();
   const throwsAt = /* @__PURE__ */ new Map();
   const skip = /* @__PURE__ */ new Set();
+  const holeSites = [];
+  const unboundReads = /* @__PURE__ */ new Map();
+  const visibleNames = () => {
+    const names = /* @__PURE__ */ new Set();
+    for (const f of frames) for (const name of f.vars) names.add(name);
+    for (const scope of closures)
+      for (const name of scope.vars) names.add(name);
+    return names;
+  };
   let slots = 0;
   let valueSlot = 0;
   let control = false;
@@ -3385,6 +3394,13 @@ var analyzeLexed = (sql, lexed) => {
     switch (token.kind) {
       case "hole":
         holes.add(token.value);
+        holeSites.push({
+          name: token.value,
+          index: i,
+          frame: current,
+          visible: visibleNames(),
+          statement: starting
+        });
         break;
       case "param": {
         const name = token.value;
@@ -3395,6 +3411,9 @@ var analyzeLexed = (sql, lexed) => {
         if (visible(name) || PROTECTED.has(name) || IMPLICIT.has(name))
           break;
         if (inDefinition && CONTEXTUAL.has(name)) break;
+        const reads = unboundReads.get(name) ?? [];
+        reads.push({ index: i, frames: [...frames] });
+        unboundReads.set(name, reads);
         if (!free.has(name)) {
           free.add(name);
           checkName2(name, token);
@@ -3613,8 +3632,29 @@ var analyzeLexed = (sql, lexed) => {
     functions: targets.functions,
     openTargets: targets.openTargets,
     uses: analyzeUses(tokens, sorted(free)),
+    holeScopes: holeScopesOf(holeSites, unboundReads, kind),
     diagnostics
   };
+};
+var holeScopesOf = (sites, reads, kind) => {
+  const out = {};
+  for (const name of sorted(sites.map((site) => site.name))) {
+    const own = sites.filter((site) => site.name === name);
+    const [first, ...rest] = own;
+    const bound = [...first?.visible ?? []].filter(
+      (candidate) => rest.every((site) => site.visible.has(candidate))
+    );
+    const binds = [...reads.entries()].filter(
+      ([, list3]) => own.some(
+        (site) => site.statement && // A LET can stand there: in a block, or at the top of a part.
+        (site.frame.open === "{" || kind === "part") && list3.every(
+          (read) => read.index > site.index && read.frames.includes(site.frame)
+        )
+      )
+    ).map(([free]) => free);
+    out[name] = { bound: sorted(bound), binds: sorted(binds) };
+  }
+  return out;
 };
 var analyzeSync = (sql, options = {}) => analyzeLexed(sql, lex(sql, holeDelimiters(options.holes)));
 
@@ -3643,6 +3683,9 @@ var checkName = (name, what, seen) => {
 };
 var templateLiteral = (text) => `\`${text.replace(/\\/gu, "\\\\").replace(/`/gu, "\\`").replace(/\$\{/gu, "\\${").replace(/\r/gu, "\\r")}\``;
 var list2 = (values) => `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+var scopesField = (scopes) => `{ ${Object.entries(scopes).map(
+  ([hole, scope]) => `${JSON.stringify(hole)}: { bound: ${list2(scope.bound)}, binds: ${list2(scope.binds)} }`
+).join(", ")} }`;
 var lines = (throwsAt) => {
   const entries = Object.entries(throwsAt);
   return entries.length === 0 ? "{}" : `{ ${entries.map(([message, at]) => `${JSON.stringify(message)}: [${at.join(", ")}]`).join(", ")} }`;
@@ -3718,6 +3761,7 @@ var renderConstant = (scope, name, analysis, binds) => {
     `free: ${list2(analysis.free)}`,
     `defines: ${list2(analysis.defines)}`,
     ...complete ? [] : [`provisional: ${analysis.provisional}`],
+    ...analysis.holes.length > 0 ? [`scopes: ${scopesField(analysis.holeScopes)}`] : [],
     `slots: ${analysis.slots}`,
     `throws: ${list2(analysis.throws)}`,
     `throwsAt: ${lines(analysis.throwsAt)}`,

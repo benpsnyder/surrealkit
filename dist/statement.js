@@ -5,13 +5,15 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-O3PDOYWY.js";
+} from "./chunk-ACZISPEL.js";
 import {
   SurrealValue
 } from "./chunk-F4HWMI2D.js";
 import {
-  analyzeSync
-} from "./chunk-DGHDFJTS.js";
+  DEFAULT_HOLE_DELIMITERS,
+  analyzeSync,
+  lex
+} from "./chunk-774SB3OG.js";
 import {
   TraversalTypeId,
   andAll,
@@ -48,7 +50,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-K54ZGDPS.js";
+} from "./chunk-BCI4MOVX.js";
 import {
   NoneAsAbsent
 } from "./chunk-FN4HR4GU.js";
@@ -98,7 +100,7 @@ import {
   sqlOf,
   unsafeExpr,
   withRefs
-} from "./chunk-ZWM5V4DS.js";
+} from "./chunk-ZJPZBNCL.js";
 import {
   Decimal,
   Float,
@@ -134,10 +136,10 @@ var objectsOf = (ast) => {
   return SchemaAST.isObjects(at2) ? at2 : void 0;
 };
 var withFields = (expr, codec, sql, optional) => {
-  const none = noneMember(codec);
-  const objects = objectsOf((none ?? codec).ast);
+  const none2 = noneMember(codec);
+  const objects = objectsOf((none2 ?? codec).ast);
   if (objects === void 0) return expr;
-  const mayBeNone = optional || none !== void 0;
+  const mayBeNone = optional || none2 !== void 0;
   const fields = {};
   for (const property of objects.propertySignatures) {
     if (typeof property.name !== "string") continue;
@@ -366,10 +368,10 @@ var assertLocal = (body, name) => {
 };
 var finish = (body) => ({
   build: (name, options) => {
-    const label = name ?? "block";
+    const label2 = name ?? "block";
     const statements = statementsOf(body);
     if (statements.length === 0) {
-      throw new RangeError(`block \`${label}\` has no steps`);
+      throw new RangeError(`block \`${label2}\` has no steps`);
     }
     const locals = [...body.own, ...body.inner];
     const shadowed = unique(
@@ -377,17 +379,17 @@ var finish = (body) => ({
     );
     if (shadowed.length > 0) {
       throw new RangeError(
-        `block \`${label}\` reads ${shadowed.map((local) => `\`$${local}\``).join(", ")} as a binding and defines a local of the same name, which would shadow it; rename the local`
+        `block \`${label2}\` reads ${shadowed.map((local) => `\`$${local}\``).join(", ")} as a binding and defines a local of the same name, which would shadow it; rename the local`
       );
     }
     if (options?.writes === false && body.writes) {
       throw new RangeError(
-        `block \`${label}\` is declared not to write, but a statement it runs writes`
+        `block \`${label2}\` is declared not to write, but a statement it runs writes`
       );
     }
     const writes = body.writes ? true : options?.writes;
     return make({
-      name: label,
+      name: label2,
       // One statement: a lone value or IF as it is, anything more as a
       // block, whose locals stay inside it.
       sql: body.steps.length === 0 ? `${statements.join("")};` : `{
@@ -551,6 +553,374 @@ var block = () => open({
   writes: false
 });
 
+// src/statement/family.ts
+var TextNodeTypeId = "~effect-surrealkit/TextNode";
+var empty = { [TextNodeTypeId]: "empty" };
+var compose = (template, fills) => {
+  const given = fills;
+  const holes = new Set(template.holes);
+  for (const hole of Object.keys(given).sort()) {
+    if (!holes.has(hole))
+      throw new RangeError(`${label(template)} has no hole ${hole}`);
+    checkNode(given[hole], `the fill for ${hole}`);
+  }
+  for (const hole of [...holes].sort()) {
+    if (!Object.hasOwn(given, hole))
+      throw new RangeError(
+        `hole ${hole} of ${label(template)} has no fill`
+      );
+  }
+  return {
+    [TextNodeTypeId]: "compose",
+    template,
+    fills: given
+  };
+};
+var choose = (axis, options) => {
+  const given = options;
+  const values = Object.keys(given);
+  if (values.length === 0)
+    throw new RangeError(`choose('${axis}', \u2026) has no options`);
+  for (const value of values)
+    checkNode(given[value], `the text for ${axis} = ${value}`);
+  return {
+    [TextNodeTypeId]: "choose",
+    axis,
+    options: given
+  };
+};
+var label = (item) => item.name === void 0 ? "the template" : `\`${item.name}\``;
+var nodeKind = (node) => {
+  if (typeof node !== "object" || node === null) return void 0;
+  if (TextNodeTypeId in node)
+    return node[TextNodeTypeId];
+  if (isExpr(node)) return "expr";
+  const candidate = node;
+  return typeof candidate.sql === "string" && Array.isArray(candidate.free) ? "text" : void 0;
+};
+var checkNode = (node, what) => {
+  const kind = nodeKind(node);
+  if (kind === void 0) {
+    throw new RangeError(
+      `${what} is not a text, a composite, a choice, a constant or \`empty\`; raw SurrealQL strings are refused`
+    );
+  }
+  if (kind === "text" && (node.holes ?? []).length > 0) {
+    throw new RangeError(
+      `${what} is a template with holes (${(node.holes ?? []).join(", ")}): compose it first`
+    );
+  }
+  if (kind === "expr" && Object.keys(node[ExprTypeId].params).length > 0) {
+    throw new RangeError(
+      `${what} is a constant that binds ${Object.keys(node[ExprTypeId].params).join(", ")}: a constant fill binds nothing`
+    );
+  }
+};
+var verified = /* @__PURE__ */ new WeakMap();
+var sameList = (a, b) => {
+  const x = [...new Set(a)].sort();
+  const y = [...new Set(b)].sort();
+  return x.length === y.length && x.every((value, index) => value === y[index]);
+};
+var verifyText = (item) => {
+  const known = verified.get(item);
+  if (known !== void 0) return known;
+  const analysis = analyzeSync(item.sql);
+  const differences = [];
+  const compare = (field, declared, derived) => {
+    if (!sameList(declared, derived))
+      differences.push(
+        `${field}: declared [${[...declared].sort().join(", ")}], the text has [${derived.join(", ")}]`
+      );
+  };
+  compare("holes", item.holes ?? [], analysis.holes);
+  compare("free", item.free, analysis.free);
+  compare("defines", item.defines, analysis.defines);
+  compare("throws", item.throws, analysis.throws);
+  if (analysis.holes.length > 0) {
+    if (item.scopes === void 0) {
+      differences.push(
+        "scopes: a template must declare the scope of each hole (regenerate it with `effect-surrealkit statements`)"
+      );
+    } else {
+      for (const hole of analysis.holes) {
+        const declared = item.scopes[hole];
+        const derived = analysis.holeScopes[hole];
+        if (declared === void 0 || derived === void 0) {
+          differences.push(
+            `scopes: hole ${hole} has no declared scope`
+          );
+          continue;
+        }
+        compare(`scopes.${hole}.bound`, declared.bound, derived.bound);
+        compare(`scopes.${hole}.binds`, declared.binds, derived.binds);
+      }
+    }
+  }
+  if (differences.length > 0)
+    throw new RangeError(
+      `${label(item)} does not declare what its text does: ${differences.join("; ")}`
+    );
+  const { tokens } = lex(item.sql, DEFAULT_HOLE_DELIMITERS);
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  const offset = first?.start ?? 0;
+  const body = first === void 0 || last === void 0 ? "" : item.sql.slice(first.start, last.end);
+  const sites = tokens.filter((token) => token.kind === "hole").map((token) => ({
+    hole: token.value,
+    start: token.start - offset,
+    end: token.end - offset
+  }));
+  const entry = { analysis, body, sites };
+  verified.set(item, entry);
+  return entry;
+};
+var selectedOption = (node, key2) => {
+  const value = key2[node.axis];
+  const option = value === void 0 ? void 0 : node.options[String(value)];
+  if (option === void 0)
+    throw new RangeError(
+      `choose('${node.axis}', \u2026) has no text for ${String(value)}`
+    );
+  return option;
+};
+var render = (node, key2) => {
+  switch (nodeKind(node)) {
+    case "empty":
+      return "";
+    case "expr":
+      return node[ExprTypeId].sql;
+    case "choose":
+      return render(selectedOption(node, key2), key2);
+    case "compose": {
+      const { template, fills } = node;
+      const { body, sites } = verifyText(template);
+      let out = "";
+      let at2 = 0;
+      for (const site of sites) {
+        out += body.slice(at2, site.start) + render(fills[site.hole], key2);
+        at2 = site.end;
+      }
+      return out + body.slice(at2);
+    }
+    default:
+      return verifyText(node).body;
+  }
+};
+var none = { free: /* @__PURE__ */ new Set(), defines: /* @__PURE__ */ new Set(), throws: /* @__PURE__ */ new Set() };
+var claim = (node, key2) => {
+  switch (nodeKind(node)) {
+    case "empty":
+    case "expr":
+      return none;
+    case "choose":
+      return claim(selectedOption(node, key2), key2);
+    case "compose": {
+      const { template, fills } = node;
+      verifyText(template);
+      const free = /* @__PURE__ */ new Set();
+      const throws = new Set(template.throws);
+      const bindsByFills = /* @__PURE__ */ new Set();
+      for (const [hole, fill] of Object.entries(fills)) {
+        const scope = template.scopes?.[hole] ?? {
+          bound: [],
+          binds: []
+        };
+        const inner = claim(fill, key2);
+        for (const name of inner.free)
+          if (!scope.bound.includes(name)) free.add(name);
+        for (const name of inner.defines)
+          if (scope.binds.includes(name)) bindsByFills.add(name);
+        for (const message of inner.throws) throws.add(message);
+      }
+      for (const name of template.free)
+        if (!bindsByFills.has(name)) free.add(name);
+      return { free, defines: new Set(template.defines), throws };
+    }
+    default: {
+      const item = node;
+      verifyText(item);
+      return {
+        free: new Set(item.free),
+        defines: new Set(item.defines),
+        throws: new Set(item.throws)
+      };
+    }
+  }
+};
+var keysOf = (axes) => {
+  let keys = [{}];
+  for (const [axis, values] of Object.entries(axes)) {
+    keys = keys.flatMap(
+      (key2) => values.map((value) => ({ ...key2, [axis]: value }))
+    );
+  }
+  return keys;
+};
+var describeKey = (key2) => Object.entries(key2).map(([axis, value]) => `${axis}=${String(value)}`).join(", ");
+var pinName = (family2, key2) => [
+  family2,
+  ...Object.entries(key2).map(
+    ([axis, value]) => `${axis}-${String(value).replaceAll(".", "%2E")}`
+  )
+].join(".");
+var axesOf = (node, into) => {
+  const kind = nodeKind(node);
+  if (kind === "choose") {
+    const choice = node;
+    const options = into.get(choice.axis) ?? /* @__PURE__ */ new Set();
+    for (const [value, option] of Object.entries(choice.options)) {
+      options.add(value);
+      axesOf(option, into);
+    }
+    into.set(choice.axis, options);
+  } else if (kind === "compose") {
+    for (const fill of Object.values(node.fills))
+      axesOf(fill, into);
+  }
+};
+var checkAxes = (name, axes, root) => {
+  const used = /* @__PURE__ */ new Map();
+  axesOf(root, used);
+  const problems = [];
+  for (const [axis, values] of Object.entries(axes)) {
+    if (values.length === 0)
+      problems.push(`axis \`${axis}\` has no values`);
+    if (new Set(values.map(String)).size !== values.length)
+      problems.push(`axis \`${axis}\` repeats a value`);
+    if (!used.has(axis))
+      problems.push(`axis \`${axis}\` is never chosen on`);
+  }
+  for (const axis of used.keys())
+    if (!Object.hasOwn(axes, axis))
+      problems.push(
+        `choose('${axis}', \u2026) names an axis the family does not declare`
+      );
+  if (problems.length > 0)
+    throw new RangeError(`family \`${name}\`: ${problems.join("; ")}`);
+};
+var listNames = (names2) => [...names2].sort().map((name) => `$${name}`).join(", ");
+var family = (checkedAxes, root) => ({
+  define: (contract) => {
+    const name = contract.name ?? "family";
+    const tree = root;
+    const axes = checkedAxes;
+    const params = contract.params;
+    checkNode(tree, `the text of family \`${name}\``);
+    checkAxes(name, axes, tree);
+    const keys = keysOf(axes);
+    const read = /* @__PURE__ */ new Set();
+    for (const key2 of keys)
+      for (const free of claim(tree, key2).free) read.add(free);
+    const declared = Object.keys(params);
+    const missing = [...read].filter((free) => !declared.includes(free));
+    const extra = declared.filter((free) => !read.has(free));
+    if (missing.length > 0 || extra.length > 0) {
+      throw new RangeError(
+        [
+          `the bindings of family \`${name}\` do not match the names its variants read`,
+          ...missing.length > 0 ? [`missing: ${listNames(missing)}`] : [],
+          ...extra.length > 0 ? [`not read by any variant: ${listNames(extra)}`] : []
+        ].join("; ")
+      );
+    }
+    const built = /* @__PURE__ */ new Map();
+    const indexOf = (key2) => JSON.stringify(Object.keys(axes).map((axis) => key2[axis]));
+    const build = (key2) => {
+      const index = indexOf(key2);
+      const known = built.get(index);
+      if (known !== void 0) return known;
+      const where = `family \`${name}\`, variant ${describeKey(key2)}`;
+      const sql = render(tree, key2);
+      const analysis = analyzeSync(sql);
+      const expected = claim(tree, key2);
+      const problems = [];
+      if (analysis.holes.length > 0)
+        problems.push(
+          `its text still has holes (${analysis.holes.join(", ")})`
+        );
+      if (analysis.kind !== "part")
+        problems.push(
+          "its text is a fragment, not a statement: end it with `;`"
+        );
+      if (!sameList([...expected.free], analysis.free))
+        problems.push(
+          `the composition reads [${listNames(expected.free)}], its text reads [${listNames(analysis.free)}]`
+        );
+      if (!sameList([...expected.throws], analysis.throws))
+        problems.push(
+          `the composition throws [${[...expected.throws].sort().join(", ")}], its text [${analysis.throws.join(", ")}]`
+        );
+      const errors = analysis.diagnostics.filter(
+        (diagnostic) => diagnostic.severity === "error"
+      );
+      for (const error of errors)
+        problems.push(
+          `${error.message} at ${error.line}:${error.column}`
+        );
+      if (problems.length > 0)
+        throw new RangeError(`${where}: ${problems.join("; ")}`);
+      const writes = analysis.writes ? true : contract.writes;
+      const made = make({
+        name,
+        sql,
+        params: Object.fromEntries(
+          analysis.free.map((free) => [free, params[free]])
+        ),
+        result: contract.result,
+        slots: analysis.slots,
+        valueSlot: analysis.valueSlot,
+        throws: analysis.throws,
+        defines: analysis.defines,
+        transactional: analysis.transactional,
+        tables: analysis.tables,
+        functions: analysis.functions,
+        openTargets: analysis.openTargets,
+        ...Object.keys(analysis.uses).length > 0 && {
+          uses: analysis.uses
+        },
+        ...writes !== void 0 && { writes }
+      });
+      const variant = describeKey(key2);
+      const statement = variant === "" ? made : { ...made, variant };
+      built.set(index, statement);
+      return statement;
+    };
+    if (contract.build === "eager") for (const key2 of keys) build(key2);
+    const select2 = (key2) => {
+      const extraAxes = Object.keys(key2).filter(
+        (axis) => !Object.hasOwn(axes, axis)
+      );
+      if (extraAxes.length > 0)
+        throw new RangeError(
+          `family \`${name}\` has no axis ${extraAxes.join(", ")}`
+        );
+      for (const [axis, values] of Object.entries(axes)) {
+        if (!values.includes(key2[axis])) {
+          throw new RangeError(
+            `family \`${name}\`: ${String(key2[axis])} is not a value of the axis \`${axis}\` (${values.map(String).join(", ")})`
+          );
+        }
+      }
+      return build(key2);
+    };
+    return {
+      name,
+      axes,
+      select: select2,
+      variants: () => keys.map((key2) => {
+        const statement = build(key2);
+        return {
+          key: key2,
+          name: pinName(name, key2),
+          sql: statement.sql,
+          statement
+        };
+      })
+    };
+  }
+});
+
 // src/statement/group.ts
 import { Schema as Schema2 } from "effect";
 import {
@@ -584,7 +954,7 @@ var dataOf = (value) => {
   }
   return value[RowValueTypeId];
 };
-var empty = (value) => value[RowValueTypeId].optional || value[RowValueTypeId].all;
+var empty2 = (value) => value[RowValueTypeId].optional || value[RowValueTypeId].all;
 function count(value) {
   if (value !== void 0) dataOf(value);
   return aggregate("count", value, Int);
@@ -597,7 +967,7 @@ var sumCodec = (value) => {
     case "effect-surrealkit/Int64":
       return Int64;
     case "effect-surrealkit/Decimal":
-      return empty(value) ? Schema2.Union([Decimal, Int]) : Decimal;
+      return empty2(value) ? Schema2.Union([Decimal, Int]) : Decimal;
     case "effect-surrealkit/SurrealNumber":
       return SurrealNumber;
     default:
@@ -633,7 +1003,7 @@ var median = (value) => {
   return aggregate(
     "math::median",
     value,
-    empty(value) ? Schema2.UndefinedOr(codec) : codec
+    empty2(value) ? Schema2.UndefinedOr(codec) : codec
   );
 };
 var extreme = (fn) => (value) => {
@@ -641,7 +1011,7 @@ var extreme = (fn) => (value) => {
   return aggregate(
     fn,
     value,
-    empty(value) ? Schema2.Union([data.codec, Float]) : data.codec
+    empty2(value) ? Schema2.Union([data.codec, Float]) : data.codec
   );
 };
 var min = extreme("math::min");
@@ -651,7 +1021,7 @@ var time = (fn) => (value) => {
   return aggregate(
     fn,
     value,
-    empty(value) ? Schema2.UndefinedOr(data.codec) : data.codec
+    empty2(value) ? Schema2.UndefinedOr(data.codec) : data.codec
   );
 };
 var timeMin = time("time::min");
@@ -675,7 +1045,7 @@ var rowCount = (rows2, clause) => {
   return String(rows2);
 };
 var outputOf = (state) => project({ ...state.keys, ...state.aggregates });
-var render = (state) => {
+var render2 = (state) => {
   const keys = Object.values(state.keys);
   return [
     `SELECT ${outputOf(state).sql} FROM ${state.from}`,
@@ -704,7 +1074,7 @@ var finishing = (state) => ({
     const output = outputOf(state);
     const all = Object.keys(state.keys).length === 0;
     const writes = options?.writes ?? (state.pure ? false : void 0);
-    const label = name ?? `select ${state.table.name} grouped`;
+    const label2 = name ?? `select ${state.table.name} grouped`;
     const readers = settle(
       joinContexts([
         state.context,
@@ -721,13 +1091,13 @@ var finishing = (state) => ({
           ]
         )
       ]),
-      `statement \`${label}\``
+      `statement \`${label2}\``
     );
-    assertReader(readerOf(state.table), readers, `statement \`${label}\``);
+    assertReader(readerOf(state.table), readers, `statement \`${label2}\``);
     return make({
       ...writes !== void 0 && { writes },
-      name: label,
-      sql: `${render(state)};`,
+      name: label2,
+      sql: `${render2(state)};`,
       params: mergeParams(state.params, output.params),
       result: all ? Schema2.Tuple([output.codec]) : Schema2.Array(output.codec)
     });
@@ -871,30 +1241,30 @@ var reads = (sql, name) => {
   }
   return false;
 };
-var verify = (item, label) => {
+var verify = (item, label2) => {
   const known = checked.get(item);
   if (known !== void 0) return known;
   const text = item.sql.trim();
   if (!text.endsWith(";")) {
     throw new RangeError(
-      `${label} does not end with \`;\`, so the next part would run into it`
+      `${label2} does not end with \`;\`, so the next part would run into it`
     );
   }
   if (!Number.isInteger(item.slots) || item.slots < 0) {
-    throw new RangeError(`${label} returns ${item.slots} results`);
+    throw new RangeError(`${label2} returns ${item.slots} results`);
   }
   for (const name of [...item.free, ...item.defines]) {
     assertIdentifier(name);
     if (!reads(text, name)) {
       throw new RangeError(
-        `${label} lists \`$${name}\`, which its text never mentions`
+        `${label2} lists \`$${name}\`, which its text never mentions`
       );
     }
   }
   const analysis = analyzeSync(item.sql);
   if (analysis.holes.length > 0) {
     throw new RangeError(
-      `${label} has holes (${analysis.holes.join(", ")}): a template is not a part; fill its holes and declare the filled text`
+      `${label2} has holes (${analysis.holes.join(", ")}): a template is not a part; fill its holes and declare the filled text`
     );
   }
   const differences = [];
@@ -983,7 +1353,7 @@ var verify = (item, label) => {
   }
   if (differences.length > 0) {
     throw new RangeError(
-      `${label} does not declare what its text does: ${differences.join("; ")}`
+      `${label2} does not declare what its text does: ${differences.join("; ")}`
     );
   }
   checked.set(item, analysis);
@@ -1082,7 +1452,7 @@ var sequence = (...parts) => ({
         nameOf(item.name, `part ${index + 1} of the sequence`)
       )
     );
-    const label = contract.name ?? "sequence";
+    const label2 = contract.name ?? "sequence";
     const throwSites = throwSitesOf(parts);
     const expected = unboundOf(parts);
     const declared = Object.keys(contract.params);
@@ -1091,7 +1461,7 @@ var sequence = (...parts) => ({
     if (missing.length > 0 || extra.length > 0) {
       throw new RangeError(
         [
-          `the bindings of sequence \`${label}\` do not match the names it reads`,
+          `the bindings of sequence \`${label2}\` do not match the names it reads`,
           ...missing.length > 0 ? [`missing: ${names(missing)}`] : [],
           ...extra.length > 0 ? [`not read by any part: ${names(extra)}`] : []
         ].join("; ")
@@ -1100,7 +1470,7 @@ var sequence = (...parts) => ({
     const derived = writesOf(parts, analyses);
     if (contract.writes !== void 0 && derived !== void 0 && contract.writes !== derived) {
       throw new RangeError(
-        contract.writes ? `sequence \`${label}\` is declared to write, but every part is declared not to` : `sequence \`${label}\` is declared not to write, but it writes`
+        contract.writes ? `sequence \`${label2}\` is declared to write, but every part is declared not to` : `sequence \`${label2}\` is declared not to write, but it writes`
       );
     }
     const writes = contract.writes ?? derived;
@@ -1113,7 +1483,7 @@ var sequence = (...parts) => ({
       offset += parts[index].slots;
     }
     return make({
-      name: label,
+      name: label2,
       sql: parts.map((item) => item.sql.trim()).join("\n"),
       params: contract.params,
       result: contract.result,
@@ -1830,7 +2200,7 @@ var count2 = (value, clause) => {
   }
   return String(value);
 };
-var render2 = (state) => {
+var render3 = (state) => {
   assertOrder(state);
   const limit = state.only && readsMany(state) ? "1" : state.limit;
   return [
@@ -2098,21 +2468,21 @@ var builder = (state) => {
     groupAll: () => groupAll(baseOf(state)),
     toExpr: () => subquery(
       resultOf(state),
-      render2(state),
+      render3(state),
       state.params,
       ownReader(state, `the subquery of \`${state.table.name}\``)
     ),
     build: (name, options) => {
       const writes = options?.writes ?? (state.pure ? false : void 0);
-      const label = name ?? `select ${state.table.name}`;
+      const label2 = name ?? `select ${state.table.name}`;
       settle(
-        ownReader(state, `statement \`${label}\``),
-        `statement \`${label}\``
+        ownReader(state, `statement \`${label2}\``),
+        `statement \`${label2}\``
       );
       return make({
         ...writes !== void 0 && { writes },
-        name: label,
-        sql: `${render2(state)};`,
+        name: label2,
+        sql: `${render3(state)};`,
         params: state.params,
         result: resultOf(state)
       });
@@ -2366,7 +2736,7 @@ var NoRows = Schema6.Array(Schema6.Undefined).pipe(
     })
   )
 );
-var render3 = (state) => [
+var render4 = (state) => [
   state.verb === "INSERT" ? `INSERT ${state.relation === true ? "RELATION " : ""}INTO ${state.target}` : `${state.verb} ${state.shape === "many" ? "" : "ONLY "}${state.target}`,
   ...state.data === void 0 ? [] : [state.data],
   ...state.duplicate === void 0 ? [] : [`ON DUPLICATE KEY UPDATE ${state.duplicate}`],
@@ -2402,15 +2772,15 @@ var nonEmpty = (state) => {
   return state.verb === "UPSERT" && state.shape === "one" && (mode === "after" || mode === "fields");
 };
 var finish2 = (state, name) => {
-  const label = name ?? `${state.verb.toLowerCase()}${state.relation === true ? " relation" : ""} ${state.table.name}`;
+  const label2 = name ?? `${state.verb.toLowerCase()}${state.relation === true ? " relation" : ""} ${state.table.name}`;
   assertReader(
     readerOf(state.table),
-    settle(state.context, `statement \`${label}\``),
-    `statement \`${label}\``
+    settle(state.context, `statement \`${label2}\``),
+    `statement \`${label2}\``
   );
   return make({
-    name: label,
-    sql: `${render3(state)};`,
+    name: label2,
+    sql: `${render4(state)};`,
     params: state.params,
     result: resultOf2(state),
     writes: true,
@@ -2675,6 +3045,7 @@ export {
   PatchOperation,
   RowValueTypeId,
   StatementTypeId,
+  TextNodeTypeId,
   TraversalTypeId,
   add,
   and,
@@ -2685,8 +3056,10 @@ export {
   both,
   call,
   cast,
+  choose,
   codecOf,
   collect,
+  compose,
   contains,
   count,
   create,
@@ -2694,8 +3067,10 @@ export {
   destructure,
   div,
   edges,
+  empty,
   eq,
   evaluate,
+  family,
   follow,
   gt,
   gte,

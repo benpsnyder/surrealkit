@@ -1,10 +1,13 @@
 import { Effect } from 'effect';
-import { H as HoleDelimiters, A as AnalyzeError, S as StatementModule } from './render-D6C5hk4P.js';
-export { D as DEFAULT_HOLE_DELIMITERS, a as DeclaredDetail, b as DeclaredNames, c as DeclaredTable, R as RenderStatementModulesInput, d as STATEMENTS_MARK, e as StatementModules, f as StatementModulesError, g as StatementProblem, h as StatementScope, i as StatementSourceFile, j as StatementWarning, r as renderStatementModules, k as renderStatementModulesSync } from './render-D6C5hk4P.js';
+import { H as HoleDelimiters, A as AnalyzeError } from './lexer-BEI0-7pQ.js';
+export { D as DEFAULT_HOLE_DELIMITERS } from './lexer-BEI0-7pQ.js';
 import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
+import { S as StatementModule } from './render-CvQvIZRb.js';
+export { D as DeclaredDetail, a as DeclaredNames, b as DeclaredTable, R as RenderStatementModulesInput, c as STATEMENTS_MARK, d as StatementModules, e as StatementModulesError, f as StatementProblem, g as StatementScope, h as StatementSourceFile, i as StatementWarning, r as renderStatementModules, j as renderStatementModulesSync } from './render-CvQvIZRb.js';
+export { F as FillError, a as FillOptions, b as Fills, T as Text, c as TextHoleScope, d as TextHoleScopes, f as fill, t as text } from './text-Dh74bkFB.js';
 
 /**
  * What an authored SurrealQL text does with variables, results and `THROW`s,
@@ -92,7 +95,23 @@ interface Analysis {
      * is not certain; a binding with no such use is absent.
      */
     readonly uses: BindingUses;
+    /**
+     * For each hole, what the text around it does with names (empty for a
+     * text without holes): `bound`, the names visible at every occurrence of
+     * the hole (a `LET` before it in an enclosing block, a closure, `FOR` or
+     * function parameter), so a fill that reads one of them does not read a
+     * binding; and `binds`, the free names of this text that a `LET` placed
+     * at the hole would define for every read of them, so a fill of
+     * statements that `LET`s one of them takes it out of the free names
+     * (empty unless the hole starts a statement).
+     */
+    readonly holeScopes: Readonly<Record<string, HoleScope>>;
     readonly diagnostics: ReadonlyArray<Diagnostic>;
+}
+/** What the text around one hole does with names; see {@link Analysis}. */
+interface HoleScope {
+    readonly bound: ReadonlyArray<string>;
+    readonly binds: ReadonlyArray<string>;
 }
 /** {@link analyze}, throwing its {@link AnalyzeError}. */
 declare const analyzeSync: (sql: string, options?: AnalyzeOptions) => Analysis;
@@ -149,55 +168,4 @@ declare const renderPinnedStatements: (statements: Iterable<PinnableStatement>) 
  */
 declare const pinnedStatementProblems: (statements: Iterable<PinnableStatement>, files: ReadonlyArray<StatementModule>) => ReadonlyArray<PinnedStatementDrift>;
 
-/** A fragment or template, as the `statements` command writes it. */
-interface Text<Holes extends string = string> {
-    readonly kind: 'part' | 'fragment';
-    readonly name?: string;
-    readonly source?: string;
-    readonly sql: string;
-    readonly holes: ReadonlyArray<Holes>;
-    /** As written; provisional while the text has holes. */
-    readonly free: ReadonlyArray<string>;
-    /** As written; provisional while the text has holes. */
-    readonly defines: ReadonlyArray<string>;
-    readonly provisional: boolean;
-    readonly slots: number;
-    readonly throws: ReadonlyArray<string>;
-    readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
-}
-/** Declares a {@link Text}, keeping its hole names as literal types. */
-declare const text: <const Holes extends string = never>(options: Text<Holes>) => Text<Holes>;
-declare const FillError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
-    readonly _tag: "FillError";
-} & Readonly<A>;
-/** Why holes could not be filled. */
-declare class FillError extends FillError_base<{
-    readonly code: string;
-    readonly message: string;
-    readonly hole?: string;
-}> {
-}
-interface FillOptions {
-    /** The literal delimiters of a hole; default `__` and `__`. */
-    readonly holes?: HoleDelimiters;
-    /** Accept fills that still have holes of their own. Default false. */
-    readonly allowHoles?: boolean;
-}
-/** The fills a template takes: one per hole when its holes are known. */
-type Fills<T> = T extends Text<infer Holes> ? string extends Holes ? Readonly<Record<string, string | Text>> : {
-    readonly [K in Holes]: string | Text;
-} : Readonly<Record<string, string | Text>>;
-/**
- * Substitutes every hole of `template` and returns the new text. Holes are
- * only recognised outside strings and comments. Each fill must lex on its
- * own with balanced brackets, so it cannot close or open anything around
- * its hole; leading and trailing whitespace and comments of a fill are
- * dropped, so a trailing line comment cannot swallow the rest of the line.
- *
- * Fails on a fill for a hole the template does not have, a hole without a
- * fill, or a fill that still has holes (unless `allowHoles`). The result is
- * a new text: analyse it to know what it reads, defines and returns.
- */
-declare const fill: <const T extends string | Text>(template: T, fills: Fills<T>, options?: FillOptions) => Effect.Effect<string, FillError>;
-
-export { type Analysis, AnalyzeError, type AnalyzeOptions, BindingUses, type Diagnostic, FillError, type FillOptions, type Fills, HoleDelimiters, type PinnableStatement, type PinnedStatementDrift, type PinnedStatementProblem, PinnedStatementsError, StatementModule, type Text, analyze, analyzeSync, fill, pinnedStatementProblems, renderPinnedStatements, text };
+export { type Analysis, AnalyzeError, type AnalyzeOptions, BindingUses, type Diagnostic, HoleDelimiters, type HoleScope, type PinnableStatement, type PinnedStatementDrift, type PinnedStatementProblem, PinnedStatementsError, StatementModule, analyze, analyzeSync, pinnedStatementProblems, renderPinnedStatements };
