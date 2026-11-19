@@ -22,6 +22,7 @@ import {
 	not,
 	param,
 	part,
+	readAs,
 	relate,
 	select,
 	sequence,
@@ -304,4 +305,9 @@ export const rejectedRuns = () => {
 	transaction([{ statement: byEmail, input: {} }]);
 	// @ts-expect-error [bound/hand-built-wrong-value] a hand-built object is not a bound statement
 	transaction([{ statement: byEmail, input: { email: 42 } }]);
+};
+
+export const rejectedReadView = () => {
+	// @ts-expect-error [read-view/unknown-stored-field] session views narrow the actual schemafull table.
+	readAs(PersonTable, Schema.Struct({ emial: Schema.String }));
 };
