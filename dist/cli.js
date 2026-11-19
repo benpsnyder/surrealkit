@@ -1149,11 +1149,12 @@ ${tabs(indent)}})`;
   return open ? `Schema.StructWithRest(${body}, [${printOpenRecord(world, merge)}])` : body;
 };
 var TablePrinter = class {
-  constructor(table, scope, options, world = "native") {
+  constructor(table, scope, options, world = "native", visible = false) {
     this.table = table;
     this.scope = scope;
     this.options = options;
     this.world = world;
+    this.visible = visible;
     this.root = buildTree(table.fields);
     this.isRelation = table.type.kind === "relation";
     this.lightweight = table.type.kind === "relation" && table.type.lightweight;
@@ -1162,9 +1163,14 @@ var TablePrinter = class {
   scope;
   options;
   world;
+  visible;
   root;
   isRelation;
   lightweight;
+  /** Some session may be refused this field when it selects it. */
+  mayBeHidden(fieldNode) {
+    return fieldNode.field !== void 0 && fieldNode.field.permissions.select !== true;
+  }
   location(path) {
     return `${this.table.name}.${path.join(".")}`;
   }
@@ -1179,10 +1185,10 @@ var TablePrinter = class {
   }
   presence(fieldNode, operation, element) {
     const override = this.options.fields?.[this.location(fieldNode.path)]?.[operation];
-    if (override !== void 0) return override;
     const effective = element && operation !== "select" ? "create" : operation;
     const writeExcluded = this.lightweight || this.table.view !== void 0;
-    return derivePresence(infoOf(fieldNode), effective, writeExcluded);
+    const presence = override ?? derivePresence(infoOf(fieldNode), effective, writeExcluded);
+    return this.visible && operation === "select" && presence === "required" && this.mayBeHidden(fieldNode) ? "optional" : presence;
   }
   /** The schema of one field in one operation, before its own presence. */
   field(fieldNode, operation, indent, element) {
@@ -1236,6 +1242,41 @@ var TablePrinter = class {
 var json2 = (value) => JSON.stringify(value);
 var jsonList = (values) => `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
 var printPermissions = (permissions) => `{ select: ${json2(permissions.select)}, create: ${json2(permissions.create)}, update: ${json2(permissions.update)}, delete: ${json2(permissions.delete)} }`;
+var printFieldPermissions = (fieldNode, indent) => {
+  const own = fieldNode.field?.permissions ?? {
+    select: true,
+    create: true,
+    update: true
+  };
+  const head = `select: ${json2(own.select)}, create: ${json2(own.create)}, update: ${json2(own.update)}`;
+  const children = sortedChildren(fieldNode);
+  if (children.length === 0) return `{ ${head} }`;
+  return [
+    `{ ${head}, fields: {`,
+    ...children.map(
+      (child) => `${tabs(indent + 1)}${propertyKey(child.key)}: ${printFieldPermissions(child, indent + 1)},`
+    ),
+    `${tabs(indent)}} }`
+  ].join("\n");
+};
+var printIndex = (index) => {
+  const parts = [
+    `type: ${json2(index.type)}`,
+    `columns: [${index.columns.map((path) => jsonList(path)).join(", ")}]`
+  ];
+  if (index.fulltext !== void 0) {
+    parts.push(
+      `fulltext: { analyzer: ${json2(index.fulltext.analyzer)}, highlights: ${index.fulltext.highlights} }`
+    );
+  }
+  if (index.vector !== void 0) {
+    parts.push(
+      `vector: { dimension: ${index.vector.dimension}, distance: ${json2(index.vector.distance)}, elementType: ${json2(index.vector.elementType)} }`
+    );
+  }
+  if (index.where !== void 0) parts.push(`where: ${json2(index.where)}`);
+  return `{ ${parts.join(", ")} }`;
+};
 var presenceLiteral = (presence) => `{ select: ${json2(presence.select)}, create: ${json2(presence.create)}, merge: ${json2(presence.merge)}, content: ${json2(presence.content)} }`;
 var varianceReason = (perCode) => {
   const merge = perCode?.get("merge");
@@ -1255,6 +1296,40 @@ var SUFFIX = {
   create: "Create",
   merge: "Merge",
   content: "Content"
+};
+var printVisible = (name, selectEntries, fields, printer, reference, selectCode, open) => {
+  const byKey = new Map(fields.map((field) => [field.key, field]));
+  let changed = false;
+  const entries = selectEntries.map(([key, value]) => {
+    const field = byKey.get(key);
+    if (field === void 0) return [key, value];
+    const code = printer.field(field, "select", 1, false);
+    const printed = wrap(
+      code === selectCode(field) ? reference(field) : code,
+      printer.presence(field, "select", false)
+    );
+    if (printed !== value) changed = true;
+    return [key, printed];
+  });
+  const visible = `${name}Visible`;
+  const types = [
+    `export type ${visible} = typeof ${visible}.Type;`,
+    `export type ${visible}Encoded = typeof ${visible}.Encoded;`
+  ];
+  if (!changed) {
+    return [
+      `/** \`${name}\` as a session reads it when field permissions may hide fields: every field's select permission is FULL, so it is \`${name}\`. */`,
+      `export const ${visible} = ${name};`,
+      ...types,
+      ""
+    ];
+  }
+  return [
+    `/** \`${name}\` as a session reads it when field permissions may hide fields: each field whose select permission is not FULL may be NONE (absent). Build statements from \`readAs(${name}Table)\`. */`,
+    `export const ${visible} = ${struct(entries, 0, open)};`,
+    ...types,
+    ""
+  ];
 };
 var printTable = (input) => {
   const { table, scope, options } = input;
@@ -1375,6 +1450,17 @@ var printTable = (input) => {
       );
       exportType(`${name}Row`);
       lines2.push("");
+      lines2.push(
+        ...printVisible(
+          name,
+          entries,
+          fields,
+          new TablePrinter(table, scope, options, "native", true),
+          (field) => sharedKeys.has(field.key) ? `${fieldsName}${propertyAccess(field.key)}` : codes.get(field.key)?.get("select"),
+          (field) => codes.get(field.key)?.get("select"),
+          open
+        )
+      );
     }
   }
   if (options.patch === true && !printer.lightweight) {
@@ -1465,8 +1551,8 @@ var printTable = (input) => {
     `	schemafull: ${table.schemafull},`,
     `	drop: ${table.drop},`,
     `	id: ${idName},`,
-    ...operations.map(
-      (operation) => `	${operation}: ${pascal}${SUFFIX[operation]},`
+    ...operations.flatMap(
+      (operation) => operation === "select" ? [`	select: ${pascal},`, `	visible: ${pascal}Visible,`] : [`	${operation}: ${pascal}${SUFFIX[operation]},`]
     ),
     `	fields: ${fieldsName},`,
     "	presence: {",
@@ -1476,6 +1562,20 @@ var printTable = (input) => {
     "	},",
     `	relations: { in: ${jsonList(input.relations.in)}, out: ${jsonList(input.relations.out)} },`,
     `	permissions: ${printPermissions(table.permissions)},`,
+    ...fields.length === 0 ? ["	fieldPermissions: {},"] : [
+      "	fieldPermissions: {",
+      ...fields.map(
+        (field) => `		${propertyKey(field.key)}: ${printFieldPermissions(field, 2)},`
+      ),
+      "	},"
+    ],
+    ...table.indexes.length === 0 ? ["	indexes: {},"] : [
+      "	indexes: {",
+      ...table.indexes.map(
+        (index) => `		${propertyKey(index.name)}: ${printIndex(index)},`
+      ),
+      "	},"
+    ],
     ...relationType === void 0 ? [] : [`	edge: ${pascal}Edge,`],
     "});"
   );
@@ -1592,6 +1692,7 @@ var checkNames = (document, registry) => {
     for (const suffix of [
       "",
       "Row",
+      "Visible",
       "Id",
       "Create",
       "Merge",
@@ -1756,6 +1857,59 @@ var printManifest = (document, options) => {
     "} as const;"
   ].join("\n");
 };
+var printStore = (tables, functions, registry, options, ext) => {
+  const imported = /* @__PURE__ */ new Map();
+  const use = (module, name) => {
+    imported.set(module, [...imported.get(module) ?? [], name]);
+    return name;
+  };
+  const entries = (pairs) => pairs.length === 0 ? "{}" : `{
+${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
+	}`;
+  const tableEntries = [];
+  const viewEntries = [];
+  const edgeEntries = [];
+  for (const table of tables) {
+    const module = `./${registry.file(table.name)}${ext}`;
+    const pascal = registry.pascal(table.name);
+    const descriptor = use(module, `${pascal}Table`);
+    if (table.view !== void 0) {
+      viewEntries.push([table.name, descriptor]);
+      continue;
+    }
+    tableEntries.push([table.name, descriptor]);
+    if (table.type.kind === "relation") {
+      edgeEntries.push([table.name, use(module, `${pascal}Edge`)]);
+    }
+  }
+  const functionEntries = functions.map(
+    (fn) => [
+      fn.name,
+      use(`./functions${ext}`, functionIdentifier(fn.name))
+    ]
+  );
+  const importLines = [...imported.entries()].sort(([a], [b]) => compare(a, b)).map(
+    ([module, names]) => `import { ${[...names].sort(compare).join(", ")} } from "${module}";`
+  );
+  const body = [
+    `/** Every table, view, relation endpoint and function of store \`${options.store}\`, by its SurrealDB name. */`,
+    "export const store = SurrealSchema.store({",
+    `	name: ${json3(options.store)},`,
+    `	tables: ${entries(tableEntries)},`,
+    `	views: ${entries(viewEntries)},`,
+    `	edges: ${entries(edgeEntries)},`,
+    `	functions: ${entries(functionEntries)},`,
+    "});"
+  ].join("\n");
+  return assemble(
+    [
+      'import * as SurrealSchema from "effect-surrealkit";',
+      'import type {} from "surrealdb";',
+      ...importLines
+    ].join("\n"),
+    body
+  );
+};
 var emit = (document, options, hooks = {}) => {
   gateDiagnostics(document, options);
   if (hooks.sha256 !== void 0) {
@@ -1857,13 +2011,18 @@ ${body}`
     path: "manifest.ts",
     content: assemble("", manifestBody)
   });
+  files.push({
+    path: "_store.ts",
+    content: printStore(tables, functions, registry, options, ext)
+  });
   const barrel = [
     `export * from "./ids${ext}";`,
     ...tables.map(
       (table) => `export * from "./${registry.file(table.name)}${ext}";`
     ),
     `export * from "./functions${ext}";`,
-    `export { manifest } from "./manifest${ext}";`
+    `export { manifest } from "./manifest${ext}";`,
+    `export { store } from "./_store${ext}";`
   ].join("\n");
   files.push({ path: "index.ts", content: assemble("", barrel) });
   files.sort((a, b) => compare(a.path, b.path));

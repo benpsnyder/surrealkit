@@ -20,6 +20,10 @@
 			"types": "./dist/statement.d.ts",
 			"import": "./dist/statement.js"
 		},
+		"./functions": {
+			"types": "./dist/functions.d.ts",
+			"import": "./dist/functions.js"
+		},
 		"./client": {
 			"types": "./dist/client.d.ts",
 			"import": "./dist/client.js"
@@ -73,5 +77,5 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"gitHead": "4b6a3c96b45fdf4a7185e007c8ac780bf8b1b57a"
+	"gitHead": "d0dcb0528a45ccdec026c48b60c198195a412e9b"
 }

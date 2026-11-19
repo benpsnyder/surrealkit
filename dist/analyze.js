@@ -6,6 +6,7 @@ import {
   holeDelimiters,
   lex
 } from "./chunk-XG4BS7R5.js";
+import "./chunk-PZ5AY32C.js";
 
 // src/analyze/text.ts
 import { Data, Effect } from "effect";

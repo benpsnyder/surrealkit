@@ -124,6 +124,74 @@ interface RecordUser {
 declare const recordUser: (options: RecordUserOptions) => Effect.Effect<RecordUser, TestingError, TestDatabase | Scope.Scope>;
 
 /**
+ * Schema drift: what a store registry declares, compared with what a live
+ * database defines.
+ *
+ * The statements trust the generated descriptors: an `ENFORCED` relation's
+ * endpoints are typed as present, a lookup names a unique index, a search a
+ * FULLTEXT or vector index. A database whose schema moved on from the one
+ * the descriptors were generated from breaks those promises at run time,
+ * so a test can ask for the differences first.
+ *
+ * It reads `INFO FOR DB STRUCTURE` and `INFO FOR TABLE … STRUCTURE`, which
+ * SurrealDB 3.3 and 4.0 answer alike for what is compared here
+ * (`test/conformance.test.ts` pins both): each table's `kind` (`NORMAL`,
+ * `ANY`, which a table defined without `TYPE` is too, or `RELATION` with its
+ * `in` and `out` tables, as the SDK's `Table` values and absent for any
+ * table, and `enforced`), and each index's `cols` (field paths as SurrealQL spells
+ * them, `tags.*`, `` `odd.name` ``) and `index` (empty for a standard index,
+ * otherwise its definition, starting with its kind: `UNIQUE`, `COUNT`,
+ * `FULLTEXT`, `HNSW`, `DISKANN`).
+ */
+
+/** What the drift check reads of a generated table descriptor. */
+interface DeclaredTable {
+    readonly name: string;
+    /** `normal`, `any` or `relation`, as the emitter writes it. */
+    readonly type?: string;
+    readonly edge?: {
+        readonly in: ReadonlyArray<unknown>;
+        readonly out: ReadonlyArray<unknown>;
+        readonly enforced: boolean;
+    };
+    readonly indexes?: {
+        readonly [name: string]: {
+            readonly type: string;
+            readonly columns: ReadonlyArray<ReadonlyArray<string>>;
+        };
+    };
+}
+/** What the drift check reads of a generated store registry. */
+interface DeclaredStore {
+    readonly tables: {
+        readonly [name: string]: DeclaredTable;
+    };
+}
+/** One way the live database differs from the store's declarations. */
+interface SchemaDifference {
+    readonly kind: 'missing-table' | 'table-kind' | 'relation-enforced' | 'relation-endpoints' | 'missing-index' | 'index-kind' | 'index-fields';
+    readonly table: string;
+    readonly index?: string;
+    /** What the descriptors declare, and what the database defines. */
+    readonly declared: string;
+    readonly live: string;
+    readonly message: string;
+}
+/**
+ * The differences between what `store` declares and what the
+ * {@link TestDatabase} in context defines, in the store's table order: a
+ * declared table the database lacks, a table of another kind, a relation
+ * whose `ENFORCED` flag or endpoint tables differ, and a declared index
+ * that is missing, of another kind or over other fields. Definitions the
+ * store does not declare are not differences. An empty list is a match.
+ *
+ * @example
+ * const differences = yield* schemaDrift(store);
+ * expect(differences).toEqual([]);
+ */
+declare const schemaDrift: (store: DeclaredStore) => Effect.Effect<ReadonlyArray<SchemaDifference>, TestingError, TestDatabase>;
+
+/**
  * Whether the engine plans a `SELECT` through an index, read from its own
  * plan: the statement runs with `EXPLAIN` appended, through the client in
  * context, and nothing it would read is returned.
@@ -228,4 +296,4 @@ declare const fake: (script: Script) => FakeClient;
 /** Provides {@link SurrealClient} as a scripted client. */
 declare const fakeLayer: (script: Script) => Layer.Layer<SurrealClient>;
 
-export { type Call, type Connection, type Database, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type Script, TestDatabase, TestingError, conflict, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordUser, result, thrown };
+export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, conflict, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordUser, result, schemaDrift, thrown };

@@ -1,13 +1,21 @@
 import {
+  linkShape,
+  shapeTables,
+  tableName
+} from "./chunk-NH4WYZPQ.js";
+import "./chunk-FN4HR4GU.js";
+import {
   make,
   scanTopLevel
-} from "./chunk-6FQGMUUR.js";
+} from "./chunk-4HL7DR3L.js";
+import "./chunk-PHSAVORF.js";
 import {
   SurrealClient,
   make as make2,
   makeWith,
   run
 } from "./chunk-EBKUDRXT.js";
+import "./chunk-PZ5AY32C.js";
 
 // src/testing/database.ts
 import { Context, Effect, Layer } from "effect";
@@ -123,8 +131,177 @@ var recordUser = (options) => Effect.gen(function* () {
   return { session, client: make2(session) };
 });
 
+// src/testing/drift.ts
+import { Effect as Effect2 } from "effect";
+var nameOf = (value) => typeof value === "string" ? value : typeof value === "object" && value !== null && "name" in value && typeof value.name === "string" ? value.name : String(value);
+var messageOf2 = (cause) => cause instanceof Error ? cause.message : String(cause);
+var segmentsOf = (path) => {
+  const segments = [];
+  let current = "";
+  let index = 0;
+  while (index < path.length) {
+    const char = path[index] ?? "";
+    const close = char === "`" ? "`" : char === "\u27E8" ? "\u27E9" : void 0;
+    if (close !== void 0) {
+      index += 1;
+      while (index < path.length && path[index] !== close) {
+        if (path[index] === "\\") index += 1;
+        current += path[index] ?? "";
+        index += 1;
+      }
+      index += 1;
+    } else if (char === ".") {
+      segments.push(current);
+      current = "";
+      index += 1;
+    } else {
+      current += char;
+      index += 1;
+    }
+  }
+  segments.push(current);
+  return segments;
+};
+var indexKind = (definition) => {
+  const word = /^\s*([A-Za-z]+)/u.exec(definition)?.[1];
+  return word === void 0 ? "standard" : word.toLowerCase();
+};
+var columnsText = (columns) => columns.length === 0 ? "(none)" : columns.map((path) => path.join(".")).join(", ");
+var endpoints = (codecs) => {
+  const tables = /* @__PURE__ */ new Set();
+  for (const codec of codecs) {
+    const shape = linkShape(codec);
+    const names = shape === void 0 ? "any" : shapeTables(shape);
+    if (names === "any") return "any table";
+    for (const name of names) tables.add(name);
+  }
+  return [...tables].sort().join(" | ");
+};
+var liveEndpoints = (tables) => tables === void 0 || tables.length === 0 ? "any table" : tables.map(nameOf).sort().join(" | ");
+var info = (sql) => Effect2.flatMap(
+  Effect2.service(TestDatabase),
+  (database) => Effect2.tryPromise({
+    try: async () => {
+      const results = await database.connection.query(
+        sql
+      );
+      return results[results.length - 1];
+    },
+    catch: (cause) => new TestingError({
+      message: `\`${sql}\` failed: ${messageOf2(cause)}`,
+      cause
+    })
+  })
+);
+var compareTable = (declared, live, indexes) => {
+  const table = declared.name;
+  const differences = [];
+  const liveKind = (live.kind?.kind ?? "ANY").toLowerCase();
+  if (declared.type !== void 0 && declared.type !== liveKind) {
+    differences.push({
+      kind: "table-kind",
+      table,
+      declared: declared.type,
+      live: liveKind,
+      message: `\`${table}\` is declared ${declared.type} and defined ${liveKind}`
+    });
+  }
+  if (declared.edge !== void 0 && liveKind === "relation") {
+    const enforced = live.kind?.enforced === true;
+    if (declared.edge.enforced !== enforced) {
+      differences.push({
+        kind: "relation-enforced",
+        table,
+        declared: declared.edge.enforced ? "ENFORCED" : "not ENFORCED",
+        live: enforced ? "ENFORCED" : "not ENFORCED",
+        message: `\`${table}\` is declared ${declared.edge.enforced ? "ENFORCED" : "not ENFORCED"} and defined ${enforced ? "ENFORCED" : "not ENFORCED"}`
+      });
+    }
+    for (const side of ["in", "out"]) {
+      const want = endpoints(declared.edge[side]);
+      const have = liveEndpoints(live.kind?.[side]);
+      if (want !== have) {
+        differences.push({
+          kind: "relation-endpoints",
+          table,
+          declared: `${side.toUpperCase()} ${want}`,
+          live: `${side.toUpperCase()} ${have}`,
+          message: `\`${table}\` is declared ${side.toUpperCase()} ${want} and defined ${side.toUpperCase()} ${have}`
+        });
+      }
+    }
+  }
+  const byName = new Map(indexes.map((index) => [index.name, index]));
+  for (const [name, index] of Object.entries(declared.indexes ?? {})) {
+    const found = byName.get(name);
+    if (found === void 0) {
+      differences.push({
+        kind: "missing-index",
+        table,
+        index: name,
+        declared: `${index.type} on ${columnsText(index.columns)}`,
+        live: "(none)",
+        message: `\`${table}\` declares the ${index.type} index \`${name}\`, which the database does not define`
+      });
+      continue;
+    }
+    const kind = indexKind(found.index ?? "");
+    if (kind !== index.type) {
+      differences.push({
+        kind: "index-kind",
+        table,
+        index: name,
+        declared: index.type,
+        live: kind,
+        message: `the index \`${name}\` of \`${table}\` is declared ${index.type} and defined ${kind}`
+      });
+    }
+    const columns = (found.cols ?? []).map(segmentsOf);
+    if (columnsText(columns) !== columnsText(index.columns)) {
+      differences.push({
+        kind: "index-fields",
+        table,
+        index: name,
+        declared: columnsText(index.columns),
+        live: columnsText(columns),
+        message: `the index \`${name}\` of \`${table}\` is declared on ${columnsText(index.columns)} and defined on ${columnsText(columns)}`
+      });
+    }
+  }
+  return differences;
+};
+var schemaDrift = (store) => Effect2.gen(function* () {
+  const db = yield* info(
+    "INFO FOR DB STRUCTURE;"
+  );
+  const tables = new Map(
+    (db?.tables ?? []).map((table) => [table.name, table])
+  );
+  const differences = [];
+  for (const declared of Object.values(store.tables)) {
+    const live = tables.get(declared.name);
+    if (live === void 0) {
+      differences.push({
+        kind: "missing-table",
+        table: declared.name,
+        declared: declared.type ?? "table",
+        live: "(none)",
+        message: `\`${declared.name}\` is declared and not defined`
+      });
+      continue;
+    }
+    const structure = yield* info(
+      `INFO FOR TABLE ${tableName(declared)} STRUCTURE;`
+    );
+    differences.push(
+      ...compareTable(declared, live, structure?.indexes ?? [])
+    );
+  }
+  return differences;
+});
+
 // src/testing/explain.ts
-import { Effect as Effect2, Schema } from "effect";
+import { Effect as Effect3, Schema } from "effect";
 var indexesOf = (plan) => {
   const found = [];
   const visit = (node) => {
@@ -153,7 +330,7 @@ var explainable = (statement) => {
   }
   return `${text.slice(0, -1).trimEnd()} EXPLAIN;`;
 };
-var explain = (statement, input) => Effect2.suspend(() => {
+var explain = (statement, input) => Effect3.suspend(() => {
   const plan = make({
     name: `explain ${statement.name}`,
     sql: explainable(statement),
@@ -163,12 +340,12 @@ var explain = (statement, input) => Effect2.suspend(() => {
     writes: false
   });
   return run(plan, input).pipe(
-    Effect2.map((tree) => ({ plan: tree, indexes: indexesOf(tree) }))
+    Effect3.map((tree) => ({ plan: tree, indexes: indexesOf(tree) }))
   );
 });
-var expecting = (expected) => (statement, input, index) => Effect2.flatMap(
+var expecting = (expected) => (statement, input, index) => Effect3.flatMap(
   explain(statement, input),
-  ({ indexes, plan }) => indexes.includes(index) === (expected === "used") ? Effect2.void : Effect2.fail(
+  ({ indexes, plan }) => indexes.includes(index) === (expected === "used") ? Effect3.void : Effect3.fail(
     new IndexExpectationError({
       statement: statement.name,
       index,
@@ -317,6 +494,7 @@ export {
   memoryLayer,
   recordUser,
   result,
+  schemaDrift,
   thrown
 };
 //# sourceMappingURL=testing.js.map

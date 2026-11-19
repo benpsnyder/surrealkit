@@ -1,8 +1,10 @@
-import { Schema, Brand, DateTime as DateTime$2 } from 'effect';
+import { Schema, DateTime as DateTime$2 } from 'effect';
 import * as surrealdb from 'surrealdb';
-import { Range as Range$1, Bound, Decimal as Decimal$1, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Duration as Duration$1, RecordId, Table, Uuid as Uuid$1, FileRef, RecordIdValue, DateTime as DateTime$1 } from 'surrealdb';
+import { Range as Range$1, Bound, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Decimal, Duration as Duration$1, RecordId, Table, Uuid, FileRef, RecordIdValue, DateTime as DateTime$1 } from 'surrealdb';
+import { I as Int64 } from './value-Zktp5N5S.js';
+export { B as Bytes, b as DECIMAL_MAX_MANTISSA, c as DECIMAL_MAX_SCALE, D as Decimal, d as DecimalLiteral, E as EdgeDescriptor, e as EdgeIn, f as EdgeOut, g as FieldPermissions, h as FieldPresence, a as Float, i as FunctionArgs, F as FunctionDescriptor, j as FunctionResult, k as INT64_MAX, l as INT64_MIN, m as IndexDescriptor, n as IndexType, o as Int, p as Int64Literal, q as IntProfile, N as Narrowing, O as Operation, P as Permission, r as Presence, R as Refinements, s as Replaced, t as RowSchema, u as StoreDescriptor, v as String, w as SurrealJsonValue, x as SurrealMergeValue, S as SurrealNumber, y as SurrealValue, T as TableDescriptor, z as TablePermissions, U as Unsupported, A as Uuid, V as ViewDescriptor, C as decimalFromString, G as edge, H as fn, J as int64, K as intFor, L as refine, M as replaceField, Q as store, W as table, X as toWellFormed, Y as view, Z as withPresence } from './value-Zktp5N5S.js';
 import * as effect_DateTime from 'effect/DateTime';
-export { E as EdgeDescriptor, a as EdgeIn, b as EdgeOut, c as FieldPresence, d as FunctionArgs, F as FunctionDescriptor, e as FunctionResult, f as Narrowing, N as NoneAsAbsent, O as Operation, P as Permission, g as Presence, R as Refinements, h as Replaced, i as RowSchema, T as TableDescriptor, j as TablePermissions, V as ViewDescriptor, k as edge, l as fn, r as refine, m as replaceField, s as stripNone, t as table, v as view, w as withPresence } from './table-BcXWGUXd.js';
+export { N as NoneAsAbsent, s as stripNone } from './row-CLBe1uWx.js';
 
 /** `set<T>` / `set<T, N>` and `range`. */
 
@@ -39,47 +41,6 @@ type RangeBound<T> = Bound<T>;
  */
 declare const Range: Schema.declareConstructor<Range$1<unknown, unknown>, Range$1<unknown, unknown>, readonly [], Range$1<unknown, unknown>>;
 
-/**
- * `decimal` and the `number` kind.
- *
- * SurrealDB decimals are 96-bit-mantissa decimals with at most 28 fractional
- * digits (measured on 3.2.4): a larger mantissa is a server error the SDK
- * never resolves (the query hangs), and extra fractional digits are rounded
- * away silently (`0.00000000000000000000000000001` reads back as `0`). The
- * codec rejects both before a value reaches the wire.
- *
- * The SDK's `Decimal` string constructor is permissive (`new Decimal("abc")`
- * is zero, and `new Decimal("+1.5")` is 0.5), so text is never handed to it:
- * {@link decimalFromString} parses the sign, digits and exponent itself and
- * builds the SDK value from exact integers. A decimal never passes through a
- * JS number.
- */
-
-/** Largest decimal mantissa: `2^96 - 1`. */
-declare const DECIMAL_MAX_MANTISSA: bigint;
-/** Most fractional digits a decimal keeps. */
-declare const DECIMAL_MAX_SCALE = 28;
-/**
- * Parses decimal text (`-1.50`, `+2`, `1e10`, `.5e1`) into an SDK `Decimal`.
- * The sign, digits and exponent are read here and the value is built from
- * exact integers (`new Decimal([int, frac, scale])`), never from the SDK's
- * permissive string parser; then the SurrealDB range is checked.
- *
- * @throws RangeError for malformed or out-of-range text.
- */
-declare const decimalFromString: (text: string) => Decimal$1;
-/** `decimal`: the SDK `Decimal` class, range-checked; never a JS number. */
-declare const Decimal: Schema.declareConstructor<Decimal$1, Decimal$1, readonly [], Decimal$1>;
-/** A `decimal` literal kind such as `10dec`: exactly that value. */
-declare const DecimalLiteral: <const V extends string>(value: V) => Schema.declareConstructor<Decimal$1, Decimal$1, readonly [], Decimal$1>;
-/**
- * The `number` kind: any SurrealQL number. The SDK returns ints as
- * `number | bigint`, floats as `number` and decimals as `Decimal`; the
- * original numeric tag of an integral value is not recoverable, so none is
- * claimed.
- */
-declare const SurrealNumber: Schema.declareConstructor<number | bigint | Decimal$1, number | bigint | Decimal$1, readonly [], number | bigint | Decimal$1>;
-
 /** `geometry` / `geometry<point | polygon | …>`: the SDK geometry classes. */
 
 /** The seven geometry kinds of schema document v2. */
@@ -115,69 +76,17 @@ declare const GeometryCollection: Schema.declareConstructor<GeometryCollection$1
 /** Bare `geometry`: any of the seven kinds. */
 declare const Geometry: Schema.declareConstructor<Geometry$1, Geometry$1, readonly [], Geometry$1>;
 
-/**
- * SurrealQL `int` is a signed 64-bit integer. The SDK's CBOR decoder hands it
- * back as a JS `number` when it fits and as a `bigint` otherwise, with one
- * lossy edge (measured against surrealdb.js 2.1.1 and SurrealDB 3.2.4):
- *
- * - `0 … 2^53` decode as exact numbers; `2^53 + 1 … 2^63 - 1` as bigints.
- * - `-1 … -2^53` decode as exact numbers; `-(2^53 + 2) … -2^63` as bigints.
- * - `-(2^53 + 1)` decodes as the number `-2^53`: already rounded.
- * - Encoding a bigint outside int64 is not rejected by the SDK; the server
- *   wraps it (`2^63` arrives as `-2^63`).
- *
- * Two profiles follow from that:
- *
- * - `Int` (`int: "safe-number"`, the default): a `number` that is a safe
- *   integer. Anything beyond `±(2^53 - 1)` fails loudly in both directions.
- * - `Int64` (`int: "bigint"`): a branded `bigint` checked against the int64
- *   range in both directions. Numbers are accepted only where the decoder is
- *   exact, so `-2^53` (ambiguous with a rounded `-(2^53 + 1)`) fails loudly.
- */
-
-declare const INT64_MIN: bigint;
-declare const INT64_MAX: bigint;
-/** The integer profile of a generated module or field. */
-type IntProfile = 'safe-number' | 'bigint';
-/**
- * `int`, `int: "safe-number"` profile: a JS `number` that must be a safe
- * integer. Values beyond `±(2^53 - 1)` fail instead of losing precision.
- */
-declare const Int: Schema.declareConstructor<number, number, readonly [], number>;
-type Int = typeof Int.Type;
-/**
- * Checks a bigint against the int64 range and brands it.
- *
- * @throws RangeError when the value is outside int64.
- */
-declare const int64: (value: bigint) => Int64;
-/** A signed 64-bit integer. */
-type Int64 = bigint & Brand.Brand<'Int64'>;
-/**
- * `int`, `int: "bigint"` profile: a branded signed 64-bit `bigint`. Decodes
- * the SDK's `number | bigint`, always encodes a `bigint` within int64.
- */
-declare const Int64: Schema.declareConstructor<Int64, number | bigint, readonly [], Int64>;
-/**
- * An `int` literal kind under the `bigint` profile, e.g. `-5` in
- * `-5 | 0 | 1`. Accepts the SDK's `number | bigint` spelling of exactly that
- * value. (Under the `safe-number` profile, use `Schema.Literal(-5)`.)
- */
-declare const Int64Literal: <const V extends string>(value: V) => Schema.declareConstructor<Int64, number | bigint, readonly [], Int64>;
-/** Picks the integer codec for a profile. */
-declare const intFor: (profile: IntProfile) => Schema.declareConstructor<number, number, readonly [], number> | Schema.declareConstructor<Int64, number | bigint, readonly [], Int64>;
-
 /** `datetime` as RFC 3339 text, nanosecond-preserving. */
 declare const DateTimeFromJson: Schema.declareConstructor<surrealdb.DateTime, string, readonly [Schema.decodeTo<Schema.Codec<surrealdb.DateTime, surrealdb.DateTime, never, never>, Schema.String, never, never>], surrealdb.DateTime>;
 type DateTimeJsonEncoded = typeof DateTimeFromJson.Encoded;
 /** `decimal` as decimal text (`"1.5"`), never through a JS number. */
-declare const DecimalFromJson: Schema.declareConstructor<Decimal$1, string, readonly [Schema.decodeTo<Schema.Codec<Decimal$1, Decimal$1, never, never>, Schema.String, never, never>], Decimal$1>;
+declare const DecimalFromJson: Schema.declareConstructor<Decimal, string, readonly [Schema.decodeTo<Schema.Codec<Decimal, Decimal, never, never>, Schema.String, never, never>], Decimal>;
 type DecimalJsonEncoded = typeof DecimalFromJson.Encoded;
 /** `duration` as SurrealQL duration text (`"1h30m"`). */
 declare const DurationFromJson: Schema.declareConstructor<Duration$1, string, readonly [Schema.decodeTo<Schema.Codec<Duration$1, Duration$1, never, never>, Schema.String, never, never>], Duration$1>;
 type DurationJsonEncoded = typeof DurationFromJson.Encoded;
 /** `uuid` as canonical text. */
-declare const UuidFromJson: Schema.declareConstructor<Uuid$1, string, readonly [Schema.decodeTo<Schema.Codec<Uuid$1, Uuid$1, never, never>, Schema.String, never, never>], Uuid$1>;
+declare const UuidFromJson: Schema.declareConstructor<Uuid, string, readonly [Schema.decodeTo<Schema.Codec<Uuid, Uuid, never, never>, Schema.String, never, never>], Uuid>;
 type UuidJsonEncoded = typeof UuidFromJson.Encoded;
 /**
  * `record<table>` as the record-id text SurrealDB JSON renders
@@ -226,7 +135,7 @@ declare const GeometryFromJson: <S extends Schema.Codec<unknown, Geometry$1>>(ge
  * renders for a decimal. An int beyond `±(2^53 - 1)` was already rounded by
  * `JSON.parse`.
  */
-declare const SurrealNumberFromJson: Schema.declareConstructor<number | bigint | Decimal$1, string | number, readonly [Schema.decodeTo<Schema.declareConstructor<number | bigint | Decimal$1, number | bigint | Decimal$1, readonly [], number | bigint | Decimal$1>, Schema.Union<readonly [Schema.Finite, Schema.String]>, never, never>], number | bigint | Decimal$1>;
+declare const SurrealNumberFromJson: Schema.declareConstructor<number | bigint | Decimal, string | number, readonly [Schema.decodeTo<Schema.declareConstructor<number | bigint | Decimal, number | bigint | Decimal, readonly [], number | bigint | Decimal>, Schema.Union<readonly [Schema.Finite, Schema.String]>, never, never>], number | bigint | Decimal>;
 /**
  * `datetime` under the effect-datetime profile, from RFC 3339 text:
  * millisecond precision, like {@link DateTimeEffect}.
@@ -292,33 +201,6 @@ type TaggedRecordId<M extends RecordIdSchemas> = {
  */
 declare const taggedRecordId: <const M extends RecordIdSchemas>(ids: M) => Schema.declareConstructor<TaggedRecordId<M>, M[keyof M]["Encoded"], readonly [Schema.Codec<unknown, unknown>]>;
 
-/** `float`, `uuid`, `bytes`, and kinds with no SDK value representation. */
-
-/** Replaces lone surrogates with U+FFFD, as UTF-8 transport would. */
-declare const toWellFormed: (text: string) => string;
-/**
- * `string`: a JS string SurrealDB can store. SurrealDB strings are UTF-8, so
- * a JS string containing a lone surrogate cannot be represented: the SDK's
- * CBOR encoder would silently replace it with U+FFFD. Such strings fail here
- * instead.
- */
-declare const SurrealString: Schema.declareConstructor<string, string, readonly [], string>;
-/** A native IEEE-754 float, including NaN, infinities, signed zero and subnormals. */
-declare const Float: Schema.declareConstructor<number, number, readonly [], number>;
-/** `uuid`: the SDK `Uuid` class (any version). */
-declare const Uuid: Schema.declareConstructor<Uuid$1, Uuid$1, readonly [], Uuid$1>;
-/**
- * `bytes`: a `Uint8Array`. The SDK decodes bytes as an `ArrayBuffer`, which
- * is accepted and copied into a `Uint8Array`; encoding sends the
- * `Uint8Array`, which the SDK writes as CBOR bytes.
- */
-declare const Bytes: Schema.declareConstructor<Uint8Array<ArrayBufferLike>, ArrayBuffer | Uint8Array<ArrayBufferLike>, readonly [], Uint8Array<ArrayBufferLike>>;
-/**
- * A kind no SDK value can represent (`regex`, `function`). Always fails, with
- * the reason, in both directions.
- */
-declare const Unsupported: <const K extends string>(kind: K) => Schema.declareConstructor<never, never, readonly [], never>;
-
 /**
  * `datetime` and `duration`.
  *
@@ -371,23 +253,4 @@ declare const Duration: Schema.declareConstructor<Duration$1, Duration$1, readon
 /** A `duration` literal kind such as `1d`: exactly that duration. */
 declare const DurationLiteral: <const V extends string>(value: V) => Schema.declareConstructor<Duration$1, Duration$1, readonly [], Duration$1>;
 
-/**
- * An open native value for FLEXIBLE objects and SCHEMALESS fields.
- * The SDK also accepts a JS `Date` on writes.
- */
-type SurrealValue = null | boolean | number | bigint | string | DateTime$1 | RecordId | Duration$1 | Decimal$1 | Uuid$1 | Geometry$1 | Range$1<unknown, unknown> | Date | Table | FileRef | Uint8Array | ReadonlySet<SurrealValue> | ReadonlyArray<SurrealValue> | {
-    readonly [key: string]: SurrealValue;
-};
-declare const SurrealValue: Schema.Codec<SurrealValue>;
-/** A member of a MERGE object: NONE removes a key, including in a nested patch. */
-type SurrealMergeValue = SurrealValue | undefined | {
-    readonly [key: string]: SurrealMergeValue;
-};
-declare const SurrealMergeValue: Schema.Codec<SurrealMergeValue>;
-/** An open value in SurrealDB's JSON world (HTTP `/sql`). */
-type SurrealJsonValue = null | boolean | number | string | ReadonlyArray<SurrealJsonValue> | {
-    readonly [key: string]: SurrealJsonValue;
-};
-declare const SurrealJsonValue: Schema.Codec<SurrealJsonValue>;
-
-export { Bytes, BytesFromJson, type BytesJsonEncoded, DATETIME_MAX_SECONDS, DATETIME_MIN_SECONDS, DECIMAL_MAX_MANTISSA, DECIMAL_MAX_SCALE, DURATION_MAX_SECONDS, DateTime, DateTimeEffect, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, Decimal, DecimalFromJson, type DecimalJsonEncoded, DecimalLiteral, Duration, DurationFromJson, type DurationJsonEncoded, DurationLiteral, FileRefFor, FileRefFromJson, Float, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, INT64_MAX, INT64_MIN, Int, Int64, Int64FromJson, type Int64JsonEncoded, Int64Literal, type IntProfile, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealString as String, SurrealJsonValue, SurrealMergeValue, SurrealNumber, SurrealNumberFromJson, SurrealValue, TableFor, TableFromJson, type TaggedRecordId, Unsupported, Uuid, UuidFromJson, type UuidJsonEncoded, dateTimeFromString, dateTimeToString, decimalFromString, int64, intFor, taggedRecordId, toWellFormed };
+export { BytesFromJson, type BytesJsonEncoded, DATETIME_MAX_SECONDS, DATETIME_MIN_SECONDS, DURATION_MAX_SECONDS, DateTime, DateTimeEffect, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, DecimalFromJson, type DecimalJsonEncoded, Duration, DurationFromJson, type DurationJsonEncoded, DurationLiteral, FileRefFor, FileRefFromJson, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, Int64, Int64FromJson, type Int64JsonEncoded, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealNumberFromJson, TableFor, TableFromJson, type TaggedRecordId, UuidFromJson, type UuidJsonEncoded, dateTimeFromString, dateTimeToString, taggedRecordId };
