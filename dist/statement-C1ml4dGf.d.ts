@@ -143,4 +143,4 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     readonly throwSites?: Readonly<Record<string, ThrowSite>>;
 }) => Statement<P, R, Throws>;
 
-export { type AnyStatement as A, type Codec as C, type Input as I, type NoParams as N, type Params as P, type Result as R, type Statement as S, type ThrowSite as T, type CheckedInput as a, type Simplify as b, StatementTypeId as c, type Thrown as d, isStatement as i, make as m };
+export { type AnyStatement as A, type Codec as C, type Input as I, type NoParams as N, type Params as P, type Result as R, type Statement as S, type ThrowSite as T, type Simplify as a, type CheckedInput as b, StatementTypeId as c, type Thrown as d, isStatement as i, make as m };

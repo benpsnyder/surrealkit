@@ -2,7 +2,7 @@ import { Schema, Brand, DateTime as DateTime$2 } from 'effect';
 import * as surrealdb from 'surrealdb';
 import { Range as Range$1, Bound, Decimal as Decimal$1, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Duration as Duration$1, RecordId, Table, Uuid as Uuid$1, FileRef, RecordIdValue, DateTime as DateTime$1 } from 'surrealdb';
 import * as effect_DateTime from 'effect/DateTime';
-export { E as EdgeDescriptor, a as EdgeIn, b as EdgeOut, F as FieldPresence, c as FunctionArgs, d as FunctionDescriptor, e as FunctionResult, N as Narrowing, f as NoneAsAbsent, O as Operation, P as Permission, g as Presence, R as Refinements, h as Replaced, i as RowSchema, T as TableDescriptor, j as TablePermissions, V as ViewDescriptor, k as edge, l as fn, r as refine, m as replaceField, s as stripNone, t as table, v as view, w as withPresence } from './table-CPzYe-M1.js';
+export { E as EdgeDescriptor, a as EdgeIn, b as EdgeOut, c as FieldPresence, d as FunctionArgs, F as FunctionDescriptor, e as FunctionResult, f as Narrowing, N as NoneAsAbsent, O as Operation, P as Permission, g as Presence, R as Refinements, h as Replaced, i as RowSchema, T as TableDescriptor, j as TablePermissions, V as ViewDescriptor, k as edge, l as fn, r as refine, m as replaceField, s as stripNone, t as table, v as view, w as withPresence } from './table-BcXWGUXd.js';
 
 /** `set<T>` / `set<T, N>` and `range`. */
 

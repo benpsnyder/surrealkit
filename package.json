@@ -27,6 +27,10 @@
 		"./analyze": {
 			"types": "./dist/analyze.d.ts",
 			"import": "./dist/analyze.js"
+		},
+		"./testing": {
+			"types": "./dist/testing.d.ts",
+			"import": "./dist/testing.js"
 		}
 	},
 	"bin": {
@@ -48,8 +52,14 @@
 		"surrealkit"
 	],
 	"peerDependencies": {
+		"@surrealdb/node": "^3.2.0",
 		"effect": "^4.0.6",
 		"surrealdb": "^2.1.1"
+	},
+	"peerDependenciesMeta": {
+		"@surrealdb/node": {
+			"optional": true
+		}
 	},
 	"repository": {
 		"type": "git",
@@ -63,5 +73,5 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"gitHead": "4fcb80124cc804ddde7bf55c4f8cd05c912f915e"
+	"gitHead": "4b6a3c96b45fdf4a7185e007c8ac780bf8b1b57a"
 }
