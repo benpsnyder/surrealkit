@@ -61,6 +61,24 @@ type CodecOfArg<A, D extends Codec> = A extends Expr<infer S, Params> ? S : D;
 type ItemCodec<S extends Codec> = S['Encoded'] extends ReadonlyArray<unknown> ? S extends {
     readonly value: infer I extends Codec;
 } ? OrNone<I> : typeof AnyCodec : typeof AnyCodec;
+/**
+ * The element codec of argument `A` when it is an expression typed as an
+ * array of a closed element type; `never` for an inlined constant, an open
+ * value or an array of open values (any `SurrealValue`).
+ */
+type TypedItem<A> = A extends Expr<infer S, Params> ? S['Encoded'] extends ReadonlyArray<unknown> ? S extends {
+    readonly value: infer I extends Codec;
+} ? unknown extends I['Type'] ? never : SurrealValue extends I['Type'] ? never : I : never : never : never;
+/** `true` when some member of the union `A` is not a typed array. */
+type SomeOpen<A> = A extends unknown ? [TypedItem<A>] extends [never] ? true : never : never;
+/**
+ * The codec of an `items:N` result over the variadic arguments `A`: the
+ * argument's own codec when it is the only one, an array of the union of
+ * the element codecs when every argument is a typed array, else `D`.
+ */
+type ItemsCodec<A extends ReadonlyArray<unknown>, D extends Codec> = [
+    A[number]
+] extends [never] ? D : [SomeOpen<A[number]>] extends [never] ? A extends readonly [infer Only] ? CodecOfArg<Only, D> : Schema.$Array<TypedItem<A[number]>> : D;
 /** The stored type argument `A` holds: its codec's, or the constant's own. */
 type EncodedOfArg<A> = A extends Expr<infer S, Params> ? S['Encoded'] : A;
 /**
@@ -194,11 +212,11 @@ declare const combine: <const A0 extends Arg<In["array"]>, const A1 extends Arg<
  */
 declare const complement: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<CodecOfArg<A0, typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::concat(...arrays: array) -> array`
+ * `array::concat(...arrays: array) -> items:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const concat$1: <const A0 extends ReadonlyArray<Arg<In["array"]>>>(...arrays: A0) => Expr<typeof ArrayCodec, ParamsOfAll<A0[number]>>;
+declare const concat$1: <const A0 extends ReadonlyArray<Arg<In["array"]>>>(...arrays: A0) => Expr<ItemsCodec<A0, typeof ArrayCodec>, ParamsOfAll<A0[number]>>;
 /**
  * `array::difference(left: array, right: array) -> array`
  *

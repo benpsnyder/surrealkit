@@ -122,6 +122,29 @@ var item = (index, fallback) => new Derived((args) => {
   const codec = argCodec(args, index, fallback);
   return "value" in codec && Schema.isSchema(codec.value) ? orNone(codec.value) : AnyCodec;
 });
+var typedItem = (codec) => {
+  if (codec.ast._tag !== "Arrays" || !("value" in codec)) return void 0;
+  const element = codec.value;
+  if (!Schema.isSchema(element)) return void 0;
+  const { ast } = element;
+  const open = ast._tag === "Unknown" || ast._tag === "Any" || ast === SurrealValue.ast || ast._tag === "Union" && ast.types.includes(SurrealValue.ast);
+  return open ? void 0 : element;
+};
+var items = (index, fallback) => new Derived((args) => {
+  const given = args.slice(index);
+  const elements = [];
+  for (const arg of given) {
+    const element = isExpr(arg) ? typedItem(codecOf(arg)) : void 0;
+    if (element === void 0) return fallback;
+    if (!elements.includes(element)) elements.push(element);
+  }
+  const [only, ...others] = elements;
+  if (only === void 0) return fallback;
+  if (given.length === 1) return codecOf(given[0]);
+  return Schema.Array(
+    others.length === 0 ? only : Schema.Union(elements)
+  );
+});
 var mayHoldDecimal = (arg) => isExpr(arg) ? holdsDecimal(codecOf(arg)) : Array.isArray(arg) && arg.some(mayHoldDecimal);
 var floatOrDecimal = (indices) => new Derived(
   (args) => indices.some((index) => mayHoldDecimal(args[index])) ? FloatOrDecimal : Float
@@ -129,8 +152,8 @@ var floatOrDecimal = (indices) => new Derived(
 var lift = (value) => {
   if (isExpr(value)) return value;
   if (Array.isArray(value)) {
-    const items = value.map((element) => sqlOf(lift(element)));
-    return makeExpr(ArrayCodec, `[ ${items.join(", ")} ]`, {}, Level.atom);
+    const items2 = value.map((element) => sqlOf(lift(element)));
+    return makeExpr(ArrayCodec, `[ ${items2.join(", ")} ]`, {}, Level.atom);
   }
   return literal(value);
 };
@@ -189,7 +212,7 @@ var booleanXor = (left, right) => apply("array::boolean_xor", ArrayOfBoolCodec, 
 var clump = (array2, size) => apply("array::clump", ArrayOfArrayCodec, 2, [array2, size]);
 var combine = (left, right) => apply("array::combine", ArrayOfArrayCodec, 2, [left, right]);
 var complement = (left, right) => apply("array::complement", same(0, ArrayCodec), 2, [left, right]);
-var concat = (...arrays) => apply("array::concat", ArrayCodec, 0, [], arrays);
+var concat = (...arrays) => apply("array::concat", items(0, ArrayCodec), 0, [], arrays);
 var difference = (left, right) => apply("array::difference", ArrayCodec, 2, [left, right]);
 var distinct = (array2) => apply("array::distinct", same(0, ArrayCodec), 1, [array2]);
 var every = (array2, predicate) => apply("array::every", BoolCodec, 1, [array2, predicate]);
