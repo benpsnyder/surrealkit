@@ -1,6 +1,7 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Schema, Effect } from 'effect';
+import { b as DeclaredNames } from './render-Bv-AmrOy.js';
 
 /**
  * semanticDigest (schema document v2, section 13): SHA-256 over the RFC 8785
@@ -531,13 +532,20 @@ declare const SchemaDocument: Schema.Struct<{
 }>;
 type SchemaDocument = typeof SchemaDocument.Type;
 /**
- * The tables (edge tables included) and custom functions a schema document
- * declares, each sorted: the `declared` names of a statement scope.
+ * The SurrealQL text of a kind, printed from the document's structure:
+ * `string`, `record<person | team>`, `option<int>`, `array<string, 3>`, …
  */
-declare const declaredNames: (document: SchemaDocument) => {
-    readonly tables: ReadonlyArray<string>;
-    readonly functions: ReadonlyArray<string>;
-};
+declare const kindText: (kind: Kind) => string;
+/**
+ * The tables (edge tables included) and custom functions a schema document
+ * declares, each sorted: the `declared` names of a statement scope. Its
+ * `detail` holds, for each table, its declared fields (each path joined
+ * with `.`) with each field's kind text, whether it accepts undeclared
+ * fields (it is not schemafull) and the kind text of its id key; and for
+ * each function the kind texts of its arguments, in order. A field or key
+ * the document gives no kind has none.
+ */
+declare const declaredNames: (document: SchemaDocument) => DeclaredNames;
 declare const DocumentError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "DocumentError";
 } & Readonly<A>;
@@ -642,4 +650,4 @@ declare const PEER_VERSIONS: {
     readonly surrealdb: "2.1.1";
 };
 
-export { DocumentError, EMITTER_VERSION, EmitterOptions, Field, GenerateError, type GenerateHooks, type GenerateResult, type GeneratedFile, type Kind, OptionsError, PEER_VERSIONS, SchemaDocument, Table, canonicalJson, declaredNames, decodeDocument, decodeOptions, emit, generate, semanticDigest, semanticProjection };
+export { DocumentError, EMITTER_VERSION, EmitterOptions, Field, GenerateError, type GenerateHooks, type GenerateResult, type GeneratedFile, type Kind, OptionsError, PEER_VERSIONS, SchemaDocument, Table, canonicalJson, declaredNames, decodeDocument, decodeOptions, emit, generate, kindText, semanticDigest, semanticProjection };

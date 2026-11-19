@@ -2,12 +2,12 @@ import {
   linkShape,
   shapeTables,
   tableName
-} from "./chunk-FBUUQ2IX.js";
+} from "./chunk-K54ZGDPS.js";
 import "./chunk-FN4HR4GU.js";
 import {
   make,
   scanTopLevel
-} from "./chunk-N3B3YCSK.js";
+} from "./chunk-ZWM5V4DS.js";
 import "./chunk-PHSAVORF.js";
 import {
   SurrealClient,

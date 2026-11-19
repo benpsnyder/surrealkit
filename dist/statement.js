@@ -5,13 +5,13 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-XRXZZF4N.js";
+} from "./chunk-O3PDOYWY.js";
 import {
   SurrealValue
 } from "./chunk-F4HWMI2D.js";
 import {
   analyzeSync
-} from "./chunk-DCP4NMOJ.js";
+} from "./chunk-QYJJODSM.js";
 import {
   TraversalTypeId,
   andAll,
@@ -48,7 +48,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-FBUUQ2IX.js";
+} from "./chunk-K54ZGDPS.js";
 import {
   NoneAsAbsent
 } from "./chunk-FN4HR4GU.js";
@@ -98,7 +98,7 @@ import {
   sqlOf,
   unsafeExpr,
   withRefs
-} from "./chunk-N3B3YCSK.js";
+} from "./chunk-ZWM5V4DS.js";
 import {
   Decimal,
   Float,
@@ -833,6 +833,32 @@ var listDifferences = (field, declared, derived, verb) => {
     );
   return out;
 };
+var useText = (use) => use.kind === "argument" ? `argument ${use.index} of \`${use.function}\` on line ${use.line}` : use.kind === "key" ? `key of \`${use.table}\` on line ${use.line}` : `field \`${use.table}.${use.field}\` on line ${use.line}`;
+var useKey = (use) => use.kind === "argument" ? `a\0${use.function}\0${use.index}\0${use.line}` : use.kind === "key" ? `k\0${use.table}\0${use.line}` : `f\0${use.table}\0${use.field}\0${use.line}`;
+var usesDifferences = (declared, derived) => {
+  if (declared === void 0) return [];
+  const out = [];
+  const names2 = [
+    .../* @__PURE__ */ new Set([...Object.keys(declared), ...Object.keys(derived)])
+  ].sort();
+  for (const name of names2) {
+    const mine = declared[name] ?? [];
+    const theirs = derived[name] ?? [];
+    const own = new Set(mine.map(useKey));
+    const found = new Set(theirs.map(useKey));
+    const missing = theirs.filter((use) => !own.has(useKey(use)));
+    const extra = mine.filter((use) => !found.has(useKey(use)));
+    if (missing.length > 0)
+      out.push(
+        `uses: the text uses \`$${name}\` as ${missing.map(useText).join(", ")}, which is not declared`
+      );
+    if (extra.length > 0)
+      out.push(
+        `uses: declared \`$${name}\` as ${extra.map(useText).join(", ")}, which the text does not use it as`
+      );
+  }
+  return out;
+};
 var isWordChar = (c) => c !== void 0 && (c >= "A" && c <= "Z" || c >= "a" && c <= "z" || c >= "0" && c <= "9" || c === "_");
 var reads = (sql, name) => {
   const needle = `$${name}`;
@@ -944,6 +970,13 @@ var verify = (item, label) => {
       analysis.openTargets ? "openTargets: declared false, a target of the text is not a static table name" : "openTargets: declared true, every target of the text is a static table name"
     );
   }
+  differences.push(...usesDifferences(item.uses, analysis.uses));
+  for (const name of Object.keys(item.binds ?? {}).sort()) {
+    if (analysis.uses[name] === void 0)
+      differences.push(
+        `binds: declared \`$${name}\`, which the text never uses as an argument, a key or a field`
+      );
+  }
   if (differences.length > 0) {
     throw new RangeError(
       `${label} does not declare what its text does: ${differences.join("; ")}`
@@ -973,7 +1006,9 @@ var part = (options) => {
     },
     ...options.openTargets !== void 0 && {
       openTargets: options.openTargets
-    }
+    },
+    ...options.uses !== void 0 && { uses: options.uses },
+    ...options.binds !== void 0 && { binds: options.binds }
   };
   const analysis = verify(declared, nameOf(options.name, "part"));
   const result = {
@@ -981,7 +1016,8 @@ var part = (options) => {
     ...analysis.writes && { writes: true },
     tables: analysis.tables,
     functions: analysis.functions,
-    openTargets: analysis.openTargets
+    openTargets: analysis.openTargets,
+    uses: analysis.uses
   };
   checked.set(result, analysis);
   return result;
@@ -1002,6 +1038,27 @@ var writesOf = (parts, analyses) => (
   // `verify` has refused a declared `writes` the text contradicts.
   analyses.some((analysis) => analysis.writes) ? true : parts.every((item) => item.writes === false) ? false : void 0
 );
+var usesOf = (analyses, parts) => {
+  const defined = /* @__PURE__ */ new Set();
+  const merged = /* @__PURE__ */ new Map();
+  for (const [index, analysis] of analyses.entries()) {
+    for (const [name, uses] of Object.entries(analysis.uses)) {
+      if (defined.has(name)) continue;
+      const into = merged.get(name) ?? /* @__PURE__ */ new Map();
+      for (const use of uses) into.set(useKey(use), use);
+      merged.set(name, into);
+    }
+    for (const name of parts[index].defines) defined.add(name);
+  }
+  if (merged.size === 0) return void 0;
+  const out = {};
+  for (const name of [...merged.keys()].sort()) {
+    out[name] = [...merged.get(name).entries()].sort(
+      ([a, x], [b, y]) => x.line !== y.line ? x.line - y.line : a < b ? -1 : a > b ? 1 : 0
+    ).map(([, use]) => use);
+  }
+  return out;
+};
 var unboundOf = (parts) => {
   const defined = /* @__PURE__ */ new Set();
   const unbound = /* @__PURE__ */ new Set();
@@ -1043,6 +1100,7 @@ var sequence = (...parts) => ({
       );
     }
     const writes = contract.writes ?? derived;
+    const uses = usesOf(analyses, parts);
     const slots = parts.reduce((total, item) => total + item.slots, 0);
     let valueSlot = slots;
     let offset = 0;
@@ -1074,6 +1132,7 @@ var sequence = (...parts) => ({
         ...new Set(analyses.flatMap((a) => a.functions))
       ].sort(),
       openTargets: analyses.some((analysis) => analysis.openTargets),
+      ...uses !== void 0 && { uses },
       ...writes !== void 0 && { writes },
       sources: [
         ...new Set(

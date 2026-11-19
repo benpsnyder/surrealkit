@@ -266,7 +266,8 @@ var make = (options) => {
     },
     ...options.openTargets !== void 0 && {
       openTargets: options.openTargets
-    }
+    },
+    ...options.uses !== void 0 && { uses: options.uses }
   };
   assertStatement(statement);
   assertResolved(options.params, `statement \`${statement.name}\``);
@@ -827,4 +828,4 @@ export {
   cast,
   call
 };
-//# sourceMappingURL=chunk-N3B3YCSK.js.map
+//# sourceMappingURL=chunk-ZWM5V4DS.js.map

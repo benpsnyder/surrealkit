@@ -6,7 +6,7 @@ import {
   analyzeTargets,
   holeDelimiters,
   lex
-} from "./chunk-DCP4NMOJ.js";
+} from "./chunk-QYJJODSM.js";
 import "./chunk-PZ5AY32C.js";
 
 // src/analyze/pin.ts
@@ -109,7 +109,59 @@ var lines = (throwsAt) => {
   const entries = Object.entries(throwsAt);
   return entries.length === 0 ? "{}" : `{ ${entries.map(([message, at]) => `${JSON.stringify(message)}: [${at.join(", ")}]`).join(", ")} }`;
 };
-var renderConstant = (scope, name, analysis) => {
+var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function: ${JSON.stringify(use.function)}, index: ${use.index}, line: ${use.line} }` : use.kind === "key" ? `{ kind: "key", table: ${JSON.stringify(use.table)}, line: ${use.line} }` : `{ kind: "field", table: ${JSON.stringify(use.table)}, field: ${JSON.stringify(use.field)}, line: ${use.line} }`;
+var usesField = (uses) => `{ ${Object.entries(uses).map(
+  ([name, list2]) => `${JSON.stringify(name)}: [${list2.map(useEntry).join(", ")}]`
+).join(", ")} }`;
+var bindsField = (binds) => `{ ${Object.entries(binds).map(
+  ([name, kind]) => `${JSON.stringify(name)}: ${JSON.stringify(kind)}`
+).join(", ")} }`;
+var SIMPLE = /^(?:string|bool|int|float|number|decimal|datetime|duration|uuid|record<[^<>|,\s]+>)$/u;
+var simpleKind = (kind) => {
+  if (kind === void 0) return void 0;
+  const inner = /^option<(.*)>$/u.exec(kind)?.[1] ?? kind;
+  return SIMPLE.test(inner) ? inner : void 0;
+};
+var resolve = (use, detail) => {
+  if (use.kind === "argument") {
+    const args = Object.hasOwn(detail.functions, use.function) ? detail.functions[use.function] : void 0;
+    if (args === void 0) return { kind: "unchecked" };
+    return use.index < args.length ? { kind: "kind", text: args[use.index] } : {
+      kind: "problem",
+      message: `passes argument ${use.index + 1} to \`${use.function}\`, which takes ${args.length === 1 ? "1 argument" : `${args.length} arguments`}`
+    };
+  }
+  const table = Object.hasOwn(detail.tables, use.table) ? detail.tables[use.table] : void 0;
+  if (table === void 0) return { kind: "unchecked" };
+  if (use.kind === "key") return { kind: "kind", text: table.idKey };
+  if (Object.hasOwn(table.fields, use.field))
+    return { kind: "kind", text: table.fields[use.field]?.kind };
+  if (use.field === "id")
+    return { kind: "kind", text: `record<${use.table}>` };
+  return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
+    kind: "problem",
+    message: `compares \`${use.field}\` of \`${use.table}\`, which declares no such field`
+  };
+};
+var checkUses = (uses, detail) => {
+  const problems = [];
+  const binds = {};
+  for (const [name, list2] of Object.entries(uses)) {
+    const kinds = /* @__PURE__ */ new Set();
+    for (const use of list2) {
+      const resolved = resolve(use, detail);
+      if (resolved.kind === "problem") {
+        problems.push({ line: use.line, message: resolved.message });
+        kinds.add(void 0);
+      } else if (resolved.kind === "unchecked") kinds.add(void 0);
+      else kinds.add(simpleKind(resolved.text));
+    }
+    const [only] = kinds;
+    if (kinds.size === 1 && only !== void 0) binds[name] = only;
+  }
+  return { problems, binds };
+};
+var renderConstant = (scope, name, analysis, binds) => {
   const file = `${scope}/${name}.surql`;
   const complete = analysis.kind === "part" && analysis.holes.length === 0;
   const what = complete ? "part" : analysis.holes.length > 0 ? "template" : "fragment";
@@ -128,7 +180,9 @@ var renderConstant = (scope, name, analysis) => {
     ...complete ? [
       `tables: { read: ${list(analysis.tables.read)}, written: ${list(analysis.tables.written)} }`,
       `functions: ${list(analysis.functions)}`,
-      ...analysis.openTargets ? ["openTargets: true"] : []
+      ...analysis.openTargets ? ["openTargets: true"] : [],
+      ...Object.keys(analysis.uses).length > 0 ? [`uses: ${usesField(analysis.uses)}`] : [],
+      ...binds !== void 0 && Object.keys(binds).length > 0 ? [`binds: ${bindsField(binds)}`] : []
     ] : []
   ];
   return [
@@ -233,12 +287,15 @@ var renderStatementModulesSync = (input) => {
       }
       throw error;
     }
+    let binds;
     if (source.declared !== void 0) {
-      for (const problem2 of undeclared(
-        source.sql,
-        source.declared,
-        input.holes
-      ))
+      const detail = source.declared.detail;
+      const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail);
+      binds = checked?.binds;
+      for (const problem2 of [
+        ...undeclared(source.sql, source.declared, input.holes),
+        ...checked?.problems ?? []
+      ].sort((a, b) => a.line - b.line))
         problems.push({
           kind: "undeclared",
           scope: source.scope,
@@ -268,7 +325,9 @@ var renderStatementModulesSync = (input) => {
     );
     imports.set(source.scope, used);
     const constants = byScope.get(source.scope) ?? [];
-    constants.push(renderConstant(source.scope, source.name, analysis));
+    constants.push(
+      renderConstant(source.scope, source.name, analysis, binds)
+    );
     byScope.set(source.scope, constants);
   }
   if (problems.length > 0) {

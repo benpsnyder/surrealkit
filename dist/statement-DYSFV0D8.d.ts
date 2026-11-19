@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+import { B as BindingUses } from './uses-Dlr8c45N.js';
 
 /**
  * A statement: one request to SurrealDB, described as a value.
@@ -111,6 +112,14 @@ interface Statement<P extends Params = Params, R extends Codec = Codec, Throws e
     };
     readonly functions?: ReadonlyArray<string>;
     readonly openTargets?: boolean;
+    /**
+     * What each binding is used as, where the analyzer could tell: an
+     * argument of a custom function, the key of a `type::record`, or a
+     * field of the one table a query targets. `sequence` sets it, merged
+     * over its parts for the names that remain bindings, when there is any;
+     * `make` takes it as declared.
+     */
+    readonly uses?: BindingUses;
 }
 /** Where a declared `THROW` message comes from. */
 interface ThrowSite {
@@ -168,6 +177,8 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     readonly functions?: ReadonlyArray<string>;
     /** Some target is not a static table name. Default unknown. */
     readonly openTargets?: boolean;
+    /** What each binding is used as, where known. Default unknown. */
+    readonly uses?: BindingUses;
 }) => Statement<P, R, Throws>;
 
 export { type AnyStatement as A, type Codec as C, type Input as I, type NoParams as N, type Params as P, type Result as R, type Statement as S, type ThrowSite as T, type Simplify as a, type CheckedInput as b, StatementTypeId as c, type Thrown as d, isStatement as i, make as m };

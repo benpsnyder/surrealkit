@@ -514,9 +514,69 @@ var SchemaDocument = Schema.Struct({
   ),
   diagnostics: Schema.Array(Diagnostic)
 });
+var kindText = (kind) => {
+  const params = (names, word) => names.length === 0 ? word : `${word}<${names.join(" | ")}>`;
+  switch (kind.kind) {
+    case "record":
+    case "table":
+      return params(kind.tables, kind.kind);
+    case "file":
+      return params(kind.buckets, "file");
+    case "geometry":
+      return params(kind.types, "geometry");
+    case "array":
+    case "set":
+      return kind.length === void 0 ? `${kind.kind}<${kindText(kind.item)}>` : `${kind.kind}<${kindText(kind.item)}, ${kind.length}>`;
+    case "tuple":
+      return `[${kind.items.map(kindText).join(", ")}]`;
+    case "objectLiteral":
+      return `{ ${kind.fields.map(
+        (field) => `${field.name}${field.optional ? "?" : ""}: ${kindText(field.kind)}`
+      ).join(", ")} }`;
+    case "literal":
+      return kind.type === "string" ? JSON.stringify(kind.value) : String(kind.value);
+    case "option":
+      return `option<${kindText(kind.item)}>`;
+    case "union":
+      return kind.variants.map(kindText).join(" | ");
+    case "unknown":
+      return kind.source;
+    default:
+      return kind.kind;
+  }
+};
 var declaredNames = (document) => ({
   tables: [...new Set(document.tables.map((table) => table.name))].sort(),
-  functions: [...new Set(document.functions.map((fn) => fn.name))].sort()
+  functions: [...new Set(document.functions.map((fn) => fn.name))].sort(),
+  detail: {
+    tables: Object.fromEntries(
+      [...document.tables].sort(
+        (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+      ).map((table) => [
+        table.name,
+        {
+          fields: Object.fromEntries(
+            table.fields.map((field) => [
+              field.path.join("."),
+              field.kind === void 0 ? {} : { kind: kindText(field.kind) }
+            ])
+          ),
+          acceptsUndeclared: !table.schemafull,
+          ...table.idKey !== void 0 && {
+            idKey: kindText(table.idKey)
+          }
+        }
+      ])
+    ),
+    functions: Object.fromEntries(
+      [...document.functions].sort(
+        (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+      ).map((fn) => [
+        fn.name,
+        fn.args.map((arg) => kindText(arg.kind))
+      ])
+    )
+  }
 });
 var DocumentError = class extends Data.TaggedError("DocumentError") {
 };
@@ -2047,6 +2107,7 @@ export {
   decodeOptions,
   emit,
   generate,
+  kindText,
   semanticDigest,
   semanticProjection
 };

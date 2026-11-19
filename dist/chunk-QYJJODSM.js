@@ -744,6 +744,268 @@ var analyzeTargets = (tokens) => {
   };
 };
 
+// src/analyze/uses.ts
+var upper2 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct2 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen2 = (token) => isPunct2(token, "(") || isPunct2(token, "[") || isPunct2(token, "{");
+var isClose2 = (token) => isPunct2(token, ")") || isPunct2(token, "]") || isPunct2(token, "}");
+var adjacent2 = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
+var isPlainString2 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
+var QUERIES = /* @__PURE__ */ new Set([
+  "SELECT",
+  "CREATE",
+  "UPDATE",
+  "UPSERT",
+  "DELETE",
+  "INSERT",
+  "RELATE"
+]);
+var VALUES = /* @__PURE__ */ new Set(["NONE", "NULL", "TRUE", "FALSE"]);
+var CLAUSE_ENDS = /* @__PURE__ */ new Set([
+  "WHERE",
+  "SET",
+  "UNSET",
+  "CONTENT",
+  "MERGE",
+  "PATCH",
+  "REPLACE",
+  "RETURN",
+  "TIMEOUT",
+  "PARALLEL",
+  "VERSION",
+  "WITH",
+  "SPLIT",
+  "GROUP",
+  "ORDER",
+  "LIMIT",
+  "START",
+  "FETCH",
+  "EXPLAIN",
+  "TEMPFILES",
+  "OMIT"
+]);
+var BEFORE = /* @__PURE__ */ new Set(["WHERE", "AND", "OR", "SET"]);
+var AFTER = /* @__PURE__ */ new Set(["AND", "OR", ...CLAUSE_ENDS]);
+var COMPARISONS = /* @__PURE__ */ new Set([
+  "=",
+  "==",
+  "!=",
+  "<",
+  "<=",
+  ">",
+  ">="
+]);
+var OPERATOR = "=!<>?~*@&|+-^%/";
+var localNames = (tokens) => {
+  const names = /* @__PURE__ */ new Set();
+  tokens.forEach((token, i) => {
+    if (token.kind !== "param") return;
+    const before = tokens[i - 1];
+    const after = tokens[i + 1];
+    if (upper2(before) === "LET" || upper2(before) === "FOR" || isPunct2(before, "|") || isPunct2(after, "|") || isPunct2(after, ":"))
+      names.add(token.value);
+  });
+  return names;
+};
+var analyzeUses = (tokens, free) => {
+  const local = localNames(tokens);
+  const bindable = new Set(free.filter((name) => !local.has(name)));
+  const found = /* @__PURE__ */ new Map();
+  const record = (token, use) => {
+    if (token?.kind !== "param" || !bindable.has(token.value)) return;
+    const uses2 = found.get(token.value) ?? /* @__PURE__ */ new Map();
+    uses2.set(JSON.stringify(use), use);
+    found.set(token.value, uses2);
+  };
+  const closing = (at) => {
+    let depth = 0;
+    for (let j = at; j < tokens.length; j++) {
+      if (isOpen2(tokens[j])) depth++;
+      else if (isClose2(tokens[j])) {
+        depth--;
+        if (depth === 0) return j;
+      }
+    }
+    return tokens.length;
+  };
+  const pathAt = (at) => isPunct2(tokens[at], ":") && isPunct2(tokens[at + 1], ":") && adjacent2(tokens[at], tokens[at + 1]);
+  const loneParam = (at) => tokens[at]?.kind === "param" && !isPunct2(tokens[at + 1], ".") && !isPunct2(tokens[at + 1], "[");
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== "word") continue;
+    if (isPunct2(tokens[i - 1], ".") || isPunct2(tokens[i - 1], ":"))
+      continue;
+    const word = token.value.toLowerCase();
+    if (word === "fn" && pathAt(i + 1)) {
+      let name = token.value;
+      let j = i + 1;
+      while (pathAt(j) && (tokens[j + 2]?.kind === "word" || tokens[j + 2]?.kind === "ident")) {
+        name += `::${tokens[j + 2].value}`;
+        j += 3;
+      }
+      if (!isPunct2(tokens[j], "(")) continue;
+      const end = closing(j);
+      let start2 = j + 1;
+      let index = 0;
+      for (let k = j + 1; k <= end; k++) {
+        if (isOpen2(tokens[k])) {
+          k = closing(k);
+          continue;
+        }
+        if (k === end || isPunct2(tokens[k], ",")) {
+          if (k - start2 === 1 && tokens[start2]?.kind === "param")
+            record(tokens[start2], {
+              kind: "argument",
+              function: name,
+              index,
+              line: tokens[start2].line
+            });
+          index++;
+          start2 = k + 1;
+        }
+      }
+      continue;
+    }
+    if (word === "type" && pathAt(i + 1) && tokens[i + 3]?.kind === "word" && ["record", "thing"].includes(
+      tokens[i + 3].value.toLowerCase()
+    ) && isPunct2(tokens[i + 4], "(") && isPlainString2(tokens[i + 5]) && isPunct2(tokens[i + 6], ",") && tokens[i + 7]?.kind === "param" && isPunct2(tokens[i + 8], ")")) {
+      record(tokens[i + 7], {
+        kind: "key",
+        table: tokens[i + 5].value,
+        line: tokens[i + 7].line
+      });
+    }
+  }
+  const operatorAt = (at) => {
+    let text = "";
+    let j = at;
+    while (tokens[j]?.kind === "punct" && OPERATOR.includes(tokens[j].value) && (j === at || adjacent2(tokens[j - 1], tokens[j]))) {
+      text += tokens[j].value;
+      j++;
+    }
+    return COMPARISONS.has(text) ? { text, next: j } : void 0;
+  };
+  const bareField = (at) => {
+    const token = tokens[at];
+    if (token === void 0) return void 0;
+    if (token.kind === "word") {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(token.value))
+        return void 0;
+      const word = token.value.toUpperCase();
+      if (VALUES.has(word) || AFTER.has(word)) return void 0;
+    } else if (token.kind !== "ident") return void 0;
+    const after = tokens[at + 1];
+    if (isPunct2(after, ".") || isPunct2(after, "(") || isPunct2(after, "[") || isPunct2(after, ":") || isPunct2(after, "-") && isPunct2(tokens[at + 2], ">") || isPunct2(after, "<") && isPunct2(tokens[at + 2], "-"))
+      return void 0;
+    return token.value;
+  };
+  const startsAfter = (at) => {
+    const token = tokens[at];
+    return BEFORE.has(upper2(token)) || isPunct2(token, "(") || isPunct2(token, ",");
+  };
+  const endsAt = (at) => {
+    const token = tokens[at];
+    return token === void 0 || isPunct2(token, ";") || isPunct2(token, ")") || isPunct2(token, ",") || AFTER.has(upper2(token));
+  };
+  const query = (from, end) => {
+    const word = upper2(tokens[from]);
+    const targets = analyzeTargets(tokens.slice(from, end));
+    const tables = /* @__PURE__ */ new Set([...targets.read, ...targets.written]);
+    const table = tables.size === 1 ? [...tables][0] : void 0;
+    const certain = table !== void 0 && !targets.openTargets && QUERIES.has(word);
+    let clause = "";
+    let clauses = 0;
+    const scan = (start2, stop, depth) => {
+      for (let i = start2; i < stop; i++) {
+        const token = tokens[i];
+        if (isPunct2(token, "(")) {
+          const close = closing(i);
+          if (QUERIES.has(upper2(tokens[i + 1]))) query(i + 1, close);
+          else scan(i + 1, close, depth + 1);
+          i = close;
+          continue;
+        }
+        if (isOpen2(token)) {
+          const close = closing(i);
+          nested(i + 1, close);
+          i = close;
+          continue;
+        }
+        if (depth === 0 && token.kind === "word" && CLAUSE_ENDS.has(token.value.toUpperCase()) && !isPunct2(tokens[i - 1], ".") && !isPunct2(tokens[i - 1], ":") && !isPunct2(tokens[i + 1], ":")) {
+          clause = token.value.toUpperCase();
+          if (clause === "WHERE" || clause === "SET") clauses++;
+          continue;
+        }
+        if (!certain || table === void 0 || clauses > 1) continue;
+        const inWhere = clause === "WHERE";
+        const inSet = clause === "SET" && depth === 0 && (word === "UPDATE" || word === "UPSERT" || word === "CREATE");
+        if (!inWhere && !inSet) continue;
+        if (!startsAfter(i - 1)) continue;
+        const field = bareField(i);
+        if (field !== void 0) {
+          const op = operatorAt(i + 1);
+          if (op !== void 0 && (inWhere || op.text === "=") && loneParam(op.next) && endsAt(op.next + 1))
+            record(tokens[op.next], {
+              kind: "field",
+              table,
+              field,
+              line: tokens[op.next].line
+            });
+          continue;
+        }
+        if (inWhere && loneParam(i)) {
+          const op = operatorAt(i + 1);
+          if (op === void 0) continue;
+          const other = bareField(op.next);
+          if (other !== void 0 && endsAt(op.next + 1))
+            record(token, {
+              kind: "field",
+              table,
+              field: other,
+              line: token.line
+            });
+        }
+      }
+    };
+    scan(from, end, 0);
+  };
+  const nested = (start2, stop) => {
+    for (let i = start2; i < stop; i++) {
+      if (!isOpen2(tokens[i])) continue;
+      const close = closing(i);
+      if (isPunct2(tokens[i], "(") && QUERIES.has(upper2(tokens[i + 1])))
+        query(i + 1, close);
+      else nested(i + 1, close);
+      i = close;
+    }
+  };
+  let start = 0;
+  for (let i = 0; i <= tokens.length; i++) {
+    const token = tokens[i];
+    if (token !== void 0 && isOpen2(token)) {
+      i = closing(i);
+      continue;
+    }
+    if (token !== void 0 && !isPunct2(token, ";")) continue;
+    let first = start;
+    if (upper2(tokens[first]) === "LET" && tokens[first + 1]?.kind === "param" && isPunct2(tokens[first + 2], "=") && !isPunct2(tokens[first + 3], "="))
+      first += 3;
+    else if (upper2(tokens[first]) === "RETURN") first += 1;
+    if (first < i) {
+      if (QUERIES.has(upper2(tokens[first]))) query(first, i);
+      else nested(start, i);
+    }
+    start = i + 1;
+  }
+  const uses = {};
+  for (const name of [...found.keys()].sort()) {
+    uses[name] = [...found.get(name).entries()].sort(
+      ([a, x], [b, y]) => x.line !== y.line ? x.line - y.line : a < b ? -1 : a > b ? 1 : 0
+    ).map(([, use]) => use);
+  }
+  return uses;
+};
+
 // src/analyze/analyze.ts
 var PROTECTED = /* @__PURE__ */ new Set([
   "auth",
@@ -791,7 +1053,7 @@ var frame = (open, role, vars = []) => ({
   params: []
 });
 var isWord = (token, word) => token?.kind === "word" && token.value.toUpperCase() === word;
-var isPunct2 = (token, char) => token?.kind === "punct" && token.value === char;
+var isPunct3 = (token, char) => token?.kind === "punct" && token.value === char;
 var sorted = (values) => [...new Set(values)].sort();
 var analyzeLexed = (sql, lexed) => {
   const { tokens, locate } = lexed;
@@ -893,7 +1155,7 @@ var analyzeLexed = (sql, lexed) => {
     const current = top();
     if (skip.has(i)) continue;
     let starting = false;
-    if (!isPunct2(token, ";")) {
+    if (!isPunct3(token, ";")) {
       starting = current === root ? statementFirst === void 0 : current.statementStart;
       if (starting) startStatement(token, current);
       current.statementStart = false;
@@ -930,9 +1192,9 @@ var analyzeLexed = (sql, lexed) => {
         const word = token.value.toUpperCase();
         const next = tokens[i + 1];
         const previous = tokens[i - 1];
-        const member = isPunct2(previous, ".") || isPunct2(previous, ":") || isPunct2(next, ":");
+        const member = isPunct3(previous, ".") || isPunct3(previous, ":") || isPunct3(next, ":");
         if (member) break;
-        if (WRITE_WORDS.has(word) && (starting || isPunct2(previous, "(") || previous?.kind === "word" && VALUE_WORDS2.has(previous.value.toUpperCase()) || isPunct2(previous, "=") && tokens[i - 2]?.kind === "param" && isWord(tokens[i - 3], "LET"))) {
+        if (WRITE_WORDS.has(word) && (starting || isPunct3(previous, "(") || previous?.kind === "word" && VALUE_WORDS2.has(previous.value.toUpperCase()) || isPunct3(previous, "=") && tokens[i - 2]?.kind === "param" && isWord(tokens[i - 3], "LET"))) {
           writes = true;
         }
         if (word === "LET" && next?.kind === "param") {
@@ -971,7 +1233,7 @@ var analyzeLexed = (sql, lexed) => {
           }
         } else if (word === "THROW") {
           const after = tokens[i + 2];
-          if (next?.kind === "string" && (next.prefix === void 0 || next.prefix === "s") && (after === void 0 || isPunct2(after, ";") || isPunct2(after, "}") || isPunct2(after, ")"))) {
+          if (next?.kind === "string" && (next.prefix === void 0 || next.prefix === "s") && (after === void 0 || isPunct3(after, ";") || isPunct3(after, "}") || isPunct3(after, ")"))) {
             const lines = throwsAt.get(next.value) ?? /* @__PURE__ */ new Set();
             lines.add(token.line);
             throwsAt.set(next.value, lines);
@@ -1040,14 +1302,14 @@ var analyzeLexed = (sql, lexed) => {
             }
             names.push(param.value);
             j++;
-            if (isPunct2(tokens[j], ":")) {
+            if (isPunct3(tokens[j], ":")) {
               let angle = 0;
               j++;
               while (j < tokens.length) {
                 const t = tokens[j];
-                if (isPunct2(t, "<")) angle++;
-                else if (isPunct2(t, ">")) angle--;
-                else if (angle === 0 && (isPunct2(t, ",") || isPunct2(t, "|")))
+                if (isPunct3(t, "<")) angle++;
+                else if (isPunct3(t, ">")) angle--;
+                else if (angle === 0 && (isPunct3(t, ",") || isPunct3(t, "|")))
                   break;
                 else if (t.kind === "punct" && "()[]{};".includes(t.value))
                   return fail(
@@ -1058,11 +1320,11 @@ var analyzeLexed = (sql, lexed) => {
                 j++;
               }
             }
-            if (isPunct2(tokens[j], ",")) {
+            if (isPunct3(tokens[j], ",")) {
               j++;
               continue;
             }
-            if (isPunct2(tokens[j], "|")) break;
+            if (isPunct3(tokens[j], "|")) break;
             return fail(
               "unexpectedToken",
               "cannot read this closure parameter list",
@@ -1074,7 +1336,7 @@ var analyzeLexed = (sql, lexed) => {
             vars: new Set(names)
           });
           const after = tokens[j + 1];
-          if (isPunct2(after, "{") || isPunct2(after, "-")) {
+          if (isPunct3(after, "{") || isPunct3(after, "-")) {
             current.pendingBody = { vars: [], role: "closure" };
           }
           i = j;
@@ -1094,7 +1356,7 @@ var analyzeLexed = (sql, lexed) => {
         statementFirst
       );
     }
-    if (statementFirst.kind === "word" && STATEMENT_WORDS.has(statementFirst.value.toUpperCase()) && !isPunct2(tokens[1], ":")) {
+    if (statementFirst.kind === "word" && STATEMENT_WORDS.has(statementFirst.value.toUpperCase()) && !isPunct3(tokens[1], ":")) {
       fail(
         "notAFragment",
         `an unterminated ${statementFirst.value.toUpperCase()} statement: terminate it with \`;\`, or a fragment must be a single expression or block`,
@@ -1128,6 +1390,7 @@ var analyzeLexed = (sql, lexed) => {
     tables: { read: targets.read, written: targets.written },
     functions: targets.functions,
     openTargets: targets.openTargets,
+    uses: analyzeUses(tokens, sorted(free)),
     diagnostics
   };
 };
@@ -1150,4 +1413,4 @@ export {
   analyzeSync,
   analyze
 };
-//# sourceMappingURL=chunk-DCP4NMOJ.js.map
+//# sourceMappingURL=chunk-QYJJODSM.js.map

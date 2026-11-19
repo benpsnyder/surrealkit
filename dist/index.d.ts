@@ -1,10 +1,10 @@
-import { Schema, DateTime as DateTime$2 } from 'effect';
+import { Schema } from 'effect';
 import * as surrealdb from 'surrealdb';
-import { Range as Range$1, Bound, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Decimal, Duration as Duration$1, RecordId, Table, Uuid, FileRef, RecordIdValue, DateTime as DateTime$1 } from 'surrealdb';
+import { Range as Range$1, Bound, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Decimal, Duration, RecordId, Table, Uuid, FileRef, RecordIdValue } from 'surrealdb';
 import { I as Int64 } from './value-Zktp5N5S.js';
 export { B as Bytes, b as DECIMAL_MAX_MANTISSA, c as DECIMAL_MAX_SCALE, D as Decimal, d as DecimalLiteral, E as EdgeDescriptor, e as EdgeIn, f as EdgeOut, g as FieldPermissions, h as FieldPresence, a as Float, i as FunctionArgs, F as FunctionDescriptor, j as FunctionResult, k as INT64_MAX, l as INT64_MIN, m as IndexDescriptor, n as IndexType, o as Int, p as Int64Literal, q as IntProfile, N as Narrowing, O as Operation, P as Permission, r as Presence, R as Refinements, s as Replaced, t as RowSchema, u as StoreDescriptor, v as String, w as SurrealJsonValue, x as SurrealMergeValue, S as SurrealNumber, y as SurrealValue, T as TableDescriptor, z as TablePermissions, U as Unsupported, A as Uuid, V as ViewDescriptor, C as decimalFromString, G as edge, H as fn, J as int64, K as intFor, L as refine, M as replaceField, Q as store, W as table, X as toWellFormed, Y as view, Z as withPresence } from './value-Zktp5N5S.js';
 import * as effect_DateTime from 'effect/DateTime';
-export { N as NoneAsAbsent, s as stripNone } from './row-CLBe1uWx.js';
+export { D as DATETIME_MAX_SECONDS, a as DATETIME_MIN_SECONDS, b as DURATION_MAX_SECONDS, c as DateTime, d as DateTimeEffect, e as Duration, f as DurationLiteral, N as NoneAsAbsent, g as dateTimeFromString, h as dateTimeToString, s as stripNone } from './temporal-s2ISz75j.js';
 
 /** `set<T>` / `set<T, N>` and `range`. */
 
@@ -83,7 +83,7 @@ type DateTimeJsonEncoded = typeof DateTimeFromJson.Encoded;
 declare const DecimalFromJson: Schema.declareConstructor<Decimal, string, readonly [Schema.decodeTo<Schema.Codec<Decimal, Decimal, never, never>, Schema.String, never, never>], Decimal>;
 type DecimalJsonEncoded = typeof DecimalFromJson.Encoded;
 /** `duration` as SurrealQL duration text (`"1h30m"`). */
-declare const DurationFromJson: Schema.declareConstructor<Duration$1, string, readonly [Schema.decodeTo<Schema.Codec<Duration$1, Duration$1, never, never>, Schema.String, never, never>], Duration$1>;
+declare const DurationFromJson: Schema.declareConstructor<Duration, string, readonly [Schema.decodeTo<Schema.Codec<Duration, Duration, never, never>, Schema.String, never, never>], Duration>;
 type DurationJsonEncoded = typeof DurationFromJson.Encoded;
 /** `uuid` as canonical text. */
 declare const UuidFromJson: Schema.declareConstructor<Uuid, string, readonly [Schema.decodeTo<Schema.Codec<Uuid, Uuid, never, never>, Schema.String, never, never>], Uuid>;
@@ -201,56 +201,4 @@ type TaggedRecordId<M extends RecordIdSchemas> = {
  */
 declare const taggedRecordId: <const M extends RecordIdSchemas>(ids: M) => Schema.declareConstructor<TaggedRecordId<M>, M[keyof M]["Encoded"], readonly [Schema.Codec<unknown, unknown>]>;
 
-/**
- * `datetime` and `duration`.
- *
- * Out-of-range values are rejected here because the engine does not reject
- * them usefully (measured on SurrealDB 3.2.4 with surrealdb.js 2.1.1): a
- * datetime outside the engine's range makes the server answer with an error
- * the SDK never resolves, so the query hangs; a negative SDK `Duration` is
- * silently sent (and stored) as `0ns`.
- */
-
-/** Earliest datetime the engine stores: `-262143-01-01T00:00:00Z`. */
-declare const DATETIME_MIN_SECONDS = -8334601228800n;
-/** Latest whole second the engine stores: `+262142-12-31T23:59:59Z`. */
-declare const DATETIME_MAX_SECONDS = 8210266876799n;
-/**
- * `datetime`, `datetime: "sdk"` profile (default): the SDK `DateTime` class,
- * nanosecond-preserving. Requires the SDK's default `useNativeDates: false`.
- */
-declare const DateTime: Schema.declareConstructor<DateTime$1, DateTime$1, readonly [], DateTime$1>;
-/**
- * Parses RFC 3339 datetime text (with the `±YYYYYY` extended year SurrealDB
- * prints for years outside 0000–9999) into an SDK `DateTime`, keeping every
- * nanosecond digit.
- *
- * Not delegated to the SDK: surrealdb.js 2.1.1 formats pre-1970 datetimes
- * with a fractional second one second late (`[-522127542, 999999991]` prints
- * as `…20:34:19.999999991Z`; SurrealDB prints `…20:34:18.999999991Z`).
- *
- * @throws RangeError for malformed text or impossible calendar values.
- */
-declare const dateTimeFromString: (text: string) => DateTime$1;
-/**
- * Formats an SDK `DateTime` as RFC 3339 UTC text with every significant
- * nanosecond digit (see {@link dateTimeFromString} for why the SDK's own
- * `toString` is not used).
- */
-declare const dateTimeToString: (value: DateTime$1) => string;
-/**
- * `datetime`, `datetime: "effect-datetime"` profile: Effect's `DateTime.Utc`.
- *
- * **Lossy by design**: Effect datetimes have millisecond precision, so
- * decoding truncates sub-millisecond digits (towards negative infinity).
- * Encoding produces an SDK `DateTime` on a whole millisecond.
- */
-declare const DateTimeEffect: Schema.declareConstructor<DateTime$2.Utc, DateTime$1, readonly [Schema.decodeTo<Schema.DateTimeUtc, Schema.declareConstructor<DateTime$1, DateTime$1, readonly [], DateTime$1>, never, never>], DateTime$2.Utc>;
-/** Largest duration the engine stores: `2^64 - 1` seconds plus 999,999,999ns. */
-declare const DURATION_MAX_SECONDS: bigint;
-/** `duration`: the SDK `Duration` class, nanosecond-preserving, non-negative. */
-declare const Duration: Schema.declareConstructor<Duration$1, Duration$1, readonly [], Duration$1>;
-/** A `duration` literal kind such as `1d`: exactly that duration. */
-declare const DurationLiteral: <const V extends string>(value: V) => Schema.declareConstructor<Duration$1, Duration$1, readonly [], Duration$1>;
-
-export { BytesFromJson, type BytesJsonEncoded, DATETIME_MAX_SECONDS, DATETIME_MIN_SECONDS, DURATION_MAX_SECONDS, DateTime, DateTimeEffect, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, DecimalFromJson, type DecimalJsonEncoded, Duration, DurationFromJson, type DurationJsonEncoded, DurationLiteral, FileRefFor, FileRefFromJson, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, Int64, Int64FromJson, type Int64JsonEncoded, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealNumberFromJson, TableFor, TableFromJson, type TaggedRecordId, UuidFromJson, type UuidJsonEncoded, dateTimeFromString, dateTimeToString, taggedRecordId };
+export { BytesFromJson, type BytesJsonEncoded, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, DecimalFromJson, type DecimalJsonEncoded, DurationFromJson, type DurationJsonEncoded, FileRefFor, FileRefFromJson, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, Int64, Int64FromJson, type Int64JsonEncoded, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealNumberFromJson, TableFor, TableFromJson, type TaggedRecordId, UuidFromJson, type UuidJsonEncoded, taggedRecordId };

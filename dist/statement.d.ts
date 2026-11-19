@@ -1,11 +1,13 @@
-import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as OperandEncoded, I as ItemOf, e as OperandParams, f as Comparable, g as Operand } from './arithmetic-CYCaTr2C.js';
-export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-CYCaTr2C.js';
+import { B as BindingUses } from './uses-Dlr8c45N.js';
+export { a as BindingUse } from './uses-Dlr8c45N.js';
+import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as Comparable, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-k1EY0-n5.js';
+export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-k1EY0-n5.js';
 import { Schema } from 'effect';
-import { N as NoneAsAbsent } from './row-CLBe1uWx.js';
-import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-DsQDMl9Y.js';
-export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-DsQDMl9Y.js';
+import { N as NoneAsAbsent, c as DateTime$1, e as Duration } from './temporal-s2ISz75j.js';
+import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-DYSFV0D8.js';
+export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-DYSFV0D8.js';
 import { RecordId, Decimal, DateTime } from 'surrealdb';
-import { a as Float, I as Int64, D as Decimal$1, o as Int, S as SurrealNumber, y as SurrealValue } from './value-Zktp5N5S.js';
+import { a as Float, I as Int64, D as Decimal$1, o as Int, S as SurrealNumber, v as SurrealString, A as Uuid, y as SurrealValue } from './value-Zktp5N5S.js';
 
 /**
  * Rows as expressions, and the codecs rows come back through.
@@ -1055,6 +1057,15 @@ interface GroupAll<T extends PureTable, P extends Params> {
 }
 
 /**
+ * Authored SurrealQL as statements: a `part` is one text with what it reads,
+ * defines, returns and throws, checked against the text by the package's own
+ * analyzer; a `sequence` runs parts in one scope as one statement.
+ *
+ * This is the only module of `effect-surrealkit/statement` that imports the
+ * analyzer, so code that only uses the builders does not carry it.
+ */
+
+/**
  * One authored SurrealQL text and what it does with variables:
  *
  * - `free`: the `$names` it reads and does not define itself;
@@ -1074,6 +1085,14 @@ interface GroupAll<T extends PureTable, P extends Params> {
  *   target is not a static name (so the lists may be incomplete). Optional
  *   in a declaration and checked against the text when given; {@link part}
  *   always sets them to what the analyzer derives.
+ * - `uses`: what each free binding is used as, where the analyzer can tell
+ *   (see `Analysis.uses` in `effect-surrealkit/analyze`). Checked against
+ *   the text when given; {@link part} always sets it.
+ * - `binds`: for a binding whose every use resolves, in the schema, to the
+ *   same simple kind, that kind's text (`string`, `int`, `record<t>`, …).
+ *   `effect-surrealkit statements` writes it when given the schema;
+ *   `sequence(...).define` then refuses, at compile time, a codec whose
+ *   stored type cannot hold it.
  *
  * `effect-surrealkit statements` derives these from `.surql` files
  * (`effect-surrealkit/analyze`). Written by hand they are checked against
@@ -1099,7 +1118,11 @@ interface Part<Free extends string = string, Defines extends string = string, Th
     readonly tables?: Tables;
     readonly functions?: ReadonlyArray<string>;
     readonly openTargets?: boolean;
+    readonly uses?: BindingUses;
+    readonly binds?: Binds;
 }
+/** The kind text each binding's every use resolves to; see {@link Part}. */
+type Binds = Readonly<Record<string, string>>;
 /** The static tables a text reads and writes. */
 interface Tables {
     readonly read: ReadonlyArray<string>;
@@ -1114,7 +1137,7 @@ interface Tables {
  * @throws RangeError for a part its text contradicts, or `AnalyzeError`
  *   (from `effect-surrealkit/analyze`) for a text it cannot analyse.
  */
-declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never>(options: {
+declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never, const U extends BindingUses = Record<never, never>, const B extends Binds = Record<never, never>>(options: {
     readonly name?: string;
     readonly source?: string;
     readonly sql: string;
@@ -1139,7 +1162,14 @@ declare const part: <const Free extends string = never, const Defines extends st
     readonly functions?: ReadonlyArray<string>;
     /** Checked against the text when given; see {@link Part}. */
     readonly openTargets?: boolean;
-}) => Part<Free, Defines, Throws>;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly uses?: U;
+    /**
+     * The kind each binding's uses resolve to in the schema; see
+     * {@link Part}. Each name must be a binding the text uses.
+     */
+    readonly binds?: B;
+}) => Part<Free, Defines, Throws> & Fitting<U, B>;
 /**
  * The bindings a sequence still needs from its caller: each part's free
  * names, minus what earlier parts define.
@@ -1148,6 +1178,88 @@ type Unbound<Parts extends ReadonlyArray<Part>, Defined extends string = never> 
     infer Head extends Part,
     ...infer Tail extends ReadonlyArray<Part>
 ] ? Exclude<Head['free'][number], Defined> | Unbound<Tail, Defined | Head['defines'][number]> : never;
+/**
+ * What a part declared with `binds` carries at the type level: its uses
+ * and binds as literal types, which {@link Contract} checks codecs
+ * against. Nothing for a part without `binds`.
+ */
+type Fitting<U, B> = [keyof B] extends [never] ? unknown : {
+    readonly uses: U;
+    readonly binds: B;
+};
+/**
+ * The stored type of each simple kind, as the package's own codec for it
+ * encodes it: the representation comparisons check (see `Comparable` in
+ * the builders). `int` is either profile's.
+ */
+interface KindStorage {
+    readonly string: (typeof SurrealString)['Encoded'];
+    readonly bool: boolean;
+    readonly int: (typeof Int)['Encoded'] | (typeof Int64)['Encoded'];
+    readonly float: (typeof Float)['Encoded'];
+    readonly number: (typeof SurrealNumber)['Encoded'];
+    readonly decimal: Decimal;
+    readonly datetime: (typeof DateTime$1)['Encoded'];
+    readonly duration: (typeof Duration)['Encoded'];
+    readonly uuid: (typeof Uuid)['Encoded'];
+}
+/** The stored type of a simple kind's text. */
+type KindStored<K> = K extends keyof KindStorage ? KindStorage[K] : K extends `record<${infer T}>` ? RecordId<T> : never;
+/** One binding a part's `binds` states, with the uses it came from. */
+interface BindEntry {
+    readonly name: string;
+    readonly kind: string;
+    readonly use: unknown;
+}
+/**
+ * The entries of one part's `binds`, without the index signature `Part`
+ * declares and without the names in `Defined`.
+ */
+type Entries<B, U, Defined extends string> = {
+    [K in keyof B as string extends K ? never : K extends Defined ? never : K]: {
+        readonly name: K;
+        readonly kind: B[K];
+        readonly use: K extends keyof U ? U[K] extends readonly [infer First, ...unknown[]] ? First : never : never;
+    };
+} extends infer M ? M[keyof M] : never;
+/**
+ * The `binds` entries of a sequence's parts, for the names that remain
+ * bindings: a name an earlier part defines is not one.
+ */
+type BindsOf<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
+    infer Head extends Part,
+    ...infer Tail extends ReadonlyArray<Part>
+] ? (Head extends {
+    readonly binds: infer B;
+    readonly uses: infer U;
+} ? Entries<B, U, Defined> : never) | BindsOf<Tail, Defined | Head['defines'][number]> : never;
+/** How a message names a use. */
+type UseText<U> = U extends {
+    readonly kind: 'field';
+    readonly table: infer T extends string;
+    readonly field: infer F extends string;
+} ? `is compared with \`${T}.${F}\`` : U extends {
+    readonly kind: 'argument';
+    readonly function: infer F extends string;
+    readonly index: infer I extends number;
+} ? `is passed to \`${F}\` at index ${I}` : U extends {
+    readonly kind: 'key';
+    readonly table: infer T extends string;
+} ? `is the key of a \`${T}\` record` : 'is used';
+/**
+ * A message for each entry whose kind the codec `C` cannot hold: their
+ * stored types do not overlap, exactly as {@link Comparable} decides for
+ * two operands. `never` when every entry fits.
+ */
+type Misfits<E, C> = E extends BindEntry ? C extends Codec ? Comparable<KindStored<E['kind']>, C['Encoded'], true> extends true ? never : `binding \`${E['name']}\` ${UseText<E['use']>} (${E['kind']}), which its codec cannot hold` : never : never;
+/** `P`, with each codec its binding's kind cannot be stored as replaced by a message. */
+type Fitted<P, E extends BindEntry> = {
+    readonly [K in keyof P]: K extends E['name'] ? [Misfits<Extract<E, {
+        readonly name: K;
+    }>, P[K]>] extends [never] ? P[K] : Misfits<Extract<E, {
+        readonly name: K;
+    }>, P[K]> : P[K];
+};
 /** The messages any part of a sequence can `THROW`. */
 type ThrownBy<Parts extends ReadonlyArray<Part>> = Parts[number]['throws'][number];
 /**
@@ -1167,7 +1279,9 @@ type Exactly<Names extends string, P> = [
  * widened list, names typed `string`) cannot be checked by the compiler, so
  * they are left to the check `define` makes when it runs.
  */
-type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : Exactly<Unbound<Parts>, P>;
+type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [Extract<Parts[number], {
+    readonly binds: object;
+}>] extends [never] ? Exactly<Unbound<Parts>, P> : Exactly<Unbound<Parts>, Fitted<P, BindsOf<Parts>>>;
 /**
  * Authored SurrealQL texts run one after another in a single request, sharing
  * one variable scope, as a statement.
@@ -2398,4 +2512,4 @@ declare const insert: <T extends PureTable, D extends Codec, P extends Params>(t
  */
 declare const insertRelation: <T extends RelationTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRelationRow<T>, D, Expr<D, P>, T["name"], "INSERT RELATION">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
 
-export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedCount, type CheckedFetch, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVector, type CheckedWeights, Codec, CodecOf, type CollectOptions, Comparable, type Condition, type Contract, type Count, type Create, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Followable, type FollowedOf, type ForEffect, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyParams, type KeyPart, type KeyParts, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type ThrownBy, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, collect, count, create, deleteFrom, destructure, edges, evaluate, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };
+export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedCount, type CheckedFetch, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVector, type CheckedWeights, Codec, CodecOf, type CollectOptions, Comparable, type Condition, type Contract, type Count, type Create, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type ThrownBy, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, collect, count, create, deleteFrom, destructure, edges, evaluate, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };
