@@ -151,6 +151,11 @@ var assertStatement = (statement) => {
       `statement \`${statement.name}\` returns ${statement.slots} results; a statement returns at least one`
     );
   }
+  if (!Number.isInteger(statement.valueSlot) || statement.valueSlot < 1 || statement.valueSlot > statement.slots) {
+    throw new RangeError(
+      `statement \`${statement.name}\` decodes result ${statement.valueSlot}, outside its ${statement.slots} results`
+    );
+  }
   for (const name of Object.keys(statement.params)) assertBindingName(name);
   for (const name of statement.defines) assertIdentifier(name);
 };
@@ -245,6 +250,7 @@ var make = (options) => {
     params: withoutRefs(options.params),
     result: options.result,
     slots: options.slots ?? 1,
+    valueSlot: options.valueSlot ?? options.slots ?? 1,
     throws: options.throws ?? [],
     defines: options.defines ?? [],
     transactional: options.transactional ?? false,
@@ -814,4 +820,4 @@ export {
   cast,
   call
 };
-//# sourceMappingURL=chunk-4HL7DR3L.js.map
+//# sourceMappingURL=chunk-7JBQRPBJ.js.map

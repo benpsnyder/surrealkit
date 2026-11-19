@@ -54,9 +54,13 @@ declare const StatementTypeId = "~effect-surrealkit/Statement";
  * - `sql`: the SurrealQL text, one or more statements.
  * - `params`: the codec of every binding the text reads. Values are encoded
  *   through them before anything is sent.
- * - `result`: decodes the result of the last statement of the text.
+ * - `result`: decodes the result at `valueSlot`.
  * - `slots`: how many results the text returns, one per top-level statement.
- *   Every one but the last must be NONE (`LET`, guards).
+ *   Every one but the one at `valueSlot` must be NONE (`LET`, guards,
+ *   `BEGIN`, `COMMIT`).
+ * - `valueSlot`: the 1-based position of the result `result` decodes,
+ *   `slots` unless the text ends with transaction control (`sequence`
+ *   derives it; `make` takes it as declared).
  * - `throws`: the `THROW` messages the text can raise, which a client
  *   surfaces as a typed error rather than a request failure.
  * - `defines`: the names the text `LET`s at the top level. Statements in one
@@ -88,6 +92,7 @@ interface Statement<P extends Params = Params, R extends Codec = Codec, Throws e
     readonly params: P;
     readonly result: R;
     readonly slots: number;
+    readonly valueSlot: number;
     readonly throws: ReadonlyArray<Throws>;
     readonly defines: ReadonlyArray<string>;
     readonly transactional: boolean;
@@ -125,6 +130,8 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     readonly params: P;
     readonly result: R;
     readonly slots?: number;
+    /** The 1-based result `result` decodes, in `1..slots`. Default `slots`. */
+    readonly valueSlot?: number;
     readonly throws?: ReadonlyArray<Throws>;
     /** The names the text `LET`s at the top level. Default none. */
     readonly defines?: ReadonlyArray<string>;

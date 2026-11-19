@@ -455,25 +455,25 @@ var changesOf = (statements) => statements.some((statement) => statement.writes 
 var committedNote = (changes) => changes === "writes" ? ". The request succeeded and its writes are committed, so do not send it again to retry" : changes === "maybe" ? ". The request succeeded and may have written: it is not known whether it writes, and any writes it made are committed; read the data back before sending it again" : "";
 var decodeOutcome = (request, changes) => (error) => changes !== "none" && error instanceof StatementDecodeError ? new StatementWriteOutcomeError({ request, cause: error }) : error;
 var decode = (statement, results, offset, writes) => {
-  const last = offset + statement.slots - 1;
-  for (let slot = offset; slot < last; slot++) {
-    if (results[slot] !== void 0) {
+  const at = offset + statement.valueSlot - 1;
+  for (let slot = offset; slot < offset + statement.slots; slot++) {
+    if (slot !== at && results[slot] !== void 0) {
       return Effect.fail(
         new StatementDecodeError({
           statement: statement.name,
           slot: slot - offset + 1,
           committed: writes !== "none",
-          message: `result ${slot - offset + 1} of ${statement.slots} must be NONE; only the last result of a statement is decoded${committedNote(writes)}`
+          message: `result ${slot - offset + 1} of ${statement.slots} must be NONE; only result ${statement.valueSlot} of a statement is decoded${committedNote(writes)}`
         })
       );
     }
   }
-  const value = results[last];
+  const value = results[at];
   if (statement.nonEmpty === true && (value === void 0 || value === null || Array.isArray(value) && value.length === 0)) {
     return Effect.fail(
       new StatementEmptyResult({
         statement: statement.name,
-        slot: statement.slots,
+        slot: statement.valueSlot,
         message: `\`${statement.name}\` returned nothing, although it returns a row whenever it applies: the session may lack permission for it (SurrealDB reports a denied write as an empty result, without an error), and it wrote nothing`
       })
     );
@@ -484,7 +484,7 @@ var decode = (statement, results, offset, writes) => {
     Effect.mapError(
       (error) => new StatementDecodeError({
         statement: statement.name,
-        slot: statement.slots,
+        slot: statement.valueSlot,
         committed: writes !== "none",
         message: `${error.message}${committedNote(writes)}`
       })
@@ -788,4 +788,4 @@ export {
   run,
   transaction
 };
-//# sourceMappingURL=chunk-EBKUDRXT.js.map
+//# sourceMappingURL=chunk-VRNODB5B.js.map

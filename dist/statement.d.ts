@@ -1,9 +1,9 @@
-import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as OperandEncoded, I as ItemOf, e as OperandParams, f as Comparable, g as Operand } from './arithmetic-DkkM1utK.js';
-export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-DkkM1utK.js';
+import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as ParamsOf, F as FloatOrDecimalOf, d as OperandEncoded, I as ItemOf, e as OperandParams, f as Comparable, g as Operand } from './arithmetic-Cl3Mmdmr.js';
+export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-Cl3Mmdmr.js';
 import { Schema } from 'effect';
 import { N as NoneAsAbsent } from './row-CLBe1uWx.js';
-import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-C1ml4dGf.js';
-export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-C1ml4dGf.js';
+import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-C2GeTaZ5.js';
+export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-C2GeTaZ5.js';
 import { RecordId, Decimal, DateTime } from 'surrealdb';
 import { a as Float, I as Int64, D as Decimal$1, o as Int, S as SurrealNumber, y as SurrealValue } from './value-Zktp5N5S.js';
 
@@ -1082,6 +1082,12 @@ interface Part<Free extends string = string, Defines extends string = string, Th
     readonly free: ReadonlyArray<Free>;
     readonly defines: ReadonlyArray<Defines>;
     readonly slots: number;
+    /**
+     * The 1-based position of the last result that is not `BEGIN`, `COMMIT`
+     * or `CANCEL`, 0 when there is none. Optional: derived from the text
+     * when absent, checked against it when declared.
+     */
+    readonly valueSlot?: number;
     readonly throws: ReadonlyArray<Throws>;
     readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
     readonly writes?: boolean;
@@ -1102,6 +1108,8 @@ declare const part: <const Free extends string = never, const Defines extends st
     readonly free?: ReadonlyArray<Free>;
     readonly defines?: ReadonlyArray<Defines>;
     readonly slots?: number;
+    /** Checked against the text when given; see {@link Part}. */
+    readonly valueSlot?: number;
     readonly throws?: ReadonlyArray<Throws>;
     readonly throwsAt?: Readonly<Record<string, ReadonlyArray<number>>>;
     /**

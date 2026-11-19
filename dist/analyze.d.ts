@@ -61,6 +61,13 @@ interface Analysis {
     readonly defines: ReadonlyArray<string>;
     /** Results: one per terminated top-level statement. */
     readonly slots: number;
+    /**
+     * The 1-based position, among the results, of the last top-level
+     * statement that is not `BEGIN`, `COMMIT` or `CANCEL`: the result a
+     * client decodes. Equal to `slots` without transaction control; 0 for a
+     * fragment or a text of only control statements.
+     */
+    readonly valueSlot: number;
     /** String-literal `THROW` messages, sorted. */
     readonly throws: ReadonlyArray<string>;
     /** The lines each message is thrown on. */

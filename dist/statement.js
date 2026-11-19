@@ -5,13 +5,13 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-5SKHDALX.js";
+} from "./chunk-N4VIWHRU.js";
 import {
   SurrealValue
 } from "./chunk-F4HWMI2D.js";
 import {
   analyzeSync
-} from "./chunk-XG4BS7R5.js";
+} from "./chunk-73CJ3SZK.js";
 import {
   TraversalTypeId,
   andAll,
@@ -48,7 +48,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-NH4WYZPQ.js";
+} from "./chunk-F5XU4U3W.js";
 import {
   NoneAsAbsent
 } from "./chunk-FN4HR4GU.js";
@@ -98,7 +98,7 @@ import {
   sqlOf,
   unsafeExpr,
   withRefs
-} from "./chunk-4HL7DR3L.js";
+} from "./chunk-7JBQRPBJ.js";
 import {
   Decimal,
   Float,
@@ -881,6 +881,11 @@ var verify = (item, label) => {
       `slots: declared ${item.slots}, the text returns ${analysis.slots}`
     );
   }
+  if (item.valueSlot !== void 0 && item.valueSlot !== analysis.valueSlot) {
+    differences.push(
+      `valueSlot: declared ${item.valueSlot}, the text's value is result ${analysis.valueSlot}`
+    );
+  }
   const undeclaredThrows = missingFrom(analysis.throws, item.throws);
   if (undeclaredThrows.length > 0) {
     differences.push(
@@ -915,6 +920,9 @@ var part = (options) => {
     free: options.free ?? [],
     defines: options.defines ?? [],
     slots: options.slots ?? 1,
+    ...options.valueSlot !== void 0 && {
+      valueSlot: options.valueSlot
+    },
     throws: options.throws ?? [],
     ...options.throwsAt !== void 0 && { throwsAt: options.throwsAt },
     ...options.writes !== void 0 && { writes: options.writes }
@@ -981,12 +989,20 @@ var sequence = (...parts) => ({
       );
     }
     const writes = contract.writes ?? derived;
+    const slots = parts.reduce((total, item) => total + item.slots, 0);
+    let valueSlot = slots;
+    let offset = 0;
+    for (const [index, analysis] of analyses.entries()) {
+      if (analysis.valueSlot > 0) valueSlot = offset + analysis.valueSlot;
+      offset += parts[index].slots;
+    }
     return make({
       name: label,
       sql: parts.map((item) => item.sql.trim()).join("\n"),
       params: contract.params,
       result: contract.result,
-      slots: parts.reduce((total, item) => total + item.slots, 0),
+      slots,
+      valueSlot,
       throws: [
         ...new Set(parts.flatMap((item) => item.throws))
       ],

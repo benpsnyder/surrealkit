@@ -2612,6 +2612,8 @@ var analyzeLexed = (sql, lexed) => {
   const throwsAt = /* @__PURE__ */ new Map();
   const skip = /* @__PURE__ */ new Set();
   let slots = 0;
+  let valueSlot = 0;
+  let control = false;
   let transactional = false;
   let writes = false;
   let statementFirst;
@@ -2649,6 +2651,7 @@ var analyzeLexed = (sql, lexed) => {
         }
         returnInTransaction = void 0;
       }
+      control = word === "BEGIN" || word === "COMMIT" || word === "CANCEL";
       if (word === "BEGIN") {
         transactional = true;
         inTransaction = true;
@@ -2771,6 +2774,7 @@ var analyzeLexed = (sql, lexed) => {
               fail2("emptyStatement", "an empty statement", token);
             }
             slots++;
+            if (!control) valueSlot = slots;
             statementFirst = void 0;
             inDefinition = false;
           } else {
@@ -2893,6 +2897,7 @@ var analyzeLexed = (sql, lexed) => {
     free: sorted(free),
     defines: sorted(root.vars),
     slots,
+    valueSlot: kind === "fragment" ? 0 : valueSlot,
     throws: Object.keys(throwLines),
     throwsAt: throwLines,
     holes: sorted(holes),
