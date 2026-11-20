@@ -1957,7 +1957,7 @@ var printStore = (tables, functions, registry, options, ext) => {
   const entries = (pairs) => pairs.length === 0 ? "{}" : `{
 ${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
 	}`;
-  const typeEntries = (pairs) => pairs.length === 0 ? "{}" : `{
+  const typeEntries = (pairs) => pairs.length === 0 ? "Record<never, never>" : `{
 ${pairs.map(([key, value]) => `		readonly ${propertyKey(key)}: typeof ${value};`).join("\n")}
 	}`;
   const tableEntries = [];
