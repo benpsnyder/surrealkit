@@ -44,9 +44,16 @@ interface DeclaredDetail {
     readonly functions: Readonly<Record<string, ReadonlyArray<string>>>;
 }
 interface DeclaredTable {
-    /** Each declared field (its path joined with `.`) and its kind text. */
+    /**
+     * Each declared field (its path joined with `.`): its kind text, and
+     * `rejectsNone` when the engine rejects NONE assigned to it in every
+     * statement that can assign it (`CREATE`, `UPDATE` and `UPSERT`): a
+     * top-level field whose kind excludes NONE, without `DEFAULT`, `VALUE`
+     * or `COMPUTED`. Left out, nothing is refused for the field.
+     */
     readonly fields: Readonly<Record<string, {
         readonly kind?: string;
+        readonly rejectsNone?: boolean;
     }>>;
     /** The table accepts fields it does not declare (it is schemaless). */
     readonly acceptsUndeclared: boolean;

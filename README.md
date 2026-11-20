@@ -115,7 +115,12 @@ store under its SurrealDB name (`store.tables.person`,
 `store.edges.member_of`, `store.functions["fn::greet"]`), so a record link
 (`RecordId<"person">`) or a graph step resolves to the descriptor of its
 target. Its file name has a leading underscore because table modules are
-kebab-case words, so no table can be written there.
+kebab-case words, so no table can be written there. The module also exports
+the registry's type, `Store`, whose entries are `typeof PersonTable` and the
+like: a declaration file then names the descriptors, where an inferred type
+would copy every one of them and fail with TS7056 on a large schema. `Store`
+is not re-exported from `index.ts`, where a table named `store` owns that
+name.
 
 Each table gets one schema per operation, derived from the field-presence
 matrix of the contract (section 7):
@@ -160,7 +165,8 @@ export keeps its name, its schema and its type:
   and every table module a `<Table>Visible` export (with its `Type` and
   `Encoded` types), so a table whose PascalCase name is another table's
   plus `Visible` (`person` and `person_visible`) now needs a `names` entry;
-- a new module, `_store.ts`, exports `store`, and `index.ts` re-exports it.
+- a new module, `_store.ts`, exports `store` and its type `Store`, and
+  `index.ts` re-exports `store`.
   A SurrealKit-run emitter records the new file in `.surrealkit-emit.json`
   as it does every generated file.
 
@@ -400,7 +406,20 @@ reordering or subset of an array (`array.sort`, `array.distinct`); `item:N`
 is an element of it or NONE (`array.first`, `time.max`). `items:N`, on the
 variadic argument `N`, is an array of the union of the arguments' element
 codecs when every argument is a typed array, the argument's own codec when
-it is the only one, and `array` otherwise (`array.concat`). A result
+it is the only one, and `array` otherwise (`array.concat`). The other
+array builders are typed the same way: `with:N,M` is an array of argument
+`N`'s elements and the value `M` (`array.append`, `push`, `prepend`,
+`insert`, `fill`), `adds:N,M` the same with an array `M` adding its
+elements (`array.add`), `elements:N,M` the elements of both arrays
+(`array.union`, `difference`), `padded:N,M` those or `null` past the
+shorter one (`array.logicalAnd`, `logicalOr`, `logicalXor`), `pairs:N,M`
+tuples of one element of each (`array.combine`), `flat:N` the elements of
+the arrays `N` holds (`array.flatten`, `group`), `chunks:N` arrays of `N`'s
+elements (`array.clump`, `windows`), `transposed:N` arrays of the inner
+elements or NONE (`array.transpose`) and `repeats:N` an array of the value
+`N` (`array.repeat`). When an argument they name is not a typed expression
+(an inlined constant, or an open value or array of open values), the
+result is the plain `array` or `array<array>` it was. A result
 `float|decimal:N,…` is a float, or `number | Decimal` when one of the
 arguments it names may hold a decimal (an element of it, for an array): the
 functions SurrealDB computes in the kind of their input (`math.sqrt`,
@@ -1072,8 +1091,10 @@ the names that remain bindings.
 
 With `--schema` (or a scope's `declared` names from
 `declaredNames(document)`, whose `detail` holds each table's fields with
-their kind text, whether it accepts undeclared fields, its id key's kind,
-and each function's argument kinds), every use must resolve when the
+their kind text and whether they reject NONE, whether it accepts
+undeclared fields, its id key's kind,
+and each function's argument kinds; a field or argument the document
+records as optional has the kind text `option<K>`), every use must resolve when the
 modules are generated: a field the table neither declares nor accepts
 (`compares \`utcDy\` of \`snapshot\`, which declares no such field`) or
 an argument beyond the function's arguments is an error with its file and
@@ -1098,6 +1119,34 @@ A key never does. For `option<K>`, a codec fits when its stored type, with
 `undefined` set aside, compares with `K`, so `Schema.UndefinedOr` of a
 literal, branded or refined string fits `option<string>`. For a plain `K`
 the check is unchanged.
+
+A binding assigned (`SET field = $name` in a `CREATE`, `UPDATE` or
+`UPSERT`) to a field that rejects NONE gets a `rejectsNone` entry naming
+that field: `rejectsNone: { station: { table: "gauge", field: "station",
+kind: "string" } }`. A field rejects NONE when it is a top-level field
+whose kind excludes NONE (not `option<…>` or `K | none`, not `any` or
+without `TYPE`; `regex`, `function`, `file` and `table` kinds are not
+counted) and it has no `DEFAULT`, `VALUE` or `COMPUTED` clause. On those
+the engine rejects NONE in every statement the analyzer records an
+assignment in, creating a record or updating one, on SurrealDB 3.3 and 4.0
+alike, also when the table is schemaless or the field is `READONLY` or has
+an `ASSERT`. A field with a plain `DEFAULT` is not counted, because the
+default replaces NONE when a record is created, and nor are a view, a
+`DROP` table, a relation's `in` and `out`, `id`, and a text that defines,
+alters or removes a table or field itself.
+
+This is a compile-time refusal: `sequence(...).define` refuses a codec
+that can hold NONE (`undefined` is part of its stored type, as with
+`Schema.UndefinedOr(…)`) for a binding with a `rejectsNone` entry, with an
+error such as ``binding `station` is assigned to `gauge.station` (string),
+which rejects NONE, and its codec can hold NONE``. Code that compiled
+before can fail here once its modules are generated again with
+`--schema`. Fix it by giving the binding a codec without NONE (a narrower
+one, such as a literal, still fits), or, when NONE is meant, by making the
+field accept it: declare it `option<…>`, or give it a `DEFAULT`. Only an
+assignment counts: a binding compared with the same field (`WHERE $station
+= NONE OR station = $station`) is not refused, and `Schema.Unknown`, which
+holds anything, is not taken to hold NONE.
 
 The limits are plain: only these three patterns are read, by a lexer, not
 a parser, and nothing is recorded where it is not certain (a parameter in a

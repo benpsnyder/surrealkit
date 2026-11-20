@@ -39,7 +39,7 @@ import {
 var array_exports = {};
 __export(array_exports, {
   add: () => add,
-  all: () => all,
+  all: () => all2,
   any: () => any,
   append: () => append,
   at: () => at,
@@ -122,13 +122,12 @@ var item = (index, fallback) => new Derived((args) => {
   const codec = argCodec(args, index, fallback);
   return "value" in codec && Schema.isSchema(codec.value) ? orNone(codec.value) : AnyCodec;
 });
+var isOpen = ({ ast }) => ast._tag === "Unknown" || ast._tag === "Any" || ast === SurrealValue.ast || ast._tag === "Union" && ast.types.includes(SurrealValue.ast);
 var typedItem = (codec) => {
   if (codec.ast._tag !== "Arrays" || !("value" in codec)) return void 0;
   const element = codec.value;
   if (!Schema.isSchema(element)) return void 0;
-  const { ast } = element;
-  const open = ast._tag === "Unknown" || ast._tag === "Any" || ast === SurrealValue.ast || ast._tag === "Union" && ast.types.includes(SurrealValue.ast);
-  return open ? void 0 : element;
+  return isOpen(element) ? void 0 : element;
 };
 var items = (index, fallback) => new Derived((args) => {
   const given = args.slice(index);
@@ -144,6 +143,64 @@ var items = (index, fallback) => new Derived((args) => {
   return Schema.Array(
     others.length === 0 ? only : Schema.Union(elements)
   );
+});
+var elementOf = (arg) => isExpr(arg) ? typedItem(codecOf(arg)) : void 0;
+var typedValue = (arg) => isExpr(arg) && !isOpen(codecOf(arg)) ? codecOf(arg) : void 0;
+var unionOf = (codecs) => {
+  const distinct2 = [...new Set(codecs)];
+  const [only] = distinct2;
+  return distinct2.length === 1 && only !== void 0 ? only : Schema.Union(distinct2);
+};
+var arrayOf = (codec) => Schema.Array(codec);
+var shaped = (build) => (indices, fallback) => new Derived(
+  (args) => build(indices.map((index) => args[index])) ?? fallback
+);
+var all = (codecs) => codecs.every((codec) => codec !== void 0) ? codecs : void 0;
+var elementsOf = shaped((args) => {
+  const elements = all(args.map(elementOf));
+  return elements && arrayOf(unionOf(elements));
+});
+var withValue = shaped(([array2, value]) => {
+  const codecs = all([elementOf(array2), typedValue(value)]);
+  return codecs && arrayOf(unionOf(codecs));
+});
+var added = (codec) => {
+  if (codec === void 0) return void 0;
+  if (codec.ast._tag === "Arrays") return typedItem(codec);
+  const mayBeArray = codec.ast._tag === "Union" && codec.ast.types.some((member) => member._tag === "Arrays");
+  return mayBeArray ? void 0 : codec;
+};
+var addsValue = shaped(([array2, value]) => {
+  const codecs = all([elementOf(array2), added(typedValue(value))]);
+  return codecs && arrayOf(unionOf(codecs));
+});
+var nullPadded = shaped(([left, right]) => {
+  const codecs = all([elementOf(left), elementOf(right)]);
+  return codecs && arrayOf(unionOf([...codecs, Schema.Null]));
+});
+var pairsOf = shaped(([left, right]) => {
+  const codecs = all([elementOf(left), elementOf(right)]);
+  return codecs && arrayOf(Schema.Tuple(codecs));
+});
+var innerOf = (arg) => {
+  const element = elementOf(arg);
+  return element && typedItem(element);
+};
+var flattened = shaped(([array2]) => {
+  const inner = innerOf(array2);
+  return inner && arrayOf(inner);
+});
+var chunksOf = shaped(([array2]) => {
+  const element = elementOf(array2);
+  return element && arrayOf(arrayOf(element));
+});
+var transposed = shaped(([array2]) => {
+  const inner = innerOf(array2);
+  return inner && arrayOf(arrayOf(orNone(inner)));
+});
+var repeated = shaped(([value]) => {
+  const codec = typedValue(value);
+  return codec && arrayOf(codec);
 });
 var mayHoldDecimal = (arg) => isExpr(arg) ? holdsDecimal(codecOf(arg)) : Array.isArray(arg) && arg.some(mayHoldDecimal);
 var floatOrDecimal = (indices) => new Derived(
@@ -200,50 +257,74 @@ var OptionOfStringCodec = /* @__PURE__ */ Schema2.UndefinedOr(StringCodec);
 var OptionOfArrayOfNumberCodec = /* @__PURE__ */ Schema2.UndefinedOr(ArrayOfNumberCodec);
 
 // src/functions/generated/array.ts
-var add = (array2, value) => apply("array::add", ArrayCodec, 2, [array2, value]);
-var all = (array2, predicate) => apply("array::all", BoolCodec, 1, [array2, predicate]);
+var add = (array2, value) => apply("array::add", addsValue([0, 1], ArrayCodec), 2, [array2, value]);
+var all2 = (array2, predicate) => apply("array::all", BoolCodec, 1, [array2, predicate]);
 var any = (array2, predicate) => apply("array::any", BoolCodec, 1, [array2, predicate]);
-var append = (array2, value) => apply("array::append", ArrayCodec, 2, [array2, value]);
+var append = (array2, value) => apply("array::append", withValue([0, 1], ArrayCodec), 2, [array2, value]);
 var at = (array2, index) => apply("array::at", item(0, ArrayCodec), 2, [array2, index]);
 var booleanAnd = (left, right) => apply("array::boolean_and", ArrayOfBoolCodec, 2, [left, right]);
 var booleanNot = (array2) => apply("array::boolean_not", ArrayOfBoolCodec, 1, [array2]);
 var booleanOr = (left, right) => apply("array::boolean_or", ArrayOfBoolCodec, 2, [left, right]);
 var booleanXor = (left, right) => apply("array::boolean_xor", ArrayOfBoolCodec, 2, [left, right]);
-var clump = (array2, size) => apply("array::clump", ArrayOfArrayCodec, 2, [array2, size]);
-var combine = (left, right) => apply("array::combine", ArrayOfArrayCodec, 2, [left, right]);
+var clump = (array2, size) => apply("array::clump", chunksOf([0], ArrayOfArrayCodec), 2, [array2, size]);
+var combine = (left, right) => apply("array::combine", pairsOf([0, 1], ArrayOfArrayCodec), 2, [
+  left,
+  right
+]);
 var complement = (left, right) => apply("array::complement", same(0, ArrayCodec), 2, [left, right]);
 var concat = (...arrays) => apply("array::concat", items(0, ArrayCodec), 0, [], arrays);
-var difference = (left, right) => apply("array::difference", ArrayCodec, 2, [left, right]);
+var difference = (left, right) => apply("array::difference", elementsOf([0, 1], ArrayCodec), 2, [
+  left,
+  right
+]);
 var distinct = (array2) => apply("array::distinct", same(0, ArrayCodec), 1, [array2]);
 var every = (array2, predicate) => apply("array::every", BoolCodec, 1, [array2, predicate]);
-var fill = (array2, value, start, end) => apply("array::fill", ArrayCodec, 2, [array2, value, start, end]);
+var fill = (array2, value, start, end) => apply("array::fill", withValue([0, 1], ArrayCodec), 2, [
+  array2,
+  value,
+  start,
+  end
+]);
 var filter = (array2, predicate) => apply("array::filter", same(0, ArrayCodec), 2, [array2, predicate]);
 var filterIndex = (array2, predicate) => apply("array::filter_index", ArrayOfIntCodec, 2, [array2, predicate]);
 var find = (array2, predicate) => apply("array::find", item(0, ArrayCodec), 2, [array2, predicate]);
 var findIndex = (array2, predicate) => apply("array::find_index", OptionOfIntCodec, 2, [array2, predicate]);
 var first = (array2) => apply("array::first", item(0, ArrayCodec), 1, [array2]);
-var flatten = (array2) => apply("array::flatten", ArrayCodec, 1, [array2]);
-var group = (array2) => apply("array::group", ArrayCodec, 1, [array2]);
+var flatten = (array2) => apply("array::flatten", flattened([0], ArrayCodec), 1, [array2]);
+var group = (array2) => apply("array::group", flattened([0], ArrayCodec), 1, [array2]);
 var includes = (array2, value) => apply("array::includes", BoolCodec, 1, [array2, value]);
 var indexOf = (array2, value) => apply("array::index_of", OptionOfIntCodec, 2, [array2, value]);
-var insert = (array2, value, index) => apply("array::insert", ArrayCodec, 2, [array2, value, index]);
+var insert = (array2, value, index) => apply("array::insert", withValue([0, 1], ArrayCodec), 2, [
+  array2,
+  value,
+  index
+]);
 var intersect = (left, right) => apply("array::intersect", same(0, ArrayCodec), 2, [left, right]);
 var isEmpty = (array2) => apply("array::is_empty", BoolCodec, 1, [array2]);
 var join = (array2, separator) => apply("array::join", StringCodec, 2, [array2, separator]);
 var last = (array2) => apply("array::last", item(0, ArrayCodec), 1, [array2]);
 var len = (array2) => apply("array::len", IntCodec, 1, [array2]);
-var logicalAnd = (left, right) => apply("array::logical_and", ArrayCodec, 2, [left, right]);
-var logicalOr = (left, right) => apply("array::logical_or", ArrayCodec, 2, [left, right]);
-var logicalXor = (left, right) => apply("array::logical_xor", ArrayCodec, 2, [left, right]);
+var logicalAnd = (left, right) => apply("array::logical_and", nullPadded([0, 1], ArrayCodec), 2, [
+  left,
+  right
+]);
+var logicalOr = (left, right) => apply("array::logical_or", nullPadded([0, 1], ArrayCodec), 2, [
+  left,
+  right
+]);
+var logicalXor = (left, right) => apply("array::logical_xor", nullPadded([0, 1], ArrayCodec), 2, [
+  left,
+  right
+]);
 var matches = (array2, value) => apply("array::matches", ArrayOfBoolCodec, 2, [array2, value]);
 var max = (array2) => apply("array::max", item(0, ArrayCodec), 1, [array2]);
 var min = (array2) => apply("array::min", item(0, ArrayCodec), 1, [array2]);
 var pop = (array2) => apply("array::pop", item(0, ArrayCodec), 1, [array2]);
-var prepend = (array2, value) => apply("array::prepend", ArrayCodec, 2, [array2, value]);
-var push = (array2, value) => apply("array::push", ArrayCodec, 2, [array2, value]);
+var prepend = (array2, value) => apply("array::prepend", withValue([0, 1], ArrayCodec), 2, [array2, value]);
+var push = (array2, value) => apply("array::push", withValue([0, 1], ArrayCodec), 2, [array2, value]);
 var range = (start, count) => apply("array::range", ArrayOfIntCodec, 1, [start, count]);
 var remove = (array2, index) => apply("array::remove", same(0, ArrayCodec), 2, [array2, index]);
-var repeat = (value, count) => apply("array::repeat", ArrayCodec, 2, [value, count]);
+var repeat = (value, count) => apply("array::repeat", repeated([0], ArrayCodec), 2, [value, count]);
 var reverse = (array2) => apply("array::reverse", same(0, ArrayCodec), 1, [array2]);
 var sequence = (start, count) => apply("array::sequence", ArrayOfIntCodec, 1, [start, count]);
 var shuffle = (array2) => apply("array::shuffle", same(0, ArrayCodec), 1, [array2]);
@@ -259,9 +340,12 @@ var sortNaturalLexical = (array2, order) => apply("array::sort_natural_lexical",
   order
 ]);
 var swap = (array2, from, to) => apply("array::swap", same(0, ArrayCodec), 3, [array2, from, to]);
-var transpose = (array2) => apply("array::transpose", ArrayOfArrayCodec, 1, [array2]);
-var union = (left, right) => apply("array::union", ArrayCodec, 2, [left, right]);
-var windows = (array2, size) => apply("array::windows", ArrayOfArrayCodec, 2, [array2, size]);
+var transpose = (array2) => apply("array::transpose", transposed([0], ArrayOfArrayCodec), 1, [array2]);
+var union = (left, right) => apply("array::union", elementsOf([0, 1], ArrayCodec), 2, [left, right]);
+var windows = (array2, size) => apply("array::windows", chunksOf([0], ArrayOfArrayCodec), 2, [
+  array2,
+  size
+]);
 
 // src/functions/generated/bytes.ts
 var bytes_exports = {};

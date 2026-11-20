@@ -1,7 +1,7 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Schema, Effect } from 'effect';
-import { a as DeclaredNames } from './render-CvQvIZRb.js';
+import { a as DeclaredNames } from './render-By6mBYEz.js';
 import './lexer-BEI0-7pQ.js';
 
 /**
@@ -541,9 +541,12 @@ declare const kindText: (kind: Kind) => string;
  * The tables (edge tables included) and custom functions a schema document
  * declares, each sorted: the `declared` names of a statement scope. Its
  * `detail` holds, for each table, its declared fields (each path joined
- * with `.`) with each field's kind text, whether it accepts undeclared
+ * with `.`) with each field's kind text (`option<K>` for a field the
+ * document records as optional) and whether the engine rejects
+ * NONE assigned to it (see `DeclaredTable`), whether it accepts undeclared
  * fields (it is not schemafull) and the kind text of its id key; and for
- * each function the kind texts of its arguments, in order. A field or key
+ * each function the kind texts of its arguments, in order (`option<K>`
+ * for an optional one). An id key has no optional flag. A field or key
  * the document gives no kind has none.
  */
 declare const declaredNames: (document: SchemaDocument) => DeclaredNames;

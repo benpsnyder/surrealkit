@@ -66,9 +66,61 @@ type ItemCodec<S extends Codec> = S['Encoded'] extends ReadonlyArray<unknown> ? 
  * array of a closed element type; `never` for an inlined constant, an open
  * value or an array of open values (any `SurrealValue`).
  */
-type TypedItem<A> = A extends Expr<infer S, Params> ? S['Encoded'] extends ReadonlyArray<unknown> ? S extends {
+type TypedItem<A> = A extends Expr<infer S, Params> ? ClosedItem<S> : never;
+/** `true` when codec `S` may hold any value (`unknown` or a `SurrealValue`). */
+type IsOpen<S extends Codec> = unknown extends S['Type'] ? true : SurrealValue extends S['Type'] ? true : false;
+/** The element codec of array codec `S` when it is closed; else `never`. */
+type ClosedItem<S> = S extends Codec ? S['Encoded'] extends ReadonlyArray<unknown> ? S extends {
     readonly value: infer I extends Codec;
-} ? unknown extends I['Type'] ? never : SurrealValue extends I['Type'] ? never : I : never : never : never;
+} ? IsOpen<I> extends true ? never : I : never : never : never;
+/** The codec of argument `A` when it is a closed expression; else `never`. */
+type TypedValue<A> = A extends Expr<infer S, Params> ? IsOpen<S> extends true ? never : S : never;
+/** `R`, or `D` when one of the codecs `T` it is built from is `never`. */
+type Built<T extends ReadonlyArray<unknown>, R, D> = true extends {
+    [K in keyof T]: [T[K]] extends [never] ? true : false;
+}[number] ? D : R;
+/** `elements:N,M`: an array of the union of the arguments' element codecs. */
+type ElementsCodec<A extends ReadonlyArray<unknown>, D extends Codec> = [
+    SomeOpen<A[number]>
+] extends [never] ? Schema.$Array<TypedItem<A[number]>> : D;
+/** `with:N,M`: the elements of array `N` and the value `M` itself. */
+type WithCodec<A extends readonly [unknown, unknown], D extends Codec> = Built<[
+    TypedItem<A[0]>,
+    TypedValue<A[1]>
+], Schema.$Array<TypedItem<A[0]> | TypedValue<A[1]>>, D>;
+/** The elements value `V` adds: its own for an array, else `V` itself. */
+type Added<V> = TypedValue<V> extends infer S extends Codec ? S['Encoded'] extends ReadonlyArray<unknown> ? ClosedItem<S> : [Extract<S['Encoded'], ReadonlyArray<unknown>>] extends [never] ? S : never : never;
+/** `adds:N,M`: the elements of array `N` and those value `M` adds. */
+type AddsCodec<A extends readonly [unknown, unknown], D extends Codec> = Built<[
+    TypedItem<A[0]>,
+    Added<A[1]>
+], Schema.$Array<TypedItem<A[0]> | Added<A[1]>>, D>;
+/** `padded:N,M`: an element of either array, or NULL past the shorter. */
+type PaddedCodec<A extends readonly [unknown, unknown], D extends Codec> = Built<[
+    TypedItem<A[0]>,
+    TypedItem<A[1]>
+], Schema.$Array<TypedItem<A[0]> | TypedItem<A[1]> | Schema.Null>, D>;
+/** `pairs:N,M`: every pair of an element of `N` and one of `M`. */
+type PairsCodec<A extends readonly [unknown, unknown], D extends Codec> = Built<[
+    TypedItem<A[0]>,
+    TypedItem<A[1]>
+], Schema.$Array<Schema.Tuple<readonly [TypedItem<A[0]>, TypedItem<A[1]>]>>, D>;
+/** `flat:N`: the elements of the arrays array `N` holds. */
+type FlatCodec<A extends readonly [unknown], D extends Codec> = Built<[
+    ClosedItem<TypedItem<A[0]>>
+], Schema.$Array<ClosedItem<TypedItem<A[0]>>>, D>;
+/** `chunks:N`: arrays of the elements of array `N`. */
+type ChunksCodec<A extends readonly [unknown], D extends Codec> = Built<[
+    TypedItem<A[0]>
+], Schema.$Array<Schema.$Array<TypedItem<A[0]>>>, D>;
+/** `transposed:N`: arrays of the inner elements of `N`, or NONE (ragged). */
+type TransposedCodec<A extends readonly [unknown], D extends Codec> = Built<[
+    ClosedItem<TypedItem<A[0]>>
+], Schema.$Array<Schema.$Array<OrNone<ClosedItem<TypedItem<A[0]>>>>>, D>;
+/** `repeats:N`: an array of the value `N`. */
+type RepeatsCodec<A extends readonly [unknown], D extends Codec> = Built<[
+    TypedValue<A[0]>
+], Schema.$Array<TypedValue<A[0]>>, D>;
 /** `true` when some member of the union `A` is not a typed array. */
 type SomeOpen<A> = A extends unknown ? [TypedItem<A>] extends [never] ? true : never : never;
 /**
@@ -140,11 +192,11 @@ declare const OptionOfStringCodec: Schema.UndefinedOr<Schema.declareConstructor<
 declare const OptionOfArrayOfNumberCodec: Schema.UndefinedOr<Schema.$Array<Schema.declareConstructor<number | bigint | surrealdb.Decimal, number | bigint | surrealdb.Decimal, readonly [], number | bigint | surrealdb.Decimal>>>;
 
 /**
- * `array::add(array: array, value: any) -> array`
+ * `array::add(array: array, value: any) -> adds:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const add$1: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const add$1: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<AddsCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::all(array: array, predicate?: any) -> bool`
  *
@@ -158,11 +210,11 @@ declare const all: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["
  */
 declare const any: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]> = never>(array: A0, predicate?: A1) => Expr<typeof BoolCodec, ParamsOfAll<A0 | A1>>;
 /**
- * `array::append(array: array, value: any) -> array`
+ * `array::append(array: array, value: any) -> with:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const append: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const append: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<WithCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::at(array: array, index: int) -> item:0`
  *
@@ -194,17 +246,17 @@ declare const booleanOr: <const A0 extends Arg<In["array"]>, const A1 extends Ar
  */
 declare const booleanXor: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayOfBoolCodec, ParamsOfAll<A0 | A1>>;
 /**
- * `array::clump(array: array, size: int) -> array<array>`
+ * `array::clump(array: array, size: int) -> chunks:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const clump: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>>(array: A0, size: A1) => Expr<typeof ArrayOfArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const clump: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>>(array: A0, size: A1) => Expr<ChunksCodec<[A0], typeof ArrayOfArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::combine(left: array, right: array) -> array<array>`
+ * `array::combine(left: array, right: array) -> pairs:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const combine: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayOfArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const combine: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<PairsCodec<[A0, A1], typeof ArrayOfArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::complement(left: array, right: array) -> same:0`
  *
@@ -218,11 +270,11 @@ declare const complement: <const A0 extends Arg<In["array"]>, const A1 extends A
  */
 declare const concat$1: <const A0 extends ReadonlyArray<Arg<In["array"]>>>(...arrays: A0) => Expr<ItemsCodec<A0, typeof ArrayCodec>, ParamsOfAll<A0[number]>>;
 /**
- * `array::difference(left: array, right: array) -> array`
+ * `array::difference(left: array, right: array) -> elements:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const difference: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const difference: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<ElementsCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::distinct(array: array) -> same:0`
  *
@@ -236,11 +288,11 @@ declare const distinct: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<C
  */
 declare const every: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]> = never>(array: A0, predicate?: A1) => Expr<typeof BoolCodec, ParamsOfAll<A0 | A1>>;
 /**
- * `array::fill(array: array, value: any, start?: int, end?: int) -> array`
+ * `array::fill(array: array, value: any, start?: int, end?: int) -> with:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const fill: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>, const A2 extends Arg<In["int"]> = never, const A3 extends Arg<In["int"]> = never>(array: A0, value: A1, start?: A2, end?: A3) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1 | A2 | A3>>;
+declare const fill: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>, const A2 extends Arg<In["int"]> = never, const A3 extends Arg<In["int"]> = never>(array: A0, value: A1, start?: A2, end?: A3) => Expr<WithCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1 | A2 | A3>>;
 /**
  * `array::filter(array: array, predicate: any) -> same:0`
  *
@@ -272,17 +324,17 @@ declare const findIndex: <const A0 extends Arg<In["array"]>, const A1 extends Ar
  */
 declare const first: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<ItemCodec<CodecOfArg<A0, typeof ArrayCodec>>, ParamsOfAll<A0>>;
 /**
- * `array::flatten(array: array) -> array`
+ * `array::flatten(array: array) -> flat:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const flatten: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<typeof ArrayCodec, ParamsOfAll<A0>>;
+declare const flatten: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<FlatCodec<[A0], typeof ArrayCodec>, ParamsOfAll<A0>>;
 /**
- * `array::group(array: array) -> array`
+ * `array::group(array: array) -> flat:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const group$1: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<typeof ArrayCodec, ParamsOfAll<A0>>;
+declare const group$1: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<FlatCodec<[A0], typeof ArrayCodec>, ParamsOfAll<A0>>;
 /**
  * `array::includes(array: array, value?: any) -> bool`
  *
@@ -296,11 +348,11 @@ declare const includes: <const A0 extends Arg<In["array"]>, const A1 extends Arg
  */
 declare const indexOf: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<typeof OptionOfIntCodec, ParamsOfAll<A0 | A1>>;
 /**
- * `array::insert(array: array, value: any, index?: int) -> array`
+ * `array::insert(array: array, value: any, index?: int) -> with:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const insert: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>, const A2 extends Arg<In["int"]> = never>(array: A0, value: A1, index?: A2) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1 | A2>>;
+declare const insert: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>, const A2 extends Arg<In["int"]> = never>(array: A0, value: A1, index?: A2) => Expr<WithCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1 | A2>>;
 /**
  * `array::intersect(left: array, right: array) -> same:0`
  *
@@ -332,23 +384,23 @@ declare const last: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<ItemC
  */
 declare const len$3: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<typeof IntCodec, ParamsOfAll<A0>>;
 /**
- * `array::logical_and(left: array, right: array) -> array`
+ * `array::logical_and(left: array, right: array) -> padded:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const logicalAnd: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const logicalAnd: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<PaddedCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::logical_or(left: array, right: array) -> array`
+ * `array::logical_or(left: array, right: array) -> padded:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const logicalOr: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const logicalOr: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<PaddedCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::logical_xor(left: array, right: array) -> array`
+ * `array::logical_xor(left: array, right: array) -> padded:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const logicalXor: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const logicalXor: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<PaddedCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::matches(array: array, value: any) -> array<bool>`
  *
@@ -374,17 +426,17 @@ declare const min$2: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<Item
  */
 declare const pop: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<ItemCodec<CodecOfArg<A0, typeof ArrayCodec>>, ParamsOfAll<A0>>;
 /**
- * `array::prepend(array: array, value: any) -> array`
+ * `array::prepend(array: array, value: any) -> with:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const prepend: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const prepend: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<WithCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::push(array: array, value: any) -> array`
+ * `array::push(array: array, value: any) -> with:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const push: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const push: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["any"]>>(array: A0, value: A1) => Expr<WithCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::range(start: int, count?: int) -> array<int>`
  *
@@ -398,11 +450,11 @@ declare const range$1: <const A0 extends Arg<In["int"]>, const A1 extends Arg<In
  */
 declare const remove$1: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>>(array: A0, index: A1) => Expr<CodecOfArg<A0, typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::repeat(value: any, count: int) -> array`
+ * `array::repeat(value: any, count: int) -> repeats:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const repeat$1: <const A0 extends Arg<In["any"]>, const A1 extends Arg<In["int"]>>(value: A0, count: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const repeat$1: <const A0 extends Arg<In["any"]>, const A1 extends Arg<In["int"]>>(value: A0, count: A1) => Expr<RepeatsCodec<[A0], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
  * `array::reverse(array: array) -> same:0`
  *
@@ -476,23 +528,23 @@ declare const sortNaturalLexical: <const A0 extends Arg<In["array"]>, const A1 e
  */
 declare const swap: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>, const A2 extends Arg<In["int"]>>(array: A0, from: A1, to: A2) => Expr<CodecOfArg<A0, typeof ArrayCodec>, ParamsOfAll<A0 | A1 | A2>>;
 /**
- * `array::transpose(array: array) -> array<array>`
+ * `array::transpose(array: array) -> transposed:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const transpose: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<typeof ArrayOfArrayCodec, ParamsOfAll<A0>>;
+declare const transpose: <const A0 extends Arg<In["array"]>>(array: A0) => Expr<TransposedCodec<[A0], typeof ArrayOfArrayCodec>, ParamsOfAll<A0>>;
 /**
- * `array::union(left: array, right: array) -> array`
+ * `array::union(left: array, right: array) -> elements:0,1`
  *
  * SurrealDB 3 and 4.
  */
-declare const union: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<typeof ArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const union: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["array"]>>(left: A0, right: A1) => Expr<ElementsCodec<[A0, A1], typeof ArrayCodec>, ParamsOfAll<A0 | A1>>;
 /**
- * `array::windows(array: array, size: int) -> array<array>`
+ * `array::windows(array: array, size: int) -> chunks:0`
  *
  * SurrealDB 3 and 4.
  */
-declare const windows: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>>(array: A0, size: A1) => Expr<typeof ArrayOfArrayCodec, ParamsOfAll<A0 | A1>>;
+declare const windows: <const A0 extends Arg<In["array"]>, const A1 extends Arg<In["int"]>>(array: A0, size: A1) => Expr<ChunksCodec<[A0], typeof ArrayOfArrayCodec>, ParamsOfAll<A0 | A1>>;
 
 declare const array$1_all: typeof all;
 declare const array$1_any: typeof any;

@@ -116,6 +116,9 @@ var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function:
 var usesField = (uses) => `{ ${Object.entries(uses).map(
   ([name, list2]) => `${JSON.stringify(name)}: [${list2.map(useEntry).join(", ")}]`
 ).join(", ")} }`;
+var rejectsNoneField = (fields) => `{ ${Object.entries(fields).map(
+  ([name, at]) => `${JSON.stringify(name)}: { table: ${JSON.stringify(at.table)}, field: ${JSON.stringify(at.field)}, kind: ${JSON.stringify(at.kind)} }`
+).join(", ")} }`;
 var bindsField = (binds) => `{ ${Object.entries(binds).map(
   ([name, kind]) => `${JSON.stringify(name)}: ${JSON.stringify(kind)}`
 ).join(", ")} }`;
@@ -138,8 +141,14 @@ var resolve = (use, detail) => {
   const table = Object.hasOwn(detail.tables, use.table) ? detail.tables[use.table] : void 0;
   if (table === void 0) return { kind: "unchecked" };
   if (use.kind === "key") return { kind: "kind", text: table.idKey };
-  if (Object.hasOwn(table.fields, use.field))
-    return { kind: "kind", text: table.fields[use.field]?.kind };
+  if (Object.hasOwn(table.fields, use.field)) {
+    const field = table.fields[use.field];
+    return {
+      kind: "kind",
+      text: field?.kind,
+      rejectsNone: field?.rejectsNone === true
+    };
+  }
   if (use.field === "id")
     return { kind: "kind", text: `record<${use.table}>` };
   return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
@@ -147,9 +156,10 @@ var resolve = (use, detail) => {
     message: `${use.role === "assign" ? "assigns" : "compares"} \`${use.field}\` of \`${use.table}\`, which declares no such field`
   };
 };
-var checkUses = (uses, detail) => {
+var checkUses = (uses, detail, schemaChanges) => {
   const problems = [];
   const binds = {};
+  const rejectsNone = {};
   for (const [name, list2] of Object.entries(uses)) {
     const kinds = /* @__PURE__ */ new Set();
     let none = true;
@@ -162,15 +172,29 @@ var checkUses = (uses, detail) => {
       else {
         kinds.add(simpleKind(resolved.text));
         if (!acceptsNone(use, resolved.text)) none = false;
+        if (!schemaChanges && use.kind === "field" && use.role === "assign" && resolved.rejectsNone === true && resolved.text !== void 0 && !Object.hasOwn(rejectsNone, name))
+          rejectsNone[name] = {
+            table: use.table,
+            field: use.field,
+            kind: resolved.text
+          };
       }
     }
     const [only] = kinds;
     if (kinds.size === 1 && only !== void 0)
       binds[name] = none ? `option<${only}>` : only;
   }
-  return { problems, binds };
+  return { problems, binds, rejectsNone };
 };
-var renderConstant = (scope, name, analysis, binds) => {
+var changesSchema = (sql, holes) => {
+  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  return tokens.some(
+    (token, i) => token.kind === "word" && ["DEFINE", "ALTER", "REMOVE"].includes(token.value.toUpperCase()) && tokens[i + 1]?.kind === "word" && ["TABLE", "FIELD"].includes(
+      (tokens[i + 1]?.value ?? "").toUpperCase()
+    )
+  );
+};
+var renderConstant = (scope, name, analysis, binds, rejectsNone) => {
   const file = `${scope}/${name}.surql`;
   const complete = analysis.kind === "part" && analysis.holes.length === 0;
   const what = complete ? "part" : analysis.holes.length > 0 ? "template" : "fragment";
@@ -192,7 +216,8 @@ var renderConstant = (scope, name, analysis, binds) => {
       `functions: ${list(analysis.functions)}`,
       ...analysis.openTargets ? ["openTargets: true"] : [],
       ...Object.keys(analysis.uses).length > 0 ? [`uses: ${usesField(analysis.uses)}`] : [],
-      ...binds !== void 0 && Object.keys(binds).length > 0 ? [`binds: ${bindsField(binds)}`] : []
+      ...binds !== void 0 && Object.keys(binds).length > 0 ? [`binds: ${bindsField(binds)}`] : [],
+      ...rejectsNone !== void 0 && Object.keys(rejectsNone).length > 0 ? [`rejectsNone: ${rejectsNoneField(rejectsNone)}`] : []
     ] : []
   ];
   return [
@@ -298,10 +323,16 @@ var renderStatementModulesSync = (input) => {
       throw error;
     }
     let binds;
+    let rejectsNone;
     if (source.declared !== void 0) {
       const detail = source.declared.detail;
-      const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail);
+      const checked = detail === void 0 ? void 0 : checkUses(
+        analysis.uses,
+        detail,
+        changesSchema(source.sql, input.holes)
+      );
       binds = checked?.binds;
+      rejectsNone = checked?.rejectsNone;
       for (const problem2 of [
         ...undeclared(source.sql, source.declared, input.holes),
         ...checked?.problems ?? []
@@ -336,7 +367,13 @@ var renderStatementModulesSync = (input) => {
     imports.set(source.scope, used);
     const constants = byScope.get(source.scope) ?? [];
     constants.push(
-      renderConstant(source.scope, source.name, analysis, binds)
+      renderConstant(
+        source.scope,
+        source.name,
+        analysis,
+        binds,
+        rejectsNone
+      )
     );
     byScope.set(source.scope, constants);
   }

@@ -490,6 +490,13 @@ declare const block: () => Block<NoParams, NoLocals, never>;
  *   `effect-surrealkit statements` writes it when given the schema;
  *   `sequence(...).define` then refuses, at compile time, a codec whose
  *   stored type cannot hold it.
+ * - `rejectsNone`: for a binding the text assigns (`SET field = $name`) to
+ *   a field the engine never accepts NONE in (its kind excludes NONE and
+ *   no `DEFAULT`, `VALUE` or `COMPUTED` supplies a value), that field's
+ *   table, name and kind text. `effect-surrealkit statements` writes it
+ *   when given the schema; `sequence(...).define` then refuses, at compile
+ *   time, a codec that can hold NONE (`undefined`) for the binding. Each
+ *   entry must be an assignment the text makes.
  *
  * `effect-surrealkit statements` derives these from `.surql` files
  * (`effect-surrealkit/analyze`). Written by hand they are checked against
@@ -517,9 +524,16 @@ interface Part<Free extends string = string, Defines extends string = string, Th
     readonly openTargets?: boolean;
     readonly uses?: BindingUses;
     readonly binds?: Binds;
+    readonly rejectsNone?: RejectsNone;
 }
 /** The kind text each binding's every use resolves to; see {@link Part}. */
 type Binds = Readonly<Record<string, string>>;
+/** The field each binding is assigned to that rejects NONE; see {@link Part}. */
+type RejectsNone = Readonly<Record<string, {
+    readonly table: string;
+    readonly field: string;
+    readonly kind: string;
+}>>;
 /** The static tables a text reads and writes. */
 interface Tables {
     readonly read: ReadonlyArray<string>;
@@ -534,7 +548,7 @@ interface Tables {
  * @throws RangeError for a part its text contradicts, or `AnalyzeError`
  *   (from `effect-surrealkit/analyze`) for a text it cannot analyse.
  */
-declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never, const U extends BindingUses = Record<never, never>, const B extends Binds = Record<never, never>>(options: {
+declare const part: <const Free extends string = never, const Defines extends string = never, const Throws extends string = never, const U extends BindingUses = Record<never, never>, const B extends Binds = Record<never, never>, const N extends RejectsNone = Record<never, never>>(options: {
     readonly name?: string;
     readonly source?: string;
     readonly sql: string;
@@ -566,7 +580,12 @@ declare const part: <const Free extends string = never, const Defines extends st
      * {@link Part}. Each name must be a binding the text uses.
      */
     readonly binds?: B;
-}) => Part<Free, Defines, Throws> & Fitting<U, B>;
+    /**
+     * The fields that reject NONE each binding is assigned to; see
+     * {@link Part}. Each must be an assignment the text makes.
+     */
+    readonly rejectsNone?: N;
+}) => Part<Free, Defines, Throws> & Fitting<U, B, N>;
 /**
  * The bindings a sequence still needs from its caller: each part's free
  * names, minus what earlier parts define.
@@ -576,14 +595,17 @@ type Unbound<Parts extends ReadonlyArray<Part>, Defined extends string = never> 
     ...infer Tail extends ReadonlyArray<Part>
 ] ? Exclude<Head['free'][number], Defined> | Unbound<Tail, Defined | Head['defines'][number]> : never;
 /**
- * What a part declared with `binds` carries at the type level: its uses
- * and binds as literal types, which {@link Contract} checks codecs
- * against. Nothing for a part without `binds`.
+ * What a part declared with `binds` or `rejectsNone` carries at the type
+ * level: its uses and binds, and the fields that reject NONE, as literal
+ * types, which {@link Contract} checks codecs against. Nothing for a part
+ * without either.
  */
-type Fitting<U, B> = [keyof B] extends [never] ? unknown : {
+type Fitting<U, B, N = Record<never, never>> = ([keyof B] extends [never] ? unknown : {
     readonly uses: U;
     readonly binds: B;
-};
+}) & ([keyof N] extends [never] ? unknown : {
+    readonly rejectsNone: N;
+});
 /**
  * The stored type of each simple kind, as the package's own codec for it
  * encodes it: the representation comparisons check (see `Comparable` in
@@ -630,6 +652,39 @@ type BindsOf<Parts extends ReadonlyArray<Part>, Defined extends string = never> 
     readonly binds: infer B;
     readonly uses: infer U;
 } ? Entries<B, U, Defined> : never) | BindsOf<Tail, Defined | Head['defines'][number]> : never;
+/** One binding a part's `rejectsNone` states. */
+interface NoneEntry {
+    readonly name: string;
+    readonly table: string;
+    readonly field: string;
+    readonly kind: string;
+}
+/**
+ * The entries of one part's `rejectsNone`, without the index signature
+ * and without the names in `Defined`.
+ */
+type NoneEntries<N, Defined extends string> = {
+    [K in keyof N as string extends K ? never : K extends Defined ? never : K]: N[K] extends {
+        readonly table: infer T extends string;
+        readonly field: infer F extends string;
+        readonly kind: infer I extends string;
+    } ? {
+        readonly name: K;
+        readonly table: T;
+        readonly field: F;
+        readonly kind: I;
+    } : never;
+} extends infer M ? M[keyof M] : never;
+/**
+ * The `rejectsNone` entries of a sequence's parts, for the names that
+ * remain bindings: a name an earlier part defines is not one.
+ */
+type RejectsNoneOf<Parts extends ReadonlyArray<Part>, Defined extends string = never> = Parts extends readonly [
+    infer Head extends Part,
+    ...infer Tail extends ReadonlyArray<Part>
+] ? (Head extends {
+    readonly rejectsNone: infer N;
+} ? NoneEntries<N, Defined> : never) | RejectsNoneOf<Tail, Defined | Head['defines'][number]> : never;
 /** How a message names a use. */
 type UseText<U> = U extends {
     readonly kind: 'field';
@@ -652,19 +707,34 @@ type UseText<U> = U extends {
  * aside first. `never` when every entry fits.
  */
 type Misfits<E, C> = E extends BindEntry ? C extends Codec ? (E['kind'] extends `option<${infer K}>` ? Comparable<KindStored<K>, Exclude<C['Encoded'], undefined>, true> : Comparable<KindStored<E['kind']>, C['Encoded'], true>) extends true ? never : `binding \`${E['name']}\` ${UseText<E['use']>} (${E['kind']}), which its codec cannot hold` : never : never;
-/** The message of each binding in `P` whose codec cannot hold its kind. */
-type MisfitsIn<P, E extends BindEntry> = {
-    readonly [K in keyof P]: K extends E['name'] ? Misfits<Extract<E, {
+/**
+ * A message for each entry whose codec `C` can hold NONE: `undefined` is a
+ * member of its encoded type (`unknown` and `any`, which hold everything,
+ * are not refused). `never` otherwise.
+ */
+type HoldsNone<E, C> = E extends NoneEntry ? C extends Codec ? unknown extends C['Encoded'] ? never : undefined extends C['Encoded'] ? `binding \`${E['name']}\` is assigned to \`${E['table']}.${E['field']}\` (${E['kind']}), which rejects NONE, and its codec can hold NONE` : never : never : never;
+/**
+ * The message of each binding in `P` whose codec cannot hold its kind, or
+ * can hold NONE where it is assigned to a field that rejects NONE.
+ */
+type MisfitsIn<P, E extends BindEntry, N extends NoneEntry> = {
+    readonly [K in keyof P]: (K extends E['name'] ? Misfits<Extract<E, {
         readonly name: K;
-    }>, P[K]> : never;
+    }>, P[K]> : never) | (K extends N['name'] ? HoldsNone<Extract<N, {
+        readonly name: K;
+    }>, P[K]> : never);
 }[keyof P];
 /** One member of a union, so a message names one binding. */
 type OneOf<U> = ((U extends unknown ? (member: () => U) => void : never) extends (member: infer I) => void ? I : never) extends () => infer M ? M & string : never;
 /**
- * `P`, when each codec can hold its binding's kind. Otherwise the message
- * for one binding whose codec cannot, so the compiler's first line names it.
+ * `P`, when each codec can hold its binding's kind and none that can hold
+ * NONE is assigned to a field that rejects it. Otherwise the message for
+ * one binding whose codec does not fit, so the compiler's first line names
+ * it.
  */
-type Fitted<P, E extends BindEntry> = [MisfitsIn<P, E>] extends [never] ? P : OneOf<MisfitsIn<P, E>>;
+type Fitted<P, E extends BindEntry, N extends NoneEntry = never> = [
+    MisfitsIn<P, E, N>
+] extends [never] ? P : OneOf<MisfitsIn<P, E, N>>;
 /** The messages any part of a sequence can `THROW`. */
 type ThrownBy<Parts extends ReadonlyArray<Part>> = Parts[number]['throws'][number];
 /**
@@ -684,9 +754,13 @@ type Exactly<Names extends string, P> = [
  * widened list, names typed `string`) cannot be checked by the compiler, so
  * they are left to the check `define` makes when it runs.
  */
-type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [Extract<Parts[number], {
-    readonly binds: object;
-}>] extends [never] ? Exactly<Unbound<Parts>, P> : [Exactly<Unbound<Parts>, P>] extends [P] ? Fitted<P, BindsOf<Parts>> : Exactly<Unbound<Parts>, P>;
+type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['length'] ? P : string extends Unbound<Parts> ? P : [
+    Extract<Parts[number], {
+        readonly binds: object;
+    } | {
+        readonly rejectsNone: object;
+    }>
+] extends [never] ? Exactly<Unbound<Parts>, P> : [Exactly<Unbound<Parts>, P>] extends [P] ? Fitted<P, BindsOf<Parts>, RejectsNoneOf<Parts>> : Exactly<Unbound<Parts>, P>;
 /**
  * Authored SurrealQL texts run one after another in a single request, sharing
  * one variable scope, as a statement.
@@ -1047,14 +1121,15 @@ type Base<C> = AsCodec<Unwrapped<C>>;
  * The fields of a link's target(s), one expression each: every field the
  * targets have in common, with the codecs of all of them. A field read
  * through a link may be NONE (the target may be missing or unreadable, or
- * the field optional); through a list of links it is a list.
+ * the field optional); through a list of links it is a list. Each field
+ * reads the bindings `P` the link reads.
  */
-type Linked<F, E, Present extends boolean, Optional extends boolean = false> = {
-    readonly [K in Keys<F>]: LinkedField<F[K], E, Present, Optional extends true ? true : true extends IsOptional<F[K]> ? true : false>;
+type Linked<F, E, Present extends boolean, Optional extends boolean = false, P extends Params = NoParams> = {
+    readonly [K in Keys<F>]: LinkedField<F[K], E, Present, Optional extends true ? true : true extends IsOptional<F[K]> ? true : false, P>;
 };
-type LinkedField<C, E, Present extends boolean, Optional extends boolean> = Expr<AsCodec<Lift<E, Present, Optional extends true ? OrNone<Base<C>> : Base<C>>>, NoParams> & ([Base<C>] extends [RowCodecIn] ? Linked<FieldsOf<Base<C>>, E, Present, Optional> : unknown);
+type LinkedField<C, E, Present extends boolean, Optional extends boolean, P extends Params> = Expr<AsCodec<Lift<E, Present, Optional extends true ? OrNone<Base<C>> : Base<C>>>, P> & ([Base<C>] extends [RowCodecIn] ? Linked<FieldsOf<Base<C>>, E, Present, Optional, P> : unknown);
 /** The fields {@link follow} yields for the link `R`. */
-type FollowedOf<S, R> = Linked<TargetFields<S, EncodedOf<R>>, EncodedOf<R>, PresentOf<R>>;
+type FollowedOf<S, R> = Linked<TargetFields<S, EncodedOf<R>>, EncodedOf<R>, PresentOf<R>, false, ParamsOf<R>>;
 /** Whether `value` is the list a graph step or recursive path yields. */
 declare const isTraversal: (value: unknown) => value is Traversal<Codec>;
 /**
@@ -2721,4 +2796,4 @@ declare const insert: <T extends PureTable, D extends Codec, P extends Params>(t
  */
 declare const insertRelation: <T extends RelationTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRelationRow<T>, D, Expr<D, P>, T["name"], "INSERT RELATION">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
 
-export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, type Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StringKeyed, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };
+export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, type Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type RejectsNone, type RejectsNoneOf, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StringKeyed, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };

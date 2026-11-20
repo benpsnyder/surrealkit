@@ -672,6 +672,28 @@ var kindText = (kind) => {
       return kind.kind;
   }
 };
+var optionalKindText = (kind, optional) => optional && kind.kind !== "option" && kind.kind !== "none" ? `option<${kindText(kind)}>` : kindText(kind);
+var excludesNone = (kind) => {
+  switch (kind.kind) {
+    case "any":
+    case "none":
+    case "option":
+    case "unknown":
+    case "regex":
+    case "function":
+    case "file":
+    case "table":
+      return false;
+    case "union":
+      return kind.variants.every(excludesNone);
+    default:
+      return true;
+  }
+};
+var rejectsNone = (table, field) => {
+  const [name, ...rest] = field.path;
+  return rest.length === 0 && name !== "id" && !(table.type.kind === "relation" && (name === "in" || name === "out")) && !(table.type.kind === "relation" && table.type.lightweight) && table.view === void 0 && !table.drop && field.kind !== void 0 && !field.optional && excludesNone(field.kind) && field.default === void 0 && field.value === void 0 && field.computed === void 0;
+};
 var declaredNames = (document) => ({
   tables: [...new Set(document.tables.map((table) => table.name))].sort(),
   functions: [...new Set(document.functions.map((fn) => fn.name))].sort(),
@@ -685,7 +707,17 @@ var declaredNames = (document) => ({
           fields: Object.fromEntries(
             table.fields.map((field) => [
               field.path.join("."),
-              field.kind === void 0 ? {} : { kind: kindText(field.kind) }
+              {
+                ...field.kind !== void 0 && {
+                  kind: optionalKindText(
+                    field.kind,
+                    field.optional
+                  )
+                },
+                ...rejectsNone(table, field) && {
+                  rejectsNone: true
+                }
+              }
             ])
           ),
           acceptsUndeclared: !table.schemafull,
@@ -700,7 +732,9 @@ var declaredNames = (document) => ({
         (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0
       ).map((fn) => [
         fn.name,
-        fn.args.map((arg) => kindText(arg.kind))
+        fn.args.map(
+          (arg) => optionalKindText(arg.kind, arg.optional)
+        )
       ])
     )
   }
@@ -1930,6 +1964,9 @@ var printStore = (tables, functions, registry, options, ext) => {
   const entries = (pairs) => pairs.length === 0 ? "{}" : `{
 ${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
 	}`;
+  const typeEntries = (pairs) => pairs.length === 0 ? "{}" : `{
+${pairs.map(([key, value]) => `		readonly ${propertyKey(key)}: typeof ${value};`).join("\n")}
+	}`;
   const tableEntries = [];
   const viewEntries = [];
   const edgeEntries = [];
@@ -1956,8 +1993,17 @@ ${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
     ([module, names]) => `import { ${[...names].sort(compare).join(", ")} } from "${module}";`
   );
   const body = [
+    "/** The type of `store`. Each entry names its descriptor, so a declaration file refers to the descriptors instead of copying them. */",
+    "export interface Store {",
+    `	readonly name: ${json3(options.store)};`,
+    `	readonly tables: ${typeEntries(tableEntries)};`,
+    `	readonly views: ${typeEntries(viewEntries)};`,
+    `	readonly edges: ${typeEntries(edgeEntries)};`,
+    `	readonly functions: ${typeEntries(functionEntries)};`,
+    "}",
+    "",
     `/** Every table, view, relation endpoint and function of store \`${options.store}\`, by its SurrealDB name. */`,
-    "export const store = SurrealSchema.store({",
+    "export const store: Store = SurrealSchema.store({",
     `	name: ${json3(options.store)},`,
     `	tables: ${entries(tableEntries)},`,
     `	views: ${entries(viewEntries)},`,
@@ -3694,6 +3740,9 @@ var useEntry = (use) => use.kind === "argument" ? `{ kind: "argument", function:
 var usesField = (uses) => `{ ${Object.entries(uses).map(
   ([name, list3]) => `${JSON.stringify(name)}: [${list3.map(useEntry).join(", ")}]`
 ).join(", ")} }`;
+var rejectsNoneField = (fields) => `{ ${Object.entries(fields).map(
+  ([name, at]) => `${JSON.stringify(name)}: { table: ${JSON.stringify(at.table)}, field: ${JSON.stringify(at.field)}, kind: ${JSON.stringify(at.kind)} }`
+).join(", ")} }`;
 var bindsField = (binds) => `{ ${Object.entries(binds).map(
   ([name, kind]) => `${JSON.stringify(name)}: ${JSON.stringify(kind)}`
 ).join(", ")} }`;
@@ -3716,8 +3765,14 @@ var resolve = (use, detail) => {
   const table = Object.hasOwn(detail.tables, use.table) ? detail.tables[use.table] : void 0;
   if (table === void 0) return { kind: "unchecked" };
   if (use.kind === "key") return { kind: "kind", text: table.idKey };
-  if (Object.hasOwn(table.fields, use.field))
-    return { kind: "kind", text: table.fields[use.field]?.kind };
+  if (Object.hasOwn(table.fields, use.field)) {
+    const field = table.fields[use.field];
+    return {
+      kind: "kind",
+      text: field?.kind,
+      rejectsNone: field?.rejectsNone === true
+    };
+  }
   if (use.field === "id")
     return { kind: "kind", text: `record<${use.table}>` };
   return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
@@ -3725,9 +3780,10 @@ var resolve = (use, detail) => {
     message: `${use.role === "assign" ? "assigns" : "compares"} \`${use.field}\` of \`${use.table}\`, which declares no such field`
   };
 };
-var checkUses = (uses, detail) => {
+var checkUses = (uses, detail, schemaChanges) => {
   const problems = [];
   const binds = {};
+  const rejectsNone2 = {};
   for (const [name, list3] of Object.entries(uses)) {
     const kinds = /* @__PURE__ */ new Set();
     let none = true;
@@ -3740,15 +3796,29 @@ var checkUses = (uses, detail) => {
       else {
         kinds.add(simpleKind(resolved.text));
         if (!acceptsNone(use, resolved.text)) none = false;
+        if (!schemaChanges && use.kind === "field" && use.role === "assign" && resolved.rejectsNone === true && resolved.text !== void 0 && !Object.hasOwn(rejectsNone2, name))
+          rejectsNone2[name] = {
+            table: use.table,
+            field: use.field,
+            kind: resolved.text
+          };
       }
     }
     const [only] = kinds;
     if (kinds.size === 1 && only !== void 0)
       binds[name] = none ? `option<${only}>` : only;
   }
-  return { problems, binds };
+  return { problems, binds, rejectsNone: rejectsNone2 };
 };
-var renderConstant = (scope, name, analysis, binds) => {
+var changesSchema = (sql, holes) => {
+  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  return tokens.some(
+    (token, i) => token.kind === "word" && ["DEFINE", "ALTER", "REMOVE"].includes(token.value.toUpperCase()) && tokens[i + 1]?.kind === "word" && ["TABLE", "FIELD"].includes(
+      (tokens[i + 1]?.value ?? "").toUpperCase()
+    )
+  );
+};
+var renderConstant = (scope, name, analysis, binds, rejectsNone2) => {
   const file = `${scope}/${name}.surql`;
   const complete = analysis.kind === "part" && analysis.holes.length === 0;
   const what = complete ? "part" : analysis.holes.length > 0 ? "template" : "fragment";
@@ -3770,7 +3840,8 @@ var renderConstant = (scope, name, analysis, binds) => {
       `functions: ${list2(analysis.functions)}`,
       ...analysis.openTargets ? ["openTargets: true"] : [],
       ...Object.keys(analysis.uses).length > 0 ? [`uses: ${usesField(analysis.uses)}`] : [],
-      ...binds !== void 0 && Object.keys(binds).length > 0 ? [`binds: ${bindsField(binds)}`] : []
+      ...binds !== void 0 && Object.keys(binds).length > 0 ? [`binds: ${bindsField(binds)}`] : [],
+      ...rejectsNone2 !== void 0 && Object.keys(rejectsNone2).length > 0 ? [`rejectsNone: ${rejectsNoneField(rejectsNone2)}`] : []
     ] : []
   ];
   return [
@@ -3876,10 +3947,16 @@ var renderStatementModulesSync = (input) => {
       throw error;
     }
     let binds;
+    let rejectsNone2;
     if (source.declared !== void 0) {
       const detail = source.declared.detail;
-      const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail);
+      const checked = detail === void 0 ? void 0 : checkUses(
+        analysis.uses,
+        detail,
+        changesSchema(source.sql, input.holes)
+      );
       binds = checked?.binds;
+      rejectsNone2 = checked?.rejectsNone;
       for (const problem2 of [
         ...undeclared(source.sql, source.declared, input.holes),
         ...checked?.problems ?? []
@@ -3914,7 +3991,13 @@ var renderStatementModulesSync = (input) => {
     imports2.set(source.scope, used);
     const constants = byScope.get(source.scope) ?? [];
     constants.push(
-      renderConstant(source.scope, source.name, analysis, binds)
+      renderConstant(
+        source.scope,
+        source.name,
+        analysis,
+        binds,
+        rejectsNone2
+      )
     );
     byScope.set(source.scope, constants);
   }

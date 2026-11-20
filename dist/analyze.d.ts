@@ -5,8 +5,8 @@ import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { S as StatementModule } from './render-CvQvIZRb.js';
-export { D as DeclaredDetail, a as DeclaredNames, b as DeclaredTable, R as RenderStatementModulesInput, c as STATEMENTS_MARK, d as StatementModules, e as StatementModulesError, f as StatementProblem, g as StatementScope, h as StatementSourceFile, i as StatementWarning, r as renderStatementModules, j as renderStatementModulesSync } from './render-CvQvIZRb.js';
+import { S as StatementModule } from './render-By6mBYEz.js';
+export { D as DeclaredDetail, a as DeclaredNames, b as DeclaredTable, R as RenderStatementModulesInput, c as STATEMENTS_MARK, d as StatementModules, e as StatementModulesError, f as StatementProblem, g as StatementScope, h as StatementSourceFile, i as StatementWarning, r as renderStatementModules, j as renderStatementModulesSync } from './render-By6mBYEz.js';
 export { F as FillError, a as FillOptions, b as Fills, T as Text, c as TextHoleScope, d as TextHoleScopes, f as fill, t as text } from './text-Dh74bkFB.js';
 
 /**

@@ -545,6 +545,28 @@ var kindText = (kind) => {
       return kind.kind;
   }
 };
+var optionalKindText = (kind, optional) => optional && kind.kind !== "option" && kind.kind !== "none" ? `option<${kindText(kind)}>` : kindText(kind);
+var excludesNone = (kind) => {
+  switch (kind.kind) {
+    case "any":
+    case "none":
+    case "option":
+    case "unknown":
+    case "regex":
+    case "function":
+    case "file":
+    case "table":
+      return false;
+    case "union":
+      return kind.variants.every(excludesNone);
+    default:
+      return true;
+  }
+};
+var rejectsNone = (table, field) => {
+  const [name, ...rest] = field.path;
+  return rest.length === 0 && name !== "id" && !(table.type.kind === "relation" && (name === "in" || name === "out")) && !(table.type.kind === "relation" && table.type.lightweight) && table.view === void 0 && !table.drop && field.kind !== void 0 && !field.optional && excludesNone(field.kind) && field.default === void 0 && field.value === void 0 && field.computed === void 0;
+};
 var declaredNames = (document) => ({
   tables: [...new Set(document.tables.map((table) => table.name))].sort(),
   functions: [...new Set(document.functions.map((fn) => fn.name))].sort(),
@@ -558,7 +580,17 @@ var declaredNames = (document) => ({
           fields: Object.fromEntries(
             table.fields.map((field) => [
               field.path.join("."),
-              field.kind === void 0 ? {} : { kind: kindText(field.kind) }
+              {
+                ...field.kind !== void 0 && {
+                  kind: optionalKindText(
+                    field.kind,
+                    field.optional
+                  )
+                },
+                ...rejectsNone(table, field) && {
+                  rejectsNone: true
+                }
+              }
             ])
           ),
           acceptsUndeclared: !table.schemafull,
@@ -573,7 +605,9 @@ var declaredNames = (document) => ({
         (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0
       ).map((fn) => [
         fn.name,
-        fn.args.map((arg) => kindText(arg.kind))
+        fn.args.map(
+          (arg) => optionalKindText(arg.kind, arg.optional)
+        )
       ])
     )
   }
@@ -1923,6 +1957,9 @@ var printStore = (tables, functions, registry, options, ext) => {
   const entries = (pairs) => pairs.length === 0 ? "{}" : `{
 ${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
 	}`;
+  const typeEntries = (pairs) => pairs.length === 0 ? "{}" : `{
+${pairs.map(([key, value]) => `		readonly ${propertyKey(key)}: typeof ${value};`).join("\n")}
+	}`;
   const tableEntries = [];
   const viewEntries = [];
   const edgeEntries = [];
@@ -1949,8 +1986,17 @@ ${pairs.map(([key, value]) => `		${propertyKey(key)}: ${value},`).join("\n")}
     ([module, names]) => `import { ${[...names].sort(compare).join(", ")} } from "${module}";`
   );
   const body = [
+    "/** The type of `store`. Each entry names its descriptor, so a declaration file refers to the descriptors instead of copying them. */",
+    "export interface Store {",
+    `	readonly name: ${json3(options.store)};`,
+    `	readonly tables: ${typeEntries(tableEntries)};`,
+    `	readonly views: ${typeEntries(viewEntries)};`,
+    `	readonly edges: ${typeEntries(edgeEntries)};`,
+    `	readonly functions: ${typeEntries(functionEntries)};`,
+    "}",
+    "",
     `/** Every table, view, relation endpoint and function of store \`${options.store}\`, by its SurrealDB name. */`,
-    "export const store = SurrealSchema.store({",
+    "export const store: Store = SurrealSchema.store({",
     `	name: ${json3(options.store)},`,
     `	tables: ${entries(tableEntries)},`,
     `	views: ${entries(viewEntries)},`,

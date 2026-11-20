@@ -2,7 +2,7 @@ import {
   linkShape,
   shapeTables,
   tableName
-} from "./chunk-BCI4MOVX.js";
+} from "./chunk-KRFS2OMG.js";
 import "./chunk-FN4HR4GU.js";
 import {
   make,

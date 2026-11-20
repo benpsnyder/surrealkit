@@ -50,7 +50,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-BCI4MOVX.js";
+} from "./chunk-KRFS2OMG.js";
 import {
   NoneAsAbsent
 } from "./chunk-FN4HR4GU.js";
@@ -1351,6 +1351,17 @@ var verify = (item, label2) => {
         `binds: declared \`$${name}\`, which the text never uses as an argument, a key or a field`
       );
   }
+  for (const [name, at2] of Object.entries(item.rejectsNone ?? {}).sort(
+    ([a], [b]) => a < b ? -1 : a > b ? 1 : 0
+  )) {
+    const assigned = (analysis.uses[name] ?? []).some(
+      (use) => use.kind === "field" && use.role === "assign" && use.table === at2.table && use.field === at2.field
+    );
+    if (!assigned)
+      differences.push(
+        `rejectsNone: declared \`$${name}\` as assigned to \`${at2.table}.${at2.field}\`, which the text never assigns it to`
+      );
+  }
   if (differences.length > 0) {
     throw new RangeError(
       `${label2} does not declare what its text does: ${differences.join("; ")}`
@@ -1382,7 +1393,10 @@ var part = (options) => {
       openTargets: options.openTargets
     },
     ...options.uses !== void 0 && { uses: options.uses },
-    ...options.binds !== void 0 && { binds: options.binds }
+    ...options.binds !== void 0 && { binds: options.binds },
+    ...options.rejectsNone !== void 0 && {
+      rejectsNone: options.rejectsNone
+    }
   };
   const analysis = verify(declared, nameOf(options.name, "part"));
   const result = {
