@@ -175,6 +175,12 @@ interface StoreDescriptor {
         readonly [name: string]: FunctionDescriptor;
     };
 }
+/**
+ * A group of a store registry with no entries. A generated registry names
+ * this type instead of writing the empty object type, which lint rules against
+ * that type report in the generated module.
+ */
+type NoEntries = Record<never, never>;
 /** Declares a generated store registry (identity at runtime). */
 declare const store: <const S extends StoreDescriptor>(descriptor: S) => S;
 /** Applies a presence to a field schema, as the generated variants do. */
@@ -379,4 +385,4 @@ type SurrealJsonValue = null | boolean | number | string | ReadonlyArray<Surreal
 };
 declare const SurrealJsonValue: Schema.Codec<SurrealJsonValue>;
 
-export { Uuid as A, Bytes as B, decimalFromString as C, Decimal as D, type EdgeDescriptor as E, type FunctionDescriptor as F, edge as G, fn as H, Int64 as I, int64 as J, intFor as K, refine as L, replaceField as M, type Narrowing as N, type Operation as O, type Permission as P, store as Q, type Refinements as R, SurrealNumber as S, type TableDescriptor as T, Unsupported as U, type ViewDescriptor as V, table as W, toWellFormed as X, view as Y, withPresence as Z, Float as a, DECIMAL_MAX_MANTISSA as b, DECIMAL_MAX_SCALE as c, DecimalLiteral as d, type EdgeIn as e, type EdgeOut as f, type FieldPermissions as g, type FieldPresence as h, type FunctionArgs as i, type FunctionResult as j, INT64_MAX as k, INT64_MIN as l, type IndexDescriptor as m, type IndexType as n, Int as o, Int64Literal as p, type IntProfile as q, type Presence as r, type Replaced as s, type RowSchema as t, type StoreDescriptor as u, SurrealString as v, SurrealJsonValue as w, SurrealMergeValue as x, SurrealValue as y, type TablePermissions as z };
+export { type TablePermissions as A, Bytes as B, Uuid as C, Decimal as D, type EdgeDescriptor as E, type FunctionDescriptor as F, decimalFromString as G, edge as H, Int64 as I, fn as J, int64 as K, intFor as L, refine as M, type Narrowing as N, type Operation as O, type Permission as P, replaceField as Q, type Refinements as R, SurrealNumber as S, type TableDescriptor as T, Unsupported as U, type ViewDescriptor as V, store as W, table as X, toWellFormed as Y, view as Z, withPresence as _, Float as a, DECIMAL_MAX_MANTISSA as b, DECIMAL_MAX_SCALE as c, DecimalLiteral as d, type EdgeIn as e, type EdgeOut as f, type FieldPermissions as g, type FieldPresence as h, type FunctionArgs as i, type FunctionResult as j, INT64_MAX as k, INT64_MIN as l, type IndexDescriptor as m, type IndexType as n, Int as o, Int64Literal as p, type IntProfile as q, type NoEntries as r, type Presence as s, type Replaced as t, type RowSchema as u, type StoreDescriptor as v, SurrealString as w, SurrealJsonValue as x, SurrealMergeValue as y, SurrealValue as z };
