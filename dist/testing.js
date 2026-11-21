@@ -2,19 +2,29 @@ import {
   linkShape,
   shapeTables,
   tableName
-} from "./chunk-KRFS2OMG.js";
-import "./chunk-FN4HR4GU.js";
-import {
-  make,
-  scanTopLevel
-} from "./chunk-ZJPZBNCL.js";
-import "./chunk-PHSAVORF.js";
+} from "./chunk-MZRUKDVT.js";
+import "./chunk-EEFZAKBV.js";
+import "./chunk-NSEQQEQJ.js";
+import "./chunk-MUBWQQFC.js";
 import {
   SurrealClient,
   make as make2,
   makeWith,
   run
-} from "./chunk-6JEC4JLV.js";
+} from "./chunk-RT5I7YT6.js";
+import "./chunk-6LS7V54M.js";
+import {
+  make,
+  scanTopLevel
+} from "./chunk-QRSY4HQJ.js";
+import "./chunk-3SWEJO3L.js";
+import {
+  DEFAULT_HOLE_DELIMITERS,
+  lex
+} from "./chunk-LJSHE6F3.js";
+import {
+  AnalyzeError
+} from "./chunk-FBUMKT7I.js";
 import "./chunk-PZ5AY32C.js";
 
 // src/testing/database.ts
@@ -361,6 +371,7 @@ var expectNoIndex = expecting("unused");
 
 // src/testing/fake.ts
 import { Layer as Layer2 } from "effect";
+import { ExpressionError, Features, UnsupportedFeatureError } from "surrealdb";
 var ReplyTypeId = "~effect-surrealkit/testing/Reply";
 var result = (value) => ({
   [ReplyTypeId]: "result",
@@ -375,8 +386,21 @@ var failure = (message) => ({
   [ReplyTypeId]: "failure",
   message
 });
+var events = (messages) => ({
+  [ReplyTypeId]: "events",
+  messages
+});
+var unsupported = (feature) => ({
+  [ReplyTypeId]: "unsupported",
+  feature
+});
 var isReply = (value) => typeof value === "object" && value !== null && ReplyTypeId in value;
 var sdkError = (message, fields = {}) => Object.assign(new Error(message), fields);
+var sdkFeatures = {
+  "interactive transaction": Features.Transactions,
+  "live query": Features.LiveQueries,
+  stream: Features.QueryStreaming
+};
 var rejection = (reply) => {
   switch (reply[ReplyTypeId]) {
     case "throw":
@@ -390,6 +414,8 @@ var rejection = (reply) => {
       );
     case "failure":
       return sdkError(reply.message);
+    case "unsupported":
+      return new UnsupportedFeatureError(sdkFeatures[reply.feature]);
     default:
       return void 0;
   }
@@ -399,12 +425,12 @@ var sdkRefusal = (sql) => {
   let returned = false;
   for (const keyword of scanTopLevel(sql).keywords) {
     if (control.has(keyword)) {
-      return sdkError(
+      return new ExpressionError(
         `queries[0] contains a ${keyword} statement. transaction() wraps the queries in BEGIN and COMMIT itself, so they must not contain any`
       );
     }
     if (returned) {
-      return sdkError(
+      return new ExpressionError(
         "queries[0] contains a RETURN statement which is followed by another statement (in queries[0]). Inside a transaction RETURN ends it early: the statements after it would be skipped but the transaction would still commit. Use SELECT or a bare expression instead, or move the RETURN to the end"
       );
     }
@@ -412,74 +438,387 @@ var sdkRefusal = (sql) => {
   }
   return void 0;
 };
-var fake = (script) => {
+var success = (value) => ({ ok: true, value });
+var firstSlot = (part) => part.offset + (part.slots === part.statement.slots + 2 ? 1 : 0);
+var valueSlot = (part) => firstSlot(part) + part.statement.valueSlot - 1;
+var requestContext = ({ mode, parts }, collected) => {
+  if (mode === "query" && collected) return {};
+  const names = parts.map(({ statement }) => statement.name).join(", ");
+  return mode === "atomic" ? { transaction: `transaction(${names})` } : { pipeline: `pipeline(${names})` };
+};
+var scriptedTransport = (script) => {
   const calls = [];
-  const reply = (statement, bindings) => {
-    if (!Object.hasOwn(script, statement.name)) {
-      return failure(
-        `the scripted client has no reply for \`${statement.name}\``
-      );
+  let transactions = 0;
+  const entryFor = (name, bindings) => {
+    const entry = script[name];
+    return typeof entry === "function" ? entry(bindings) : entry;
+  };
+  const reply = ({ statement: { name }, bindings }, context) => {
+    calls.push({ statement: name, bindings: { ...bindings }, ...context });
+    if (!Object.hasOwn(script, name)) {
+      return failure(`the scripted client has no reply for \`${name}\``);
     }
-    const entry = script[statement.name];
-    const value = typeof entry === "function" ? entry(bindings) : entry;
+    const value = entryFor(name, bindings);
     return isReply(value) ? value : result(value);
   };
-  const slotsOf = (statement, value) => [
-    ...Array.from({ length: statement.slots - 1 }, () => void 0),
-    value
-  ];
-  const own = (statement, bindings) => Object.fromEntries(
-    Object.keys(statement.params).flatMap(
-      (name) => Object.hasOwn(bindings, name) ? [[name, bindings[name]]] : []
-    )
-  );
-  const transport = {
-    query: async (statement, bindings) => {
-      calls.push({
-        statement: statement.name,
-        bindings: { ...bindings }
-      });
-      const answer = reply(statement, bindings);
-      const error = rejection(answer);
-      if (error !== void 0) throw error;
-      return slotsOf(
-        statement,
-        answer[ReplyTypeId] === "result" ? answer.value : void 0
-      );
-    },
-    transaction: async (statements, { sql, bindings }) => {
-      const refused = sdkRefusal(sql);
+  const dispatch = async (request, signal, collected, interactive) => {
+    signal.throwIfAborted();
+    const context = interactive === void 0 ? requestContext(request, collected) : { interactive };
+    const whole = collected || request.mode === "atomic" && interactive === void 0;
+    if (request.mode === "atomic" && interactive === void 0) {
+      const refused = sdkRefusal(request.sql);
       if (refused !== void 0) throw refused;
-      const name = `transaction(${statements.map((item) => item.name).join(", ")})`;
-      const results = [];
-      for (const statement of statements) {
-        const mine = own(statement, bindings);
-        calls.push({
-          statement: statement.name,
-          bindings: mine,
-          transaction: name
-        });
-        const answer = reply(statement, mine);
+    }
+    const size = request.parts.reduce(
+      (size2, part) => Math.max(size2, part.offset + part.slots),
+      0
+    );
+    const slots = Array.from({ length: size }, () => success(void 0));
+    for (const part of request.parts) {
+      try {
+        const answer = reply(part, context);
         const error = rejection(answer);
         if (error !== void 0) throw error;
-        results.push(
-          ...slotsOf(
-            statement,
-            answer[ReplyTypeId] === "result" ? answer.value : void 0
-          )
+        slots[valueSlot(part)] = success(
+          answer[ReplyTypeId] === "result" ? answer.value : void 0
         );
+      } catch (error) {
+        if (whole) throw error;
+        slots[firstSlot(part)] = { ok: false, error };
       }
-      return results;
+    }
+    return slots;
+  };
+  const lifecycle = async (operation, context, statement = operation) => {
+    calls.push({ statement, bindings: {}, operation, ...context });
+    if (!Object.hasOwn(script, operation)) return;
+    const answer = await entryFor(operation, {});
+    if (isReply(answer)) {
+      const error = rejection(answer);
+      if (error !== void 0) throw error;
     }
   };
+  const transport = {
+    collect: async (request, signal) => {
+      const slots = await dispatch(request, signal, true);
+      return slots.map((slot) => {
+        if (!slot.ok) throw slot.error;
+        return slot.value;
+      });
+    },
+    send: (request, signal) => dispatch(request, signal, false),
+    stream: async function* (request, signal) {
+      for (const part of request.parts) {
+        signal.throwIfAborted();
+        const answer = reply(part, {});
+        const error = rejection(answer);
+        if (error instanceof UnsupportedFeatureError) throw error;
+        if (error !== void 0) {
+          yield { kind: "error", slot: firstSlot(part), error };
+          continue;
+        }
+        for (let slot = part.offset; slot < part.offset + part.slots; slot++) {
+          if (slot === valueSlot(part) && answer[ReplyTypeId] === "result") {
+            if (Array.isArray(answer.value)) {
+              for (const value of answer.value) {
+                signal.throwIfAborted();
+                yield { kind: "row", slot, value };
+              }
+            } else {
+              yield { kind: "value", slot, value: answer.value };
+            }
+          } else {
+            yield { kind: "value", slot, value: void 0 };
+          }
+          yield { kind: "done", slot };
+        }
+      }
+    },
+    begin: async (signal) => {
+      signal.throwIfAborted();
+      const interactive = `transaction ${++transactions}`;
+      await lifecycle("begin", { interactive });
+      return {
+        send: (request, signal2) => dispatch(request, signal2, false, interactive),
+        commit: () => lifecycle("commit", { interactive }),
+        cancel: () => lifecycle("cancel", { interactive })
+      };
+    },
+    live: async (request, signal) => {
+      signal.throwIfAborted();
+      const [part] = request.parts;
+      if (part === void 0)
+        throw new Error("the scripted live query has no statement");
+      const answer = reply(part, {});
+      const error = rejection(answer);
+      if (error !== void 0) throw error;
+      if (answer[ReplyTypeId] !== "events") {
+        throw new Error(
+          `the scripted client needs events for \`${part.statement.name}\``
+        );
+      }
+      let killed = false;
+      return {
+        messages: (async function* () {
+          for (const message of answer.messages) {
+            if (killed) return;
+            yield message;
+          }
+        })(),
+        kill: async () => {
+          killed = true;
+          await lifecycle("kill", {}, part.statement.name);
+        }
+      };
+    }
+  };
+  return { transport, calls };
+};
+var fake = (script) => {
+  const { transport, calls } = scriptedTransport(script);
   return Object.assign(makeWith(transport), { calls });
 };
 var fakeLayer = (script) => Layer2.succeed(SurrealClient, fake(script));
+
+// src/testing/session.ts
+import {
+  BoundQuery,
+  ErrorFrame,
+  QueryError
+} from "surrealdb";
+var forwardData = (target, key, {
+  configurable = false,
+  enumerable = false,
+  writable = false
+}) => {
+  let method;
+  let bound;
+  return {
+    configurable,
+    enumerable,
+    get: () => {
+      const value = Reflect.get(target, key);
+      if (typeof value !== "function") return value;
+      if (value !== method) {
+        method = value;
+        bound = value.bind(target);
+      }
+      return bound;
+    },
+    ...writable && {
+      set: (value) => {
+        if (!Reflect.set(target, key, value)) {
+          throw new TypeError(
+            `Cannot write session property ${String(key)}`
+          );
+        }
+      }
+    }
+  };
+};
+var forward = (target, overrides) => {
+  const facade = Object.defineProperties(
+    {},
+    Object.getOwnPropertyDescriptors(overrides)
+  );
+  for (let owner = target; owner !== null && owner !== Object.prototype; owner = Object.getPrototypeOf(owner)) {
+    for (const key of Reflect.ownKeys(owner)) {
+      if (owner !== target && key === "constructor" || Object.hasOwn(facade, key))
+        continue;
+      const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+      if (descriptor === void 0) continue;
+      if ("value" in descriptor) {
+        Object.defineProperty(
+          facade,
+          key,
+          forwardData(target, key, descriptor)
+        );
+        continue;
+      }
+      if (descriptor.get !== void 0)
+        descriptor.get = descriptor.get.bind(target);
+      if (descriptor.set !== void 0)
+        descriptor.set = descriptor.set.bind(target);
+      Object.defineProperty(facade, key, descriptor);
+    }
+  }
+  return facade;
+};
+var conflict2 = () => new QueryError({
+  kind: "Query",
+  message: "Transaction conflict: Write conflict, retry the transaction.",
+  details: { kind: "TransactionConflict" }
+});
+var notExecuted = () => new QueryError({
+  kind: "Query",
+  message: "The query was not executed due to a failed transaction",
+  details: { kind: "NotExecuted" }
+});
+var statementTexts = (sql) => {
+  const { tokens } = lex(sql, DEFAULT_HOLE_DELIMITERS);
+  const texts = [];
+  let depth = 0;
+  let start = 0;
+  let hasText = false;
+  for (const token of tokens) {
+    if (token.kind === "punct") {
+      if (token.value === ";" && depth === 0) {
+        if (hasText) texts.push(sql.slice(start, token.end));
+        start = token.end;
+        hasText = false;
+        continue;
+      }
+      if ("([{".includes(token.value)) depth++;
+      if (")]}".includes(token.value)) depth--;
+    }
+    hasText = true;
+  }
+  if (hasText) texts.push(sql.slice(start));
+  return texts;
+};
+var conflictResponses = (sql, marker) => {
+  let texts;
+  try {
+    texts = statementTexts(sql);
+  } catch (cause) {
+    if (cause instanceof AnalyzeError) throw conflict2();
+    throw cause;
+  }
+  if (texts.length === 0) throw conflict2();
+  const matching = Math.max(
+    0,
+    texts.findIndex((text) => text.includes(marker))
+  );
+  return texts.map((_, index) => ({
+    success: false,
+    error: index === matching ? conflict2() : notExecuted()
+  }));
+};
+var textOf = (query) => {
+  if (typeof query === "string") return query;
+  if (query instanceof BoundQuery) return query.query;
+  return ("inner" in query ? query.inner : query.compile()).query;
+};
+var view = (open, inject) => {
+  let source;
+  let closed = false;
+  const done = { done: true, value: void 0 };
+  const iterator = {
+    async next() {
+      if (closed) return done;
+      if (source === void 0) {
+        try {
+          if (inject()) throw conflict2();
+          source = open();
+        } catch (error) {
+          closed = true;
+          throw error;
+        }
+      }
+      return source.next();
+    },
+    async return() {
+      closed = true;
+      return source?.return === void 0 ? done : source.return();
+    },
+    async throw(error) {
+      closed = true;
+      if (source?.throw !== void 0) return source.throw(error);
+      throw error;
+    },
+    [Symbol.asyncIterator]() {
+      return iterator;
+    },
+    async [Symbol.asyncDispose]() {
+      await iterator.return();
+    }
+  };
+  return iterator;
+};
+var wrapQuery = (query, marker, take, signals = []) => {
+  const inject = () => {
+    for (const signal of signals) signal.throwIfAborted();
+    return take();
+  };
+  const responses = () => conflictResponses(query.inner.query, marker);
+  let dispatched;
+  const collect = async (...indexes) => {
+    if (inject()) throw conflict2();
+    return query.collect(...indexes);
+  };
+  const awaitOnce = () => {
+    dispatched ??= collect();
+    return dispatched;
+  };
+  return forward(query, {
+    signal: (signal) => wrapQuery(
+      query.signal(signal),
+      marker,
+      take,
+      signal === void 0 ? signals : [...signals, signal]
+    ),
+    retry: (...args) => wrapQuery(query.retry(...args), marker, take, signals),
+    requestTimeout: (...args) => wrapQuery(query.requestTimeout(...args), marker, take, signals),
+    as: (...args) => wrapQuery(query.as(...args), marker, take, signals),
+    json: () => wrapQuery(query.json(), marker, take, signals),
+    dispatch: collect,
+    collect,
+    // biome-ignore lint/suspicious/noThenProperty: the SDK Query is a thenable
+    then: (...args) => awaitOnce().then(...args),
+    catch: (...args) => awaitOnce().catch(...args),
+    finally: (...args) => awaitOnce().finally(...args),
+    responses: async (...indexes) => {
+      if (!inject()) return query.responses(...indexes);
+      const slots = responses();
+      if (indexes.length === 0) return slots;
+      const positions = new Map(
+        indexes.map((slot, index) => [slot, index])
+      );
+      const selected = [];
+      for (const [index, slot] of slots.entries()) {
+        const position = positions.get(index);
+        if (position === void 0) throw slot.error;
+        selected[position] = slot;
+      }
+      return selected;
+    },
+    rows: (parse) => view(() => query.rows(parse), inject),
+    statements: () => view(() => query.statements(), inject),
+    stream: async function* () {
+      if (!inject()) {
+        yield* query.stream();
+        return;
+      }
+      for (const [index, slot] of responses().entries()) {
+        yield new ErrorFrame(index, void 0, slot.error);
+      }
+    }
+  });
+};
+var conflictingSession = (session, options) => {
+  const { marker, times } = options;
+  const matched = { count: 0 };
+  const take = () => ++matched.count <= times;
+  const query = (...args) => {
+    const request = Reflect.apply(session.query, session, args);
+    return request.inner.query.includes(marker) ? wrapQuery(request, marker, take) : request;
+  };
+  const transaction = async (queries, options2) => {
+    if (queries.some((query2) => textOf(query2).includes(marker))) {
+      options2?.signal?.throwIfAborted();
+      if (take()) throw conflict2();
+    }
+    return session.transaction(queries, options2);
+  };
+  return { session: forward(session, { query, transaction }), matched };
+};
 export {
   IndexExpectationError,
   TestDatabase,
   TestingError,
   conflict,
+  conflictingSession,
+  events,
   expectIndex,
   expectNoIndex,
   explain,
@@ -495,6 +834,7 @@ export {
   recordUser,
   result,
   schemaDrift,
-  thrown
+  thrown,
+  unsupported
 };
 //# sourceMappingURL=testing.js.map

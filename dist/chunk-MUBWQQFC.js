@@ -1,3 +1,7 @@
+import {
+  staticCodecIssue
+} from "./chunk-3SWEJO3L.js";
+
 // src/int.ts
 import { Schema as Schema2, SchemaGetter as SchemaGetter2 } from "effect";
 
@@ -80,16 +84,9 @@ var wrap = (inner, annotations) => {
       typeParameters[0] ?? inner.ast
     );
     return (input, _ast, parseOptions) => {
-      const refused = refuse?.(input);
-      return refused === void 0 ? SchemaParser.decodeUnknownEffect(codec)(
+      return refuse?.when(input) === true ? Effect.fail(staticCodecIssue(refuse.message)) : SchemaParser.decodeUnknownEffect(codec)(
         before(input),
         parseOptions
-      ) : Effect.fail(
-        new SchemaIssue.InvalidValue(
-          { message: refused },
-          input,
-          parseOptions
-        )
       );
     };
   };
@@ -708,6 +705,8 @@ var DurationLiteral = (value) => {
 };
 
 export {
+  RUNTIME_IMPORT,
+  SDK_TYPE_IMPORT,
   quote,
   quoteList,
   literalUnion,
@@ -748,4 +747,4 @@ export {
   Duration,
   DurationLiteral
 };
-//# sourceMappingURL=chunk-PHSAVORF.js.map
+//# sourceMappingURL=chunk-MUBWQQFC.js.map

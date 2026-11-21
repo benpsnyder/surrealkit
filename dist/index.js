@@ -19,11 +19,11 @@ import {
   SurrealValue,
   TableFor,
   taggedRecordId
-} from "./chunk-F4HWMI2D.js";
+} from "./chunk-BOMQHKJG.js";
 import {
   NoneAsAbsent,
   stripNone
-} from "./chunk-FN4HR4GU.js";
+} from "./chunk-EEFZAKBV.js";
 import {
   Bytes,
   DATETIME_MAX_SECONDS,
@@ -43,6 +43,8 @@ import {
   Int,
   Int64,
   Int64Literal,
+  RUNTIME_IMPORT,
+  SDK_TYPE_IMPORT,
   SurrealNumber,
   SurrealString,
   Unsupported,
@@ -53,17 +55,42 @@ import {
   decimalFromString,
   int64,
   intFor,
+  isPlainObject,
   literalUnion,
   quote,
   quoteList,
   runtimeCode,
   toWellFormed,
   wrap
-} from "./chunk-PHSAVORF.js";
+} from "./chunk-MUBWQQFC.js";
+import "./chunk-3SWEJO3L.js";
 import "./chunk-PZ5AY32C.js";
 
+// src/empty.ts
+import { Schema } from "effect";
+var isEmptyObject = (annotations) => Schema.makeFilter(
+  (value) => isPlainObject(value) && Object.keys(value).length === 0,
+  {
+    expected: "an empty object",
+    representation: {
+      id: "effect-surrealkit/isEmptyObject",
+      payload: null
+    },
+    toJsonSchema: () => ({
+      type: "object",
+      additionalProperties: false
+    }),
+    toCode: () => ({
+      runtime: "SurrealSchema.isEmptyObject()",
+      importDeclarations: [RUNTIME_IMPORT, SDK_TYPE_IMPORT]
+    }),
+    ...annotations
+  }
+);
+var EmptyObject = Schema.Struct({}).check(isEmptyObject());
+
 // src/json.ts
-import { Effect, Schema, SchemaIssue, SchemaTransformation } from "effect";
+import { Effect, Schema as Schema2, SchemaIssue, SchemaTransformation } from "effect";
 import {
   equals,
   Duration as SdkDuration,
@@ -84,8 +111,8 @@ var attempt = (f) => Effect.suspend(() => {
   }
 });
 var fromString = (target, name, options) => wrap(
-  Schema.String.pipe(
-    Schema.decodeTo(
+  Schema2.String.pipe(
+    Schema2.decodeTo(
       target,
       SchemaTransformation.transformEffect({
         decode: (text) => attempt(() => options.decode(text)),
@@ -155,8 +182,8 @@ var recordIdFromText = (text) => {
   return /^[A-Za-z0-9_]+$/.test(key) && !/^\d+$/.test(key) ? TextCodec.parseRecordId(`${text.slice(0, length)}:\u27E8${key}\u27E9`) : TextCodec.parseRecordId(text);
 };
 var RecordIdFromJson = (table2) => wrap(
-  Schema.String.pipe(
-    Schema.decodeTo(
+  Schema2.String.pipe(
+    Schema2.decodeTo(
       RecordIdFor(table2),
       SchemaTransformation.transformEffect({
         decode: (text) => attempt(
@@ -178,8 +205,8 @@ var RecordIdFromJson = (table2) => wrap(
 );
 var INT_TEXT = /^-?\d+$/;
 var Int64FromJson = wrap(
-  Schema.Union([Schema.Number, Schema.String]).pipe(
-    Schema.decodeTo(
+  Schema2.Union([Schema2.Number, Schema2.String]).pipe(
+    Schema2.decodeTo(
       Int64,
       SchemaTransformation.transformEffect({
         decode: (input) => {
@@ -207,13 +234,13 @@ var Int64FromJson = wrap(
     code: () => runtimeCode("Int64FromJson", "SurrealSchema.Int64")
   }
 );
-var byte = Schema.Number.check(
-  Schema.isInt(),
-  Schema.isBetween({ minimum: 0, maximum: 255 })
+var byte = Schema2.Number.check(
+  Schema2.isInt(),
+  Schema2.isBetween({ minimum: 0, maximum: 255 })
 );
 var BytesFromJson = wrap(
-  Schema.Array(byte).pipe(
-    Schema.decodeTo(
+  Schema2.Array(byte).pipe(
+    Schema2.decodeTo(
       Bytes,
       SchemaTransformation.transform({
         decode: (bytes) => Uint8Array.from(bytes),
@@ -230,8 +257,8 @@ var BytesFromJson = wrap(
   }
 );
 var textTo = (target, options) => wrap(
-  Schema.String.pipe(
-    Schema.decodeTo(
+  Schema2.String.pipe(
+    Schema2.decodeTo(
       target,
       SchemaTransformation.transformEffect({
         decode: (text) => attempt(() => options.decode(text)),
@@ -252,7 +279,7 @@ var RecordIdAnyFromJson = textTo(RecordIdAny, {
   decode: recordIdFromText,
   encode: (value) => value.toString()
 });
-var RecordIdFromJsonAs = (id) => wrap(RecordIdAnyFromJson.pipe(Schema.decodeTo(id)), {
+var RecordIdFromJsonAs = (id) => wrap(RecordIdAnyFromJson.pipe(Schema2.decodeTo(id)), {
   id: "effect-surrealkit/RecordIdFromJsonAs",
   expected: "a record id string",
   code: () => {
@@ -291,10 +318,10 @@ var RangeFromJson = textTo(Range, {
   decode: (text) => TextCodec.parseRange(text),
   encode: (range) => toSurrealqlString(range)
 });
-var GeoJson = Schema.Record(Schema.String, Schema.Unknown);
+var GeoJson = Schema2.Record(Schema2.String, Schema2.Unknown);
 var GeometryFromJson = (geometry) => wrap(
   GeoJson.pipe(
-    Schema.decodeTo(
+    Schema2.decodeTo(
       geometry,
       SchemaTransformation.transformEffect({
         decode: (json) => attempt(
@@ -321,8 +348,8 @@ var GeometryFromJson = (geometry) => wrap(
   }
 );
 var SurrealNumberFromJson = wrap(
-  Schema.Union([Schema.Finite, Schema.String]).pipe(
-    Schema.decodeTo(
+  Schema2.Union([Schema2.Finite, Schema2.String]).pipe(
+    Schema2.decodeTo(
       SurrealNumber,
       SchemaTransformation.transformEffect({
         decode: (input) => typeof input === "number" ? Effect.succeed(input) : attempt(() => decimalFromString(input)),
@@ -342,7 +369,7 @@ var SurrealNumberFromJson = wrap(
   }
 );
 var DateTimeEffectFromJson = wrap(
-  DateTimeFromJson.pipe(Schema.decodeTo(DateTimeEffect)),
+  DateTimeFromJson.pipe(Schema2.decodeTo(DateTimeEffect)),
   {
     id: "effect-surrealkit/DateTimeEffectFromJson",
     expected: "an RFC 3339 datetime string",
@@ -350,9 +377,9 @@ var DateTimeEffectFromJson = wrap(
   }
 );
 var SetFromJson = (item, options = {}) => wrap(
-  Schema.Array(item).pipe(
-    Schema.decodeTo(
-      SetOf(Schema.toType(item), options),
+  Schema2.Array(item).pipe(
+    Schema2.decodeTo(
+      SetOf(Schema2.toType(item), options),
       SchemaTransformation.transformEffect({
         // Check before `new Set` silently drops primitive duplicates.
         decode: (values) => {
@@ -383,7 +410,7 @@ var SetFromJson = (item, options = {}) => wrap(
 );
 
 // src/table.ts
-import { Schema as Schema2 } from "effect";
+import { Schema as Schema3 } from "effect";
 var table = (descriptor) => descriptor;
 var view = (descriptor) => descriptor;
 var edge = (descriptor) => descriptor;
@@ -394,10 +421,10 @@ var withPresence = (schema, presence) => {
     case "required":
       return schema;
     case "optional":
-      return Schema2.optionalKey(schema);
+      return Schema3.optionalKey(schema);
     case "removable":
     case "resettable":
-      return Schema2.optional(schema);
+      return Schema3.optional(schema);
     case "excluded":
       throw new RangeError(
         "an excluded field has no schema in this operation"
@@ -407,14 +434,19 @@ var withPresence = (schema, presence) => {
 var isStructWithRest = (row) => "records" in row && "schema" in row;
 var replaceInRow = (row, operation, presence, replacements) => {
   const struct = isStructWithRest(row) ? row.schema : row;
+  if (!Object.keys(struct.fields).some(
+    (key) => Object.hasOwn(replacements, key)
+  )) {
+    return row;
+  }
   const fields = {};
   for (const [key, field] of Object.entries(struct.fields)) {
     const replacement = replacements[key];
     const fieldPresence = operation === "visible" ? field.ast.context?.isOptional === true ? "optional" : "required" : presence[key]?.[operation];
     fields[key] = replacement === void 0 || fieldPresence === void 0 ? field : withPresence(replacement, fieldPresence);
   }
-  const rebuilt = Schema2.Struct(fields);
-  return isStructWithRest(row) ? Schema2.StructWithRest(rebuilt, row.records) : rebuilt;
+  const rebuilt = Schema3.Struct(fields);
+  return isStructWithRest(row) ? Schema3.StructWithRest(rebuilt, row.records) : rebuilt;
 };
 var operations = [
   "select",
@@ -491,6 +523,7 @@ export {
   Duration,
   DurationFromJson,
   DurationLiteral,
+  EmptyObject,
   FileRefFor,
   FileRefFromJson,
   Float,
@@ -539,6 +572,7 @@ export {
   fn,
   int64,
   intFor,
+  isEmptyObject,
   refine,
   replaceField,
   store,

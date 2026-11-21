@@ -16,7 +16,7 @@ import {
   toWellFormed,
   wrap,
   wrongType
-} from "./chunk-PHSAVORF.js";
+} from "./chunk-MUBWQQFC.js";
 
 // src/collections.ts
 import {
@@ -649,4 +649,4 @@ export {
   SurrealMergeValue,
   SurrealJsonValue
 };
-//# sourceMappingURL=chunk-F4HWMI2D.js.map
+//# sourceMappingURL=chunk-BOMQHKJG.js.map

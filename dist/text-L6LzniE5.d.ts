@@ -1,7 +1,7 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Effect } from 'effect';
-import { H as HoleDelimiters } from './lexer-BEI0-7pQ.js';
+import { H as HoleDelimiters } from './lexer-VCZFEQjh.js';
 
 /** What the text around one hole does with names; see `Analysis.holeScopes`. */
 interface TextHoleScope<Bound extends string = string, Binds extends string = string> {

@@ -1,216 +1,21 @@
 import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
-import { C as CodecOf, P as Path, O as OrNone, E as Expr, a as Primitive, b as ParamsOfAll, L as LiteralCodec, c as Comparable, d as ParamsOf, F as FloatOrDecimalOf, e as OperandEncoded, I as ItemOf, f as OperandParams, g as Operand } from './arithmetic-lyw96eh6.js';
-export { A as ArithmeticCodec, h as CallArguments, i as CastKind, j as Collection, k as ElementOf, l as ExprTypeId, N as Numeric, m as NumericOperand, n as PureFunction, R as Reader, o as add, p as and, q as at, r as call, s as cast, t as codecOf, u as contains, v as div, w as eq, x as gt, y as gte, z as inside, B as isExpr, D as isNone, G as isNotNone, H as isPath, J as literal, K as lt, M as lte, Q as mul, S as ne, T as not, U as or, V as param, W as paramsOf, X as parent, Y as sqlOf, Z as sub, _ as unsafeExpr } from './arithmetic-lyw96eh6.js';
+import { F as FloatOrDecimalOf } from './arithmetic-Dgz4kWW5.js';
+export { A as ArithmeticCodec, N as Numeric, a as NumericOperand, b as add, d as div, m as mul, s as sub } from './arithmetic-Dgz4kWW5.js';
 import { Schema } from 'effect';
-import { N as NoneAsAbsent, c as DateTime, e as Duration } from './temporal-s2ISz75j.js';
-import { C as Codec, P as Params, S as Statement, a as Simplify, A as AnyStatement, N as NoParams, R as Result } from './statement-CW7bavvY.js';
-export { b as CheckedInput, I as Input, c as StatementTypeId, T as ThrowSite, d as Thrown, i as isStatement, m as make } from './statement-CW7bavvY.js';
-import { RecordId, Decimal, DateTime as DateTime$1 } from 'surrealdb';
-import { T as Text, d as TextHoleScopes, c as TextHoleScope } from './text-Dh74bkFB.js';
-import { w as SurrealString, o as Int, I as Int64, a as Float, S as SurrealNumber, C as Uuid, D as Decimal$1, z as SurrealValue } from './value-AVjTxjJm.js';
+import { P as Params, C as Codec, S as Statement, c as Simplify, E as Expr, A as AnyStatement, N as NoParams, O as OrNone, R as Result, a as Primitive, b as ParamsOfAll, L as LiteralCodec, d as OperandEncoded, e as Comparable, f as CodecOf, g as ParamsOf, h as Path, I as ItemOf, i as OperandParams, j as Operand } from './expr-Bt9oR1pC.js';
+export { k as CallArguments, l as CastKind, m as CheckedInput, n as Collection, o as ElementOf, p as ExprTypeId, q as Input, r as PureFunction, s as Reader, t as StatementTypeId, T as ThrowSite, u as Thrown, v as and, w as at, x as call, y as cast, z as codecOf, B as contains, D as eq, F as gt, G as gte, H as inside, J as isExpr, K as isNone, M as isNotNone, Q as isPath, U as isStatement, V as literal, W as lt, X as lte, Y as make, Z as ne, _ as not, $ as or, a0 as param, a1 as paramsOf, a2 as parent, a3 as sqlOf, a4 as unsafeExpr } from './expr-Bt9oR1pC.js';
+import { R as RowCodecIn, F as FieldsOf$1, C as Condition, P as ProjectedCodec, a as PureTable, S as StoredRow, b as RowExprs, c as CheckedProjection, d as RowCodec, I as IdOf, e as RowOf, U as Unwrapped$2, f as IsOptional$2, N as NestedFields } from './live-n0zkmyK9.js';
+export { g as FieldExpr, h as Fields, L as Live, i as LiveStatement, j as LiveStatementTypeId, O as OpenStructCodec, k as ProjectedFields, l as Projection, m as ReadAs, n as ReadableStore, o as StructCodec, V as VisibleStore, p as VisibleTable, W as WithVisible, q as live, r as readAs, s as rowOf } from './live-n0zkmyK9.js';
+import { S as SurrealValue, i as SurrealString, f as Int, I as Int64, F as Float, l as SurrealNumber, m as Uuid, b as Decimal$1 } from './value-Dzlmtd6Q.js';
+import { T as Text, d as TextHoleScopes, c as TextHoleScope } from './text-L6LzniE5.js';
+import { Decimal, RecordId, DateTime as DateTime$1 } from 'surrealdb';
+import { c as DateTime, e as Duration } from './temporal-6pYMjhGw.js';
+import './table-iF6L7xrW.js';
+import './row-CLBe1uWx.js';
 import 'effect/Cause';
 import 'effect/Types';
-import './lexer-BEI0-7pQ.js';
-
-/**
- * Rows as expressions, and the codecs rows come back through.
- *
- * A row object has one expression per field of a generated row schema, built
- * once from the schema's own fields. A nested object field carries its
- * children as properties (`row.address.city`); an optional field, and every
- * field below one, yields a value that may be NONE.
- */
-
-/** A row schema's own fields: codecs, possibly optional keys. */
-type Fields = {
-    readonly [field: string]: Codec;
-};
-/** A closed row schema. */
-type StructCodec = Codec & {
-    readonly fields: Fields;
-};
-/** An open row schema (a schemaless table, a `FLEXIBLE` object). */
-type OpenStructCodec = Codec & {
-    readonly schema: StructCodec;
-    readonly records: unknown;
-};
-/** A row schema as generated modules declare it. */
-type RowCodecIn = StructCodec | OpenStructCodec;
-/** The declared fields of a row schema. */
-type FieldsOf$1<R> = R extends {
-    readonly schema: {
-        readonly fields: infer F;
-    };
-} ? F : R extends {
-    readonly fields: infer F;
-} ? F : never;
-/** @internal */
-type Unwrapped$2<S> = S extends {
-    readonly schema: infer I extends Codec;
-} ? S extends {
-    readonly '~type.optionality': 'optional';
-} ? I : S : S;
-/** @internal */
-type IsOptional$2<S> = S extends {
-    readonly '~type.optionality': 'optional';
-} ? true : false;
-/** @internal */
-type NestedFields<S> = S extends RowCodecIn ? FieldsOf$1<S> : never;
-/**
- * The expression of one field, a field path, with its children when it is
- * an object.
- */
-type FieldExpr<S, Optional extends boolean> = Path<Optional extends true ? OrNone<Unwrapped$2<S> & Codec> : Unwrapped$2<S> & Codec> & ([NestedFields<Unwrapped$2<S>>] extends [never] ? unknown : RowOf<NestedFields<Unwrapped$2<S>>, Optional>);
-/** One expression per field of a row schema. */
-type RowOf<F, Optional extends boolean = false> = {
-    readonly [K in keyof F & string]: FieldExpr<F[K], Optional extends true ? true : IsOptional$2<F[K]>>;
-};
-/**
- * The row object of a generated row schema: one expression per field, the
- * path quoted where SurrealQL needs it. Its paths read whichever row is
- * current where they are placed; the builders' own row objects say which
- * row they were written for, and refuse a path of another.
- */
-declare const rowOf: <R extends RowCodecIn>(schema: R) => RowOf<FieldsOf$1<R>>;
-/** The codec stored rows decode with: NONE reads as an absent key. */
-type RowCodec<S extends Codec> = ReturnType<typeof NoneAsAbsent<S>>;
-/** The row a projection yields: one key per alias. */
-type Projection = {
-    readonly [alias: string]: Expr;
-};
-/**
- * A projection as its callback returned it, `F`, checked: a value that is
- * not an expression is typed as a message saying so.
- */
-type CheckedProjection<F> = {
-    readonly [K in keyof F]: F[K] extends Expr ? F[K] : 'a projected field is an expression: inline a constant with `literal`';
-};
-/** The struct a projection decodes with. */
-type ProjectedFields<F> = {
-    readonly [K in keyof F]: CodecOf<F[K]>;
-};
-/** The codec of a projected row. */
-type ProjectedCodec<F> = Schema.declareConstructor<Schema.Struct<ProjectedFields<F>>['Type'], Schema.Struct<ProjectedFields<F>>['Encoded'], readonly [Schema.Struct<ProjectedFields<F>>]>;
-
-/**
- * What the builders need from a generated table descriptor: its name and
- * row schemas, with codecs that need no services. Every table the emitter
- * generates fits.
- */
-
-/** A generated table descriptor, as far as the builders read it. */
-interface PureTable {
-    readonly name: string;
-    readonly schemafull?: boolean;
-    readonly id: Codec;
-    readonly select: RowCodecIn;
-    /** The row as a session reads it when field permissions may hide fields. */
-    readonly visible?: RowCodecIn;
-    readonly create?: RowCodecIn;
-    readonly merge?: RowCodecIn;
-    readonly content?: RowCodecIn;
-    readonly edge?: {
-        readonly table: string;
-        readonly in: ReadonlyArray<Codec>;
-        readonly out: ReadonlyArray<Codec>;
-    };
-    /** Every `DEFINE INDEX` of the table, by name. */
-    readonly indexes?: {
-        readonly [name: string]: {
-            readonly type: string;
-            readonly columns: ReadonlyArray<ReadonlyArray<string>>;
-        };
-    };
-}
-/** The row object a table's callbacks receive. */
-type RowExprs<T extends PureTable> = RowOf<FieldsOf$1<T['select']>>;
-/** The codec a table's stored rows decode with. */
-type StoredRow<T extends PureTable> = RowCodec<T['select']>;
-/** A boolean expression. */
-type Condition<P extends Params = Params> = Expr<Schema.Codec<unknown, boolean, never, never>, P>;
-/** A record id expression of table `T`. */
-type IdOf<T extends PureTable, P extends Params = Params> = Expr<Schema.Codec<unknown, T['id']['Encoded'], never, never>, P>;
-type ExtraReadFields<T extends PureTable, S extends RowCodecIn> = Exclude<keyof FieldsOf$1<S>, keyof FieldsOf$1<T['select']>>;
-type Encoded<F> = F extends Codec ? F['Encoded'] : never;
-type IncompatibleReadLinks<Stored, View> = {
-    [K in keyof Stored & keyof View]: [
-        NonNullable<Encoded<Stored[K]>>
-    ] extends [never] ? never : [NonNullable<Encoded<Stored[K]>>] extends [RecordId] ? [Exclude<Encoded<View[K]>, undefined>] extends [
-        Exclude<Encoded<Stored[K]>, undefined>
-    ] ? never : K : never;
-}[keyof Stored & keyof View];
-type KnownReadFields<T extends PureTable, S extends RowCodecIn> = T extends {
-    readonly schemafull: true;
-} ? [ExtraReadFields<T, S>] extends [never] ? [IncompatibleReadLinks<FieldsOf$1<T['select']>, FieldsOf$1<S>>] extends [
-    never
-] ? unknown : {
-    readonly incompatibleRecordLinks: IncompatibleReadLinks<FieldsOf$1<T['select']>, FieldsOf$1<S>>;
-} : {
-    readonly unknownReadFields: ExtraReadFields<T, S>;
-} : unknown;
-/**
- * `T`, when it is a descriptor with a generated `visible` row; otherwise a
- * message saying what `readAs(table)` needs.
- */
-type WithVisible<T> = T extends {
-    readonly visible: RowCodecIn;
-} ? T : 'this descriptor has no generated `visible` row: regenerate it, or pass the row the session reads as the second argument';
-/** What `readAs` needs of a store registry: its tables, by name. */
-interface ReadableStore {
-    readonly tables: {
-        readonly [name: string]: PureTable;
-    };
-    readonly edges: object;
-}
-/** A table as a restricted session reads it: its `visible` row, when it has one. */
-type VisibleTable<T> = T extends {
-    readonly visible: infer V extends RowCodecIn;
-} ? Omit<T, 'select'> & {
-    readonly select: V;
-} : T;
-/** A store as a restricted session reads it: every table through {@link VisibleTable}. */
-type VisibleStore<S extends ReadableStore> = Omit<S, 'tables'> & {
-    readonly tables: {
-        readonly [K in keyof S['tables']]: VisibleTable<S['tables'][K]>;
-    };
-};
-/** What `readAs` returns for a table with a `visible` row, or a whole store. */
-type ReadAs<T> = T extends ReadableStore ? VisibleStore<T> : T extends PureTable ? Omit<T, 'select'> & {
-    readonly select: NonNullable<T['visible']>;
-} : never;
-/**
- * `table` as a session with narrower permissions reads it, or a whole
- * `store`.
- *
- * A generated `select` schema describes a privileged reader. SurrealDB does
- * not report what permissions hide: a field the session may not read comes
- * back as NONE, and a row it may not read is simply absent.
- *
- * With one argument the statements read the generated `visible` row, in
- * which every field whose `select` permission is not FULL may be absent.
- * With two, they read the row given: declare the row such a session really
- * gets (usually the same fields, optional where a permission can hide them),
- * so the rows decode instead of failing on the missing fields.
- *
- * Given a store registry, it returns the store as such a session reads it:
- * every table that has a `visible` row reads through it, so a record reached
- * through a link, a step or FETCH of that store (`follow`, `rows`,
- * `destructure`, the steps, recursive paths and `fetch` take the store)
- * decodes with its `visible` row. A statement that reads its own table as
- * one reader and records through a store view of the other is refused when
- * it is built.
- *
- * @example
- * const visible = select(readAs(MemberTable)).build();
- * // ReadonlyArray<{ …; email?: string; salary?: number }>
- * const session = readAs(store);
- * select(readAs(DocTable)).project((row) => ({ owner: rows(session, row.owner) }));
- */
-declare function readAs<T extends PureTable | ReadableStore>(table: T extends ReadableStore ? T : WithVisible<T>): ReadAs<T>;
-declare function readAs<T extends PureTable, S extends RowCodecIn>(table: T, select: S & KnownReadFields<NoInfer<T>, NoInfer<S>>): Omit<T, 'select'> & {
-    readonly select: S;
-};
+import './lexer-VCZFEQjh.js';
 
 /**
  * Blocks: a multi-step script (named locals, guards that `THROW`, branches
@@ -451,6 +256,413 @@ interface Block<P extends Params, L extends Locals, Throws extends string> exten
  *   .build('pay');
  */
 declare const block: () => Block<NoParams, NoLocals, never>;
+
+/**
+ * `CREATE`, `UPDATE`, `UPSERT`, `DELETE`, `RELATE`, `INSERT` and
+ * `INSERT RELATION` from generated table descriptors.
+ *
+ * Data is bound, never inlined, and must fit the schema the descriptor
+ * declares for the operation (`create`, `merge`, `content`). The result
+ * codec follows from the target and the `RETURN` clause:
+ *
+ * - one record that the statement makes (`CREATE ONLY`, `RELATE ONLY`,
+ *   `UPSERT ONLY $id`): the row;
+ * - one record by id (`UPDATE ONLY $id`, `DELETE ONLY $id`): the row, or
+ *   NONE when the record does not exist or the condition does not hold;
+ * - a table, and every `INSERT`: an array of rows.
+ *
+ * `RETURN BEFORE` is NONE for a record the statement made (an `UPSERT` or
+ * `INSERT` that created it), `RETURN AFTER` NONE for a deleted one, and
+ * `RETURN DIFF` each record's JSON Patch ({@link Diff}).
+ */
+
+/** How many records a write addresses. */
+type Shape = 'one' | 'maybe' | 'many';
+/** The result of a write returning rows of codec `Row`. */
+type WriteResult<Row extends Codec, S extends Shape> = S extends 'one' ? Row : S extends 'maybe' ? Schema.UndefinedOr<Row> : Schema.$Array<Row>;
+/** The result of a write with `RETURN NONE`. */
+type NoResult<S extends Shape> = S extends 'many' ? Schema.Tuple<readonly []> : Schema.Undefined;
+/** The schema a table declares for an operation, or `never` without one. */
+type OperationOf<T extends PureTable, O extends 'create' | 'merge' | 'content'> = T extends {
+    readonly [K in O]: infer C extends Codec;
+} ? C : never;
+/** The top-level fields `S` sends that `Target` does not have. */
+type ExtraFields<S, Target> = S extends object ? Exclude<keyof S, keyof Target> & string : never;
+/** The top-level fields an object of type `A` always has. */
+type RequiredFields<A> = {
+    [K in keyof A]-?: Record<never, never> extends Pick<A, K> ? never : K;
+}[keyof A];
+/** The top-level fields both send, where `S` sends what `Target` refuses. */
+type WrongFields<S, Target> = {
+    [K in keyof S & keyof Target]-?: [S[K]] extends [Target[K]] ? never : K;
+}[keyof S & keyof Target] & string;
+/**
+ * Data of encoded type `S` for a schema of encoded type `Target`: `V` when
+ * it fits, otherwise a message naming what does not, read in this order: a
+ * value that is not an object, a field `Target` requires that `S` may leave
+ * out, a field whose value `Target` refuses, any other mismatch, and a field
+ * `Target` does not have.
+ */
+/** Whether `A` is a union. */
+type IsUnion$2<A, Whole = A> = A extends unknown ? [Whole] extends [A] ? false : true : never;
+/**
+ * The fields `S` sends below `Path` that `Target` does not have, as paths
+ * (`settings.notify.x`, `phones[*].x`), when both are objects or arrays.
+ * It descends only where the two types differ and `Target` is not a union,
+ * so it follows the target schema's own nesting and stops with it: at a
+ * type `S` shares, at an open record (whose keys are all accepted), and at
+ * a union (whose member is not known).
+ */
+type ExtraBelow<S, Target, Path extends string> = [Target] extends [S] ? never : true extends IsUnion$2<Target> ? never : Target extends ReadonlyArray<infer TargetItem> ? S extends ReadonlyArray<infer Item> ? ExtraBelow<NonNullable<Item>, NonNullable<TargetItem>, `${Path}[*]`> : never : [Target] extends [object] ? S extends object ? `${Path}.${Exclude<keyof S, keyof Target> & string}` | NestedExtra<S, Target, `${Path}.`> : never : never;
+/** {@link ExtraBelow} for every field `S` and `Target` share. */
+type NestedExtra<S, Target, Prefix extends string> = {
+    [K in keyof S & keyof Target & string]-?: ExtraBelow<NonNullable<S[K]>, NonNullable<Target[K]>, `${Prefix}${K}`>;
+}[keyof S & keyof Target & string];
+/**
+ * Data of encoded type `S` for a schema of encoded type `Target`: `V` when
+ * it fits, otherwise a message naming what does not, read in this order: a
+ * value that is not an object, a field `Target` requires that `S` may leave
+ * out, a field whose value `Target` refuses, any other mismatch, a field
+ * `Target` does not have, and one inside a nested object or an array
+ * element (SurrealDB 3.3 and 4.0 refuse an undeclared key of a declared
+ * child object at any depth; 4.0 refuses one in an array element, which 3.3
+ * stores and the element's closed schema then cannot read).
+ */
+type FitsEncoded<S, Target, V, Table extends string, Clause extends string> = [
+    S
+] extends [Target] ? [ExtraFields<S, Target>] extends [never] ? [NestedExtra<S, Target, ''>] extends [never] ? V : `\`${NestedExtra<S, Target, ''>}\` is not a field \`${Table}\` accepts in ${Clause}` : `\`${ExtraFields<S, Target>}\` is not a field \`${Table}\` accepts in ${Clause}` : [S] extends [object] ? [Exclude<RequiredFields<Target>, RequiredFields<S>>] extends [never] ? [WrongFields<S, Target>] extends [never] ? `this value is not what \`${Table}\` accepts in ${Clause}` : `\`${WrongFields<S, Target>}\` is not a value \`${Table}\` accepts in ${Clause}` : `\`${Exclude<RequiredFields<Target>, RequiredFields<S>> & string}\` is required by \`${Table}\` in ${Clause}` : `this value is not an object, which \`${Table}\` takes in ${Clause}`;
+/**
+ * `V`, the data expression of codec `S`, when `S` may be bound as the data
+ * of an operation whose schema is `Target`: what it sends is what the
+ * schema sends, with no field the schema does not have (SurrealDB refuses
+ * one, and assignability alone would let it through). An open schema (a
+ * `FLEXIBLE` object, a schemaless table) accepts any field. Otherwise the
+ * data's expected type is a message naming the first field that does not
+ * fit, with the table and the clause (`CREATE`, `MERGE`, …).
+ */
+type Fits<Target extends Codec, S extends Codec, V, Table extends string, Clause extends string> = [Target] extends [never] ? `\`${Table}\` takes no data in ${Clause}` : FitsEncoded<S['Encoded'], Target['Encoded'], V, Table, Clause>;
+/** A table that is a relation with declared endpoints. */
+type RelationTable = PureTable & {
+    readonly edge: NonNullable<PureTable['edge']>;
+};
+/**
+ * `V`, the endpoint expression of codec `S`, when its decoded id is one of
+ * the relation's declared endpoint ids (brands included) or the relation
+ * declares none; otherwise the expected type is `Message`.
+ */
+type Endpoint<Accepted extends ReadonlyArray<Codec>, S extends Codec, V, Message extends string> = [Accepted[number]] extends [never] ? V : [S['Type']] extends [Accepted[number]['Type']] ? V : Message;
+/**
+ * One operation of a JSON Patch, as SurrealDB writes them for `RETURN DIFF`:
+ * `add`, `remove`, `replace` (the path `""` and the whole record for a
+ * created one, NONE for a deleted one) and `change`, whose value is a text
+ * patch of a string. SurrealDB 3.3 and 4.0 write these four and no other
+ * (`test/conformance.test.ts` pins them). Values are native SDK values.
+ */
+declare const PatchOperation: Schema.Union<readonly [Schema.Struct<{
+    readonly op: Schema.Literal<"add">;
+    readonly path: Schema.String;
+    readonly value: Schema.Codec<SurrealValue, SurrealValue, never, never>;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"remove">;
+    readonly path: Schema.String;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"replace">;
+    readonly path: Schema.String;
+    readonly value: Schema.optional<Schema.Codec<SurrealValue, SurrealValue, never, never>>;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"change">;
+    readonly path: Schema.String;
+    readonly value: Schema.String;
+}>]>;
+type PatchOperation = typeof PatchOperation.Type;
+/** What `RETURN DIFF` yields for one record: its JSON Patch. */
+declare const Diff: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
+    readonly op: Schema.Literal<"add">;
+    readonly path: Schema.String;
+    readonly value: Schema.Codec<SurrealValue, SurrealValue, never, never>;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"remove">;
+    readonly path: Schema.String;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"replace">;
+    readonly path: Schema.String;
+    readonly value: Schema.optional<Schema.Codec<SurrealValue, SurrealValue, never, never>>;
+}>, Schema.Struct<{
+    readonly op: Schema.Literal<"change">;
+    readonly path: Schema.String;
+    readonly value: Schema.String;
+}>]>>;
+type Diff = typeof Diff.Type;
+/** The codec of {@link Diff}. */
+type DiffCodec = typeof Diff;
+/**
+ * `M`, the `RETURN` mode a caller wrote, when the statement has it;
+ * otherwise a message saying why not.
+ */
+type ReturnMode<M, Allowed extends string, Verb extends string> = [
+    M
+] extends [Allowed] ? M : M extends 'before' ? `${Verb} has no RETURN BEFORE: a record it makes had no state before` : `\`${M & string}\` is not a RETURN mode of ${Verb}`;
+/** A `CREATE ONLY` under construction; `R` is the codec of its result. */
+interface Create<T extends PureTable, P extends Params, R extends Codec> {
+    /** `CONTENT`: the new record's data, as the table's create schema. */
+    readonly content: <S extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'create'>, S, Expr<S, P2>, T['name'], 'CREATE'>) => Create<T, P & P2, R>;
+    /**
+     * `RETURN NONE`, `RETURN AFTER` (the default), `RETURN DIFF` (the
+     * record's JSON Patch) or chosen expressions. `RETURN BEFORE` is refused:
+     * a created record had no state before.
+     */
+    readonly returning: {
+        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'diff', 'CREATE'>): Create<T, P, M extends 'none' ? Schema.Undefined : M extends 'after' ? StoredRow<T> : DiffCodec>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Create<T, P & ParamsOfAll<F[keyof F]>, ProjectedCodec<F>>;
+    };
+    /** `RETURN VALUE`: one expression of the created record. */
+    readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Create<T, P & P2, RowCodec<S>>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/**
+ * `CREATE ONLY table`, or `CREATE ONLY $id` with a record id expression of
+ * that table. Returns the created row unless told otherwise.
+ */
+declare const create: {
+    <T extends PureTable>(table: T): Create<T, NoParams, StoredRow<T>>;
+    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): Create<T, P, StoredRow<T>>;
+};
+/** An `UPDATE` under construction; `R` is the codec of its result. */
+interface Update<T extends PureTable, P extends Params, R extends Codec, S extends Shape> {
+    /** Adds a condition. Several `where` calls must all hold. */
+    readonly where: <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Update<T, P & P2, R, S>;
+    /**
+     * `RETURN NONE`, `AFTER` (the default), `BEFORE`, `DIFF` (each record's
+     * JSON Patch) or chosen expressions.
+     */
+    readonly returning: {
+        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'UPDATE'>): Update<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : WriteResult<StoredRow<T>, S>, S>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Update<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
+    };
+    /** `RETURN VALUE`: one expression of each changed record. */
+    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Update<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/** An `UPDATE` that still needs its data. */
+interface UpdateTarget<T extends PureTable, P extends Params, S extends Shape> {
+    /**
+     * `MERGE`: omitted fields keep their value; `undefined` (NONE) removes a
+     * removable field. The data is the table's merge schema.
+     */
+    readonly merge: <D extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'merge'>, D, Expr<D, P2>, T['name'], 'MERGE'>) => Update<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
+    /** `CONTENT`: replaces the writable fields, as the table's content schema. */
+    readonly content: <D extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'content'>, D, Expr<D, P2>, T['name'], 'CONTENT'>) => Update<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
+}
+/**
+ * `UPDATE table … WHERE`, returning every row it changed, or
+ * `UPDATE ONLY $id` with a record id expression, returning the row or NONE
+ * when the record does not exist. `UPDATE` never creates a record.
+ */
+declare const update: {
+    <T extends PureTable>(table: T): UpdateTarget<T, NoParams, 'many'>;
+    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): UpdateTarget<T, P, 'maybe'>;
+};
+/**
+ * `V`, the data expression of codec `S`, when `S` fits both `First` and
+ * `Second`: an `UPSERT` creates the record when it is missing and changes
+ * it when it is there, so its data must be what both accept. Otherwise the
+ * message of the first that refuses it.
+ */
+type FitsBoth<First extends Codec, Second extends Codec, S extends Codec, V, Table extends string, Clause extends string> = Fits<First, S, V, Table, Clause> extends V ? Fits<Second, S, V, Table, Clause> : Fits<First, S, V, Table, Clause>;
+/** An `UPSERT` under construction; `R` is the codec of its result. */
+interface Upsert<T extends PureTable, P extends Params, R extends Codec, S extends 'one' | 'many'> {
+    /**
+     * Adds a condition (an `UPSERT` of a table only): the records it holds
+     * for are changed, and one is created when none does.
+     */
+    readonly where: S extends 'many' ? <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Upsert<T, P & P2, R, S> : (predicate: 'an UPSERT of one record creates or changes that record; it takes no condition') => never;
+    /**
+     * `RETURN NONE`, `AFTER` (the default), `BEFORE` (NONE for a record the
+     * statement created), `DIFF` or chosen expressions.
+     */
+    readonly returning: {
+        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'UPSERT'>): Upsert<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : M extends 'before' ? WriteResult<Schema.UndefinedOr<StoredRow<T>>, S> : WriteResult<StoredRow<T>, S>, S>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Upsert<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
+    };
+    /** `RETURN VALUE`: one expression of each record. */
+    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Upsert<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/** An `UPSERT` that still needs its data. */
+interface UpsertTarget<T extends PureTable, P extends Params, S extends 'one' | 'many'> {
+    /**
+     * `MERGE`: the record's fields to set. The data must fit the table's
+     * create schema (the record may be created) and its merge schema (it
+     * may be changed).
+     */
+    readonly merge: <D extends Codec, P2 extends Params>(data: FitsBoth<OperationOf<T, 'create'>, OperationOf<T, 'merge'>, D, Expr<D, P2>, T['name'], 'UPSERT … MERGE'>) => Upsert<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
+    /**
+     * `CONTENT`: the record's writable fields, replacing them when it
+     * exists. The data must fit the table's create and content schemas.
+     */
+    readonly content: <D extends Codec, P2 extends Params>(data: FitsBoth<OperationOf<T, 'create'>, OperationOf<T, 'content'>, D, Expr<D, P2>, T['name'], 'UPSERT … CONTENT'>) => Upsert<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
+}
+/**
+ * `UPSERT ONLY $id`: creates the record when it is missing and changes it
+ * when it is there, returning it; or `UPSERT table … WHERE`, changing every
+ * record the condition holds for, or creating one when none does, and
+ * returning them all. Without a condition, `UPSERT table` creates a record.
+ *
+ * @example
+ * const touch = upsert(CounterTable, recordId(CounterTable, param('key', SurrealSchema.String)))
+ *   .merge(param('changes', CounterMerge))
+ *   .build();
+ */
+declare const upsert: {
+    <T extends PureTable>(table: T): UpsertTarget<T, NoParams, 'many'>;
+    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): UpsertTarget<T, P, 'one'>;
+};
+/** A `DELETE` under construction; `R` is the codec of its result. */
+interface Delete<T extends PureTable, P extends Params, R extends Codec, S extends Shape> {
+    /** Adds a condition. Several `where` calls must all hold. */
+    readonly where: <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Delete<T, P & P2, R, S>;
+    /**
+     * `RETURN NONE` (the default), `BEFORE` (the deleted rows), `AFTER` (NONE
+     * for each deleted record), `DIFF` (each record's JSON Patch) or chosen
+     * expressions of each record as it was (`$before.…`).
+     */
+    readonly returning: {
+        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'DELETE'>): Delete<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : M extends 'after' ? WriteResult<Schema.Undefined, S> : WriteResult<StoredRow<T>, S>, S>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Delete<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
+    };
+    /** `RETURN VALUE`: one expression of each deleted record as it was. */
+    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Delete<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/**
+ * `DELETE table … WHERE`, or `DELETE ONLY $id` with a record id expression.
+ * Returns nothing unless asked for the rows as they were (`'before'`).
+ */
+declare const deleteFrom: {
+    <T extends PureTable>(table: T): Delete<T, NoParams, NoResult<'many'>, 'many'>;
+    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): Delete<T, P, NoResult<'maybe'>, 'maybe'>;
+};
+/** A `RELATE ONLY` under construction; `R` is the codec of its result. */
+interface Relate<T extends PureTable, P extends Params, R extends Codec> {
+    /** `CONTENT`: the edge's own fields, as the table's create schema. */
+    readonly content: <S extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'create'>, S, Expr<S, P2>, T['name'], 'RELATE'>) => Relate<T, P & P2, R>;
+    /**
+     * `RETURN NONE`, `RETURN AFTER` (the default), `RETURN DIFF` or chosen
+     * expressions. `RETURN BEFORE` is refused: a new edge had no state
+     * before.
+     */
+    readonly returning: {
+        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'diff', 'RELATE'>): Relate<T, P, M extends 'none' ? Schema.Undefined : M extends 'after' ? StoredRow<T> : DiffCodec>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Relate<T, P & ParamsOfAll<F[keyof F]>, ProjectedCodec<F>>;
+    };
+    /** `RETURN VALUE`: one expression of the new edge. */
+    readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Relate<T, P & P2, RowCodec<S>>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/**
+ * `RELATE ONLY $from->table->$to`: one edge between two records. Each
+ * endpoint must be a record id the relation declares for that side.
+ */
+declare const relate: <T extends RelationTable, From extends Codec, PF extends Params, To extends Codec, PT extends Params>(table: T, from: Endpoint<T["edge"]["in"], From, Expr<From, PF>, `this record id is not an \`in\` endpoint of \`${T["name"]}\``>, to: Endpoint<T["edge"]["out"], To, Expr<To, PT>, `this record id is not an \`out\` endpoint of \`${T["name"]}\``>) => Relate<T, PF & PT, StoredRow<T>>;
+/** The encoded create row of `T`, or none for a table that takes no data. */
+type CreateEncoded<T extends PureTable> = [OperationOf<T, 'create'>] extends [
+    never
+] ? Record<never, never> : OperationOf<T, 'create'>['Encoded'];
+/** What one row of `INSERT INTO table` may hold: the create row and an `id`. */
+type InsertRow<T extends PureTable> = CreateEncoded<T> & {
+    readonly id?: T['id']['Encoded'];
+};
+/** What one row of `INSERT RELATION INTO table` holds: its endpoints too. */
+type InsertRelationRow<T extends RelationTable> = InsertRow<T> & {
+    readonly in: T['edge']['in'][number]['Encoded'];
+    readonly out: T['edge']['out'][number]['Encoded'];
+};
+/**
+ * `V`, the data expression of codec `S`, when `S` is one row `Row` or an
+ * array of them; otherwise a message naming what does not fit.
+ */
+type FitsRows<Row, S extends Codec, V, Table extends string, Clause extends string> = S['Encoded'] extends ReadonlyArray<infer Item> ? FitsEncoded<Item, Row, V, Table, Clause> : FitsEncoded<S['Encoded'], Row, V, Table, Clause>;
+/** The fields of the table's merge schema an assignment may set. */
+type MergeFieldsOf<T extends PureTable> = FieldsOf$1<OperationOf<T, 'merge'>>;
+/**
+ * Assignments of `ON DUPLICATE KEY UPDATE` as the callback returned them,
+ * `F`, checked: each key a field the table's merge schema has, each value an
+ * expression or constant whose stored type is what that field holds.
+ */
+type CheckedAssignments<T extends PureTable, F> = {
+    readonly [K in keyof F]: K extends keyof MergeFieldsOf<T> ? F[K] extends Expr | Primitive ? [OperandEncoded<F[K]>] extends [
+        (MergeFieldsOf<T>[K] & Codec)['Encoded']
+    ] ? F[K] : `\`${K & string}\` does not hold this value` : 'an assignment is an expression: inline a constant with `literal`' : `\`${K & string}\` is not a field \`${T['name']}\` accepts in ON DUPLICATE KEY UPDATE`;
+};
+/** An `INSERT` under construction; `R` is the codec of its result. */
+interface Insert<T extends PureTable, P extends Params, R extends Codec> {
+    /**
+     * `ON DUPLICATE KEY UPDATE`: when a row's id or a unique index already
+     * holds its values, set these fields of the existing record instead.
+     * `input` is the row the statement tried to insert (`$input.…`); a value
+     * may also be a binding or a constant. The stored record's own fields
+     * are not offered: SurrealDB 3.3 reads them as NONE there and 4.0 reads
+     * the record, so a statement reading them would mean two things.
+     */
+    readonly onDuplicate: <const F>(set: (input: RowExprs<T>) => CheckedAssignments<T, F>) => Insert<T, P & ParamsOfAll<F[keyof F]>, R>;
+    /**
+     * `RETURN NONE`, `AFTER` (the default), `BEFORE` (NONE for each row the
+     * statement inserted, the record for one it updated), `DIFF` or chosen
+     * expressions.
+     */
+    readonly returning: {
+        (mode: 'none'): Insert<T, P, NoResult<'many'>>;
+        (mode: 'after'): Insert<T, P, WriteResult<StoredRow<T>, 'many'>>;
+        (mode: 'before'): Insert<T, P, WriteResult<Schema.UndefinedOr<StoredRow<T>>, 'many'>>;
+        (mode: 'diff'): Insert<T, P, WriteResult<DiffCodec, 'many'>>;
+        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Insert<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, 'many'>>;
+    };
+    /** `RETURN VALUE`: one expression of each record. */
+    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Insert<T, P & P2, WriteResult<RowCodec<V>, 'many'>>;
+    /** The finished statement. */
+    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+}
+/**
+ * `INSERT INTO table $data`: one row, or an array of rows, each the table's
+ * create row with an optional `id`. Returns every inserted row (an `INSERT`
+ * always returns a list). A row whose id or unique index values are taken
+ * fails the statement, unless `.onDuplicate(…)` says what to update.
+ *
+ * @example
+ * const add = insert(PersonTable, param('people', Schema.Array(PersonCreate)))
+ *   .onDuplicate((input) => ({ name: input.name }))
+ *   .build();
+ */
+declare const insert: <T extends PureTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRow<T>, D, Expr<D, P>, T["name"], "INSERT">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
+/**
+ * `INSERT RELATION INTO table $data`: one edge, or an array of edges, each
+ * with its `in` and `out` endpoints (ids the relation declares) and the
+ * table's create row. Returns every inserted edge.
+ */
+declare const insertRelation: <T extends RelationTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRelationRow<T>, D, Expr<D, P>, T["name"], "INSERT RELATION">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
+
+/** One record id and the fields to merge into its row. */
+type UpdateRow<T extends PureTable> = {
+    readonly id: T['id']['Encoded'];
+    readonly set: OperationOf<T, 'merge'>['Encoded'];
+};
+type FitsUpdateRows<T extends PureTable, D extends Codec, V> = D['Encoded'] extends ReadonlyArray<unknown> ? FitsRows<UpdateRow<T>, D, V, T['name'], 'UPDATE EACH'> : 'UPDATE EACH needs a list of rows';
+type Missing = 'error' | 'ignore';
+interface UpdateEach<_T extends PureTable, P extends Params, M extends Missing = 'error'> {
+    readonly build: (name?: string) => Statement<Simplify<P>, NoResult<'many'>, M extends 'ignore' ? never : 'Record not found'>;
+}
+/** Merges each row's fields into its record, throwing on a missing record by default. */
+declare function updateEach<T extends PureTable, D extends Codec, P extends Params>(table: T, rows: FitsUpdateRows<T, D, Expr<D, P>>, options: {
+    readonly missing: 'ignore';
+}): UpdateEach<T, P, 'ignore'>;
+declare function updateEach<T extends PureTable, D extends Codec, P extends Params>(table: T, rows: FitsUpdateRows<T, D, Expr<D, P>>, options?: {
+    readonly missing?: Missing;
+}): UpdateEach<T, P>;
 
 /**
  * Authored SurrealQL as statements: a `part` is one text with what it reads,
@@ -858,13 +1070,13 @@ type DefinesOf<N, K> = N extends Choice<infer A, infer O> ? string extends keyof
 type ThrowsOf<N, K> = N extends Choice<infer A, infer O> ? string extends keyof O ? string : ThrowsOf<Selected<O, A, K>, K> : N extends Composite<infer T, infer F> ? string extends keyof F ? string : T['throws'][number] | {
     [H in keyof F]: ThrowsOf<F[H], K>;
 }[keyof F] : N extends Text<string, string, string, infer T, TextHoleScopes> ? T : N extends Part<string, string, infer T> ? T : never;
-type IsUnion$2<T, U = T> = T extends unknown ? [U] extends [T] ? false : true : never;
+type IsUnion$1<T, U = T> = T extends unknown ? [U] extends [T] ? false : true : never;
 /**
  * Why `V` cannot fill a hole, or `never`. A fill typed as a union of texts
  * is refused: the compiler could not tell which one a variant holds, so
  * what it reads would not be exact; `choose` between them instead.
  */
-type FillProblem<V> = true extends IsUnion$2<V> ? 'this fill is typed as one of several texts, so the compiler cannot tell which a variant holds: choose between them with `choose(…)`' : SingleFillProblem<V>;
+type FillProblem<V> = true extends IsUnion$1<V> ? 'this fill is typed as one of several texts, so the compiler cannot tell which a variant holds: choose between them with `choose(…)`' : SingleFillProblem<V>;
 type SingleFillProblem<V> = V extends Expr<Codec, infer P> ? [keyof P] extends [never] ? never : 'a constant fill binds nothing: put the binding in a `.surql` fragment' : V extends Text<infer Holes, string, string, string, TextHoleScopes> ? [Holes] extends [never] ? never : `this fill is a template with holes (${Holes}): compose it first` : V extends TextNode ? never : 'a hole takes a generated text or part, `compose(…)`, `choose(…)`, `literal(…)` or `empty`, not raw SurrealQL';
 /**
  * `F`, when it fills exactly the holes of `T`. Otherwise a fill for a hole
@@ -1730,6 +1942,9 @@ type RangeParams<R> = KeyParams<BoundOf<R, 'from'>> & KeyParams<BoundOf<R, 'afte
  */
 declare const idRange: <T extends PureTable, const R extends RangeBounds>(table: T, bounds: CheckedRange<T, R>) => IdRange<T["name"], RangeParams<R>>;
 
+/** Renames variables outside strings, comments and quoted identifiers when safe. */
+declare const renameNames: (sql: string, names: Readonly<Record<string, string>>) => string | undefined;
+
 /**
  * `SELECT` from a generated table descriptor.
  *
@@ -2065,7 +2280,7 @@ declare const select: {
         readonly [field: string]: Operand;
     }>(table: T, index: UniqueIndex<T, N>, values: UniqueValues<T, N, V>): Select<T, ParamsOfAll<V[keyof V]>, StoredRow<T>, true>;
 };
-type IsUnion$1<U, All = U> = U extends unknown ? [All] extends [U] ? false : true : never;
+type IsUnion<U, All = U> = U extends unknown ? [All] extends [U] ? false : true : never;
 /**
  * The table whose records the traversal `R` of store `S` yields, when it
  * is one table of the store; otherwise a message saying why `R` is no
@@ -2073,7 +2288,7 @@ type IsUnion$1<U, All = U> = U extends unknown ? [All] extends [U] ? false : tru
  */
 type ReachedTable<S, R> = R extends {
     readonly [TraversalTypeId]: unknown;
-} ? LinkTables<CodecOf<R>['Encoded']> extends infer Tb ? [Tb] extends [never] ? 'a select reads the records of a graph step or a recursive path' : string extends Tb ? 'the records of this step can be of any table, so a select has no row to read them with' : true extends IsUnion$1<Tb> ? 'the records of this step are of several tables, and a select reads the rows of one' : Extract<TableIn<S, Tb>, PureTable> : never : "a select reads the records of a graph step or a recursive path, like `outgoing(store, param('who', PersonId), 'knows')`";
+} ? LinkTables<CodecOf<R>['Encoded']> extends infer Tb ? [Tb] extends [never] ? 'a select reads the records of a graph step or a recursive path' : string extends Tb ? 'the records of this step can be of any table, so a select has no row to read them with' : true extends IsUnion<Tb> ? 'the records of this step are of several tables, and a select reads the rows of one' : Extract<TableIn<S, Tb>, PureTable> : never : "a select reads the records of a graph step or a recursive path, like `outgoing(store, param('who', PersonId), 'knows')`";
 /** `R`, when it is a subject {@link selectFrom} takes; otherwise the message. */
 type ReachedSubject<S, R> = ReachedTable<S, R> extends PureTable ? R : ReachedTable<S, R>;
 /**
@@ -2407,393 +2622,4 @@ declare const evaluate: <S extends Codec, P extends Params>(expr: Expr<S, P>, na
     readonly writes?: boolean;
 }) => Statement<Simplify<P>, S>;
 
-/**
- * `CREATE`, `UPDATE`, `UPSERT`, `DELETE`, `RELATE`, `INSERT` and
- * `INSERT RELATION` from generated table descriptors.
- *
- * Data is bound, never inlined, and must fit the schema the descriptor
- * declares for the operation (`create`, `merge`, `content`). The result
- * codec follows from the target and the `RETURN` clause:
- *
- * - one record that the statement makes (`CREATE ONLY`, `RELATE ONLY`,
- *   `UPSERT ONLY $id`): the row;
- * - one record by id (`UPDATE ONLY $id`, `DELETE ONLY $id`): the row, or
- *   NONE when the record does not exist or the condition does not hold;
- * - a table, and every `INSERT`: an array of rows.
- *
- * `RETURN BEFORE` is NONE for a record the statement made (an `UPSERT` or
- * `INSERT` that created it), `RETURN AFTER` NONE for a deleted one, and
- * `RETURN DIFF` each record's JSON Patch ({@link Diff}).
- */
-
-/** How many records a write addresses. */
-type Shape = 'one' | 'maybe' | 'many';
-/** The result of a write returning rows of codec `Row`. */
-type WriteResult<Row extends Codec, S extends Shape> = S extends 'one' ? Row : S extends 'maybe' ? Schema.UndefinedOr<Row> : Schema.$Array<Row>;
-/** The result of a write with `RETURN NONE`. */
-type NoResult<S extends Shape> = S extends 'many' ? Schema.Tuple<readonly []> : Schema.Undefined;
-/** The schema a table declares for an operation, or `never` without one. */
-type OperationOf<T extends PureTable, O extends 'create' | 'merge' | 'content'> = T extends {
-    readonly [K in O]: infer C extends Codec;
-} ? C : never;
-/** The top-level fields `S` sends that `Target` does not have. */
-type ExtraFields<S, Target> = S extends object ? Exclude<keyof S, keyof Target> & string : never;
-/** The top-level fields an object of type `A` always has. */
-type RequiredFields<A> = {
-    [K in keyof A]-?: Record<never, never> extends Pick<A, K> ? never : K;
-}[keyof A];
-/** The top-level fields both send, where `S` sends what `Target` refuses. */
-type WrongFields<S, Target> = {
-    [K in keyof S & keyof Target]-?: [S[K]] extends [Target[K]] ? never : K;
-}[keyof S & keyof Target] & string;
-/**
- * Data of encoded type `S` for a schema of encoded type `Target`: `V` when
- * it fits, otherwise a message naming what does not, read in this order: a
- * value that is not an object, a field `Target` requires that `S` may leave
- * out, a field whose value `Target` refuses, any other mismatch, and a field
- * `Target` does not have.
- */
-/** Whether `A` is a union. */
-type IsUnion<A, Whole = A> = A extends unknown ? [Whole] extends [A] ? false : true : never;
-/**
- * The fields `S` sends below `Path` that `Target` does not have, as paths
- * (`settings.notify.x`, `phones[*].x`), when both are objects or arrays.
- * It descends only where the two types differ and `Target` is not a union,
- * so it follows the target schema's own nesting and stops with it: at a
- * type `S` shares, at an open record (whose keys are all accepted), and at
- * a union (whose member is not known).
- */
-type ExtraBelow<S, Target, Path extends string> = [Target] extends [S] ? never : true extends IsUnion<Target> ? never : Target extends ReadonlyArray<infer TargetItem> ? S extends ReadonlyArray<infer Item> ? ExtraBelow<NonNullable<Item>, NonNullable<TargetItem>, `${Path}[*]`> : never : [Target] extends [object] ? S extends object ? `${Path}.${Exclude<keyof S, keyof Target> & string}` | NestedExtra<S, Target, `${Path}.`> : never : never;
-/** {@link ExtraBelow} for every field `S` and `Target` share. */
-type NestedExtra<S, Target, Prefix extends string> = {
-    [K in keyof S & keyof Target & string]-?: ExtraBelow<NonNullable<S[K]>, NonNullable<Target[K]>, `${Prefix}${K}`>;
-}[keyof S & keyof Target & string];
-/**
- * Data of encoded type `S` for a schema of encoded type `Target`: `V` when
- * it fits, otherwise a message naming what does not, read in this order: a
- * value that is not an object, a field `Target` requires that `S` may leave
- * out, a field whose value `Target` refuses, any other mismatch, a field
- * `Target` does not have, and one inside a nested object or an array
- * element (SurrealDB 3.3 and 4.0 refuse an undeclared key of a declared
- * child object at any depth; 4.0 refuses one in an array element, which 3.3
- * stores and the element's closed schema then cannot read).
- */
-type FitsEncoded<S, Target, V, Table extends string, Clause extends string> = [
-    S
-] extends [Target] ? [ExtraFields<S, Target>] extends [never] ? [NestedExtra<S, Target, ''>] extends [never] ? V : `\`${NestedExtra<S, Target, ''>}\` is not a field \`${Table}\` accepts in ${Clause}` : `\`${ExtraFields<S, Target>}\` is not a field \`${Table}\` accepts in ${Clause}` : [S] extends [object] ? [Exclude<RequiredFields<Target>, RequiredFields<S>>] extends [never] ? [WrongFields<S, Target>] extends [never] ? `this value is not what \`${Table}\` accepts in ${Clause}` : `\`${WrongFields<S, Target>}\` is not a value \`${Table}\` accepts in ${Clause}` : `\`${Exclude<RequiredFields<Target>, RequiredFields<S>> & string}\` is required by \`${Table}\` in ${Clause}` : `this value is not an object, which \`${Table}\` takes in ${Clause}`;
-/**
- * `V`, the data expression of codec `S`, when `S` may be bound as the data
- * of an operation whose schema is `Target`: what it sends is what the
- * schema sends, with no field the schema does not have (SurrealDB refuses
- * one, and assignability alone would let it through). An open schema (a
- * `FLEXIBLE` object, a schemaless table) accepts any field. Otherwise the
- * data's expected type is a message naming the first field that does not
- * fit, with the table and the clause (`CREATE`, `MERGE`, …).
- */
-type Fits<Target extends Codec, S extends Codec, V, Table extends string, Clause extends string> = [Target] extends [never] ? `\`${Table}\` takes no data in ${Clause}` : FitsEncoded<S['Encoded'], Target['Encoded'], V, Table, Clause>;
-/** A table that is a relation with declared endpoints. */
-type RelationTable = PureTable & {
-    readonly edge: NonNullable<PureTable['edge']>;
-};
-/**
- * `V`, the endpoint expression of codec `S`, when its decoded id is one of
- * the relation's declared endpoint ids (brands included) or the relation
- * declares none; otherwise the expected type is `Message`.
- */
-type Endpoint<Accepted extends ReadonlyArray<Codec>, S extends Codec, V, Message extends string> = [Accepted[number]] extends [never] ? V : [S['Type']] extends [Accepted[number]['Type']] ? V : Message;
-/**
- * One operation of a JSON Patch, as SurrealDB writes them for `RETURN DIFF`:
- * `add`, `remove`, `replace` (the path `""` and the whole record for a
- * created one, NONE for a deleted one) and `change`, whose value is a text
- * patch of a string. SurrealDB 3.3 and 4.0 write these four and no other
- * (`test/conformance.test.ts` pins them). Values are native SDK values.
- */
-declare const PatchOperation: Schema.Union<readonly [Schema.Struct<{
-    readonly op: Schema.Literal<"add">;
-    readonly path: Schema.String;
-    readonly value: Schema.Codec<SurrealValue, SurrealValue, never, never>;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"remove">;
-    readonly path: Schema.String;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"replace">;
-    readonly path: Schema.String;
-    readonly value: Schema.optional<Schema.Codec<SurrealValue, SurrealValue, never, never>>;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"change">;
-    readonly path: Schema.String;
-    readonly value: Schema.String;
-}>]>;
-type PatchOperation = typeof PatchOperation.Type;
-/** What `RETURN DIFF` yields for one record: its JSON Patch. */
-declare const Diff: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
-    readonly op: Schema.Literal<"add">;
-    readonly path: Schema.String;
-    readonly value: Schema.Codec<SurrealValue, SurrealValue, never, never>;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"remove">;
-    readonly path: Schema.String;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"replace">;
-    readonly path: Schema.String;
-    readonly value: Schema.optional<Schema.Codec<SurrealValue, SurrealValue, never, never>>;
-}>, Schema.Struct<{
-    readonly op: Schema.Literal<"change">;
-    readonly path: Schema.String;
-    readonly value: Schema.String;
-}>]>>;
-type Diff = typeof Diff.Type;
-/** The codec of {@link Diff}. */
-type DiffCodec = typeof Diff;
-/**
- * `M`, the `RETURN` mode a caller wrote, when the statement has it;
- * otherwise a message saying why not.
- */
-type ReturnMode<M, Allowed extends string, Verb extends string> = [
-    M
-] extends [Allowed] ? M : M extends 'before' ? `${Verb} has no RETURN BEFORE: a record it makes had no state before` : `\`${M & string}\` is not a RETURN mode of ${Verb}`;
-/** A `CREATE ONLY` under construction; `R` is the codec of its result. */
-interface Create<T extends PureTable, P extends Params, R extends Codec> {
-    /** `CONTENT`: the new record's data, as the table's create schema. */
-    readonly content: <S extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'create'>, S, Expr<S, P2>, T['name'], 'CREATE'>) => Create<T, P & P2, R>;
-    /**
-     * `RETURN NONE`, `RETURN AFTER` (the default), `RETURN DIFF` (the
-     * record's JSON Patch) or chosen expressions. `RETURN BEFORE` is refused:
-     * a created record had no state before.
-     */
-    readonly returning: {
-        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'diff', 'CREATE'>): Create<T, P, M extends 'none' ? Schema.Undefined : M extends 'after' ? StoredRow<T> : DiffCodec>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Create<T, P & ParamsOfAll<F[keyof F]>, ProjectedCodec<F>>;
-    };
-    /** `RETURN VALUE`: one expression of the created record. */
-    readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Create<T, P & P2, RowCodec<S>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/**
- * `CREATE ONLY table`, or `CREATE ONLY $id` with a record id expression of
- * that table. Returns the created row unless told otherwise.
- */
-declare const create: {
-    <T extends PureTable>(table: T): Create<T, NoParams, StoredRow<T>>;
-    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): Create<T, P, StoredRow<T>>;
-};
-/** An `UPDATE` under construction; `R` is the codec of its result. */
-interface Update<T extends PureTable, P extends Params, R extends Codec, S extends Shape> {
-    /** Adds a condition. Several `where` calls must all hold. */
-    readonly where: <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Update<T, P & P2, R, S>;
-    /**
-     * `RETURN NONE`, `AFTER` (the default), `BEFORE`, `DIFF` (each record's
-     * JSON Patch) or chosen expressions.
-     */
-    readonly returning: {
-        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'UPDATE'>): Update<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : WriteResult<StoredRow<T>, S>, S>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Update<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
-    };
-    /** `RETURN VALUE`: one expression of each changed record. */
-    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Update<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/** An `UPDATE` that still needs its data. */
-interface UpdateTarget<T extends PureTable, P extends Params, S extends Shape> {
-    /**
-     * `MERGE`: omitted fields keep their value; `undefined` (NONE) removes a
-     * removable field. The data is the table's merge schema.
-     */
-    readonly merge: <D extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'merge'>, D, Expr<D, P2>, T['name'], 'MERGE'>) => Update<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
-    /** `CONTENT`: replaces the writable fields, as the table's content schema. */
-    readonly content: <D extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'content'>, D, Expr<D, P2>, T['name'], 'CONTENT'>) => Update<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
-}
-/**
- * `UPDATE table … WHERE`, returning every row it changed, or
- * `UPDATE ONLY $id` with a record id expression, returning the row or NONE
- * when the record does not exist. `UPDATE` never creates a record.
- */
-declare const update: {
-    <T extends PureTable>(table: T): UpdateTarget<T, NoParams, 'many'>;
-    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): UpdateTarget<T, P, 'maybe'>;
-};
-/**
- * `V`, the data expression of codec `S`, when `S` fits both `First` and
- * `Second`: an `UPSERT` creates the record when it is missing and changes
- * it when it is there, so its data must be what both accept. Otherwise the
- * message of the first that refuses it.
- */
-type FitsBoth<First extends Codec, Second extends Codec, S extends Codec, V, Table extends string, Clause extends string> = Fits<First, S, V, Table, Clause> extends V ? Fits<Second, S, V, Table, Clause> : Fits<First, S, V, Table, Clause>;
-/** An `UPSERT` under construction; `R` is the codec of its result. */
-interface Upsert<T extends PureTable, P extends Params, R extends Codec, S extends 'one' | 'many'> {
-    /**
-     * Adds a condition (an `UPSERT` of a table only): the records it holds
-     * for are changed, and one is created when none does.
-     */
-    readonly where: S extends 'many' ? <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Upsert<T, P & P2, R, S> : (predicate: 'an UPSERT of one record creates or changes that record; it takes no condition') => never;
-    /**
-     * `RETURN NONE`, `AFTER` (the default), `BEFORE` (NONE for a record the
-     * statement created), `DIFF` or chosen expressions.
-     */
-    readonly returning: {
-        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'UPSERT'>): Upsert<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : M extends 'before' ? WriteResult<Schema.UndefinedOr<StoredRow<T>>, S> : WriteResult<StoredRow<T>, S>, S>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Upsert<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
-    };
-    /** `RETURN VALUE`: one expression of each record. */
-    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Upsert<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/** An `UPSERT` that still needs its data. */
-interface UpsertTarget<T extends PureTable, P extends Params, S extends 'one' | 'many'> {
-    /**
-     * `MERGE`: the record's fields to set. The data must fit the table's
-     * create schema (the record may be created) and its merge schema (it
-     * may be changed).
-     */
-    readonly merge: <D extends Codec, P2 extends Params>(data: FitsBoth<OperationOf<T, 'create'>, OperationOf<T, 'merge'>, D, Expr<D, P2>, T['name'], 'UPSERT … MERGE'>) => Upsert<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
-    /**
-     * `CONTENT`: the record's writable fields, replacing them when it
-     * exists. The data must fit the table's create and content schemas.
-     */
-    readonly content: <D extends Codec, P2 extends Params>(data: FitsBoth<OperationOf<T, 'create'>, OperationOf<T, 'content'>, D, Expr<D, P2>, T['name'], 'UPSERT … CONTENT'>) => Upsert<T, P & P2, WriteResult<StoredRow<T>, S>, S>;
-}
-/**
- * `UPSERT ONLY $id`: creates the record when it is missing and changes it
- * when it is there, returning it; or `UPSERT table … WHERE`, changing every
- * record the condition holds for, or creating one when none does, and
- * returning them all. Without a condition, `UPSERT table` creates a record.
- *
- * @example
- * const touch = upsert(CounterTable, recordId(CounterTable, param('key', SurrealSchema.String)))
- *   .merge(param('changes', CounterMerge))
- *   .build();
- */
-declare const upsert: {
-    <T extends PureTable>(table: T): UpsertTarget<T, NoParams, 'many'>;
-    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): UpsertTarget<T, P, 'one'>;
-};
-/** A `DELETE` under construction; `R` is the codec of its result. */
-interface Delete<T extends PureTable, P extends Params, R extends Codec, S extends Shape> {
-    /** Adds a condition. Several `where` calls must all hold. */
-    readonly where: <P2 extends Params>(predicate: (row: RowExprs<T>) => Condition<P2>) => Delete<T, P & P2, R, S>;
-    /**
-     * `RETURN NONE` (the default), `BEFORE` (the deleted rows), `AFTER` (NONE
-     * for each deleted record), `DIFF` (each record's JSON Patch) or chosen
-     * expressions of each record as it was (`$before.…`).
-     */
-    readonly returning: {
-        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'before' | 'diff', 'DELETE'>): Delete<T, P, M extends 'none' ? NoResult<S> : M extends 'diff' ? WriteResult<DiffCodec, S> : M extends 'after' ? WriteResult<Schema.Undefined, S> : WriteResult<StoredRow<T>, S>, S>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Delete<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, S>, S>;
-    };
-    /** `RETURN VALUE`: one expression of each deleted record as it was. */
-    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Delete<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/**
- * `DELETE table … WHERE`, or `DELETE ONLY $id` with a record id expression.
- * Returns nothing unless asked for the rows as they were (`'before'`).
- */
-declare const deleteFrom: {
-    <T extends PureTable>(table: T): Delete<T, NoParams, NoResult<'many'>, 'many'>;
-    <T extends PureTable, P extends Params>(table: T, id: IdOf<T, P>): Delete<T, P, NoResult<'maybe'>, 'maybe'>;
-};
-/** A `RELATE ONLY` under construction; `R` is the codec of its result. */
-interface Relate<T extends PureTable, P extends Params, R extends Codec> {
-    /** `CONTENT`: the edge's own fields, as the table's create schema. */
-    readonly content: <S extends Codec, P2 extends Params>(data: Fits<OperationOf<T, 'create'>, S, Expr<S, P2>, T['name'], 'RELATE'>) => Relate<T, P & P2, R>;
-    /**
-     * `RETURN NONE`, `RETURN AFTER` (the default), `RETURN DIFF` or chosen
-     * expressions. `RETURN BEFORE` is refused: a new edge had no state
-     * before.
-     */
-    readonly returning: {
-        <const M extends string>(mode: ReturnMode<M, 'none' | 'after' | 'diff', 'RELATE'>): Relate<T, P, M extends 'none' ? Schema.Undefined : M extends 'after' ? StoredRow<T> : DiffCodec>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Relate<T, P & ParamsOfAll<F[keyof F]>, ProjectedCodec<F>>;
-    };
-    /** `RETURN VALUE`: one expression of the new edge. */
-    readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Relate<T, P & P2, RowCodec<S>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/**
- * `RELATE ONLY $from->table->$to`: one edge between two records. Each
- * endpoint must be a record id the relation declares for that side.
- */
-declare const relate: <T extends RelationTable, From extends Codec, PF extends Params, To extends Codec, PT extends Params>(table: T, from: Endpoint<T["edge"]["in"], From, Expr<From, PF>, `this record id is not an \`in\` endpoint of \`${T["name"]}\``>, to: Endpoint<T["edge"]["out"], To, Expr<To, PT>, `this record id is not an \`out\` endpoint of \`${T["name"]}\``>) => Relate<T, PF & PT, StoredRow<T>>;
-/** The encoded create row of `T`, or none for a table that takes no data. */
-type CreateEncoded<T extends PureTable> = [OperationOf<T, 'create'>] extends [
-    never
-] ? Record<never, never> : OperationOf<T, 'create'>['Encoded'];
-/** What one row of `INSERT INTO table` may hold: the create row and an `id`. */
-type InsertRow<T extends PureTable> = CreateEncoded<T> & {
-    readonly id?: T['id']['Encoded'];
-};
-/** What one row of `INSERT RELATION INTO table` holds: its endpoints too. */
-type InsertRelationRow<T extends RelationTable> = InsertRow<T> & {
-    readonly in: T['edge']['in'][number]['Encoded'];
-    readonly out: T['edge']['out'][number]['Encoded'];
-};
-/**
- * `V`, the data expression of codec `S`, when `S` is one row `Row` or an
- * array of them; otherwise a message naming what does not fit.
- */
-type FitsRows<Row, S extends Codec, V, Table extends string, Clause extends string> = S['Encoded'] extends ReadonlyArray<infer Item> ? FitsEncoded<Item, Row, V, Table, Clause> : FitsEncoded<S['Encoded'], Row, V, Table, Clause>;
-/** The fields of the table's merge schema an assignment may set. */
-type MergeFieldsOf<T extends PureTable> = FieldsOf$1<OperationOf<T, 'merge'>>;
-/**
- * Assignments of `ON DUPLICATE KEY UPDATE` as the callback returned them,
- * `F`, checked: each key a field the table's merge schema has, each value an
- * expression or constant whose stored type is what that field holds.
- */
-type CheckedAssignments<T extends PureTable, F> = {
-    readonly [K in keyof F]: K extends keyof MergeFieldsOf<T> ? F[K] extends Expr | Primitive ? [OperandEncoded<F[K]>] extends [
-        (MergeFieldsOf<T>[K] & Codec)['Encoded']
-    ] ? F[K] : `\`${K & string}\` does not hold this value` : 'an assignment is an expression: inline a constant with `literal`' : `\`${K & string}\` is not a field \`${T['name']}\` accepts in ON DUPLICATE KEY UPDATE`;
-};
-/** An `INSERT` under construction; `R` is the codec of its result. */
-interface Insert<T extends PureTable, P extends Params, R extends Codec> {
-    /**
-     * `ON DUPLICATE KEY UPDATE`: when a row's id or a unique index already
-     * holds its values, set these fields of the existing record instead.
-     * `input` is the row the statement tried to insert (`$input.…`); a value
-     * may also be a binding or a constant. The stored record's own fields
-     * are not offered: SurrealDB 3.3 reads them as NONE there and 4.0 reads
-     * the record, so a statement reading them would mean two things.
-     */
-    readonly onDuplicate: <const F>(set: (input: RowExprs<T>) => CheckedAssignments<T, F>) => Insert<T, P & ParamsOfAll<F[keyof F]>, R>;
-    /**
-     * `RETURN NONE`, `AFTER` (the default), `BEFORE` (NONE for each row the
-     * statement inserted, the record for one it updated), `DIFF` or chosen
-     * expressions.
-     */
-    readonly returning: {
-        (mode: 'none'): Insert<T, P, NoResult<'many'>>;
-        (mode: 'after'): Insert<T, P, WriteResult<StoredRow<T>, 'many'>>;
-        (mode: 'before'): Insert<T, P, WriteResult<Schema.UndefinedOr<StoredRow<T>>, 'many'>>;
-        (mode: 'diff'): Insert<T, P, WriteResult<DiffCodec, 'many'>>;
-        <const F>(fields: (row: RowExprs<T>) => CheckedProjection<F>): Insert<T, P & ParamsOfAll<F[keyof F]>, WriteResult<ProjectedCodec<F>, 'many'>>;
-    };
-    /** `RETURN VALUE`: one expression of each record. */
-    readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Insert<T, P & P2, WriteResult<RowCodec<V>, 'many'>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
-}
-/**
- * `INSERT INTO table $data`: one row, or an array of rows, each the table's
- * create row with an optional `id`. Returns every inserted row (an `INSERT`
- * always returns a list). A row whose id or unique index values are taken
- * fails the statement, unless `.onDuplicate(…)` says what to update.
- *
- * @example
- * const add = insert(PersonTable, param('people', Schema.Array(PersonCreate)))
- *   .onDuplicate((input) => ({ name: input.name }))
- *   .build();
- */
-declare const insert: <T extends PureTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRow<T>, D, Expr<D, P>, T["name"], "INSERT">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
-/**
- * `INSERT RELATION INTO table $data`: one edge, or an array of edges, each
- * with its `in` and `out` endpoints (ids the relation declares) and the
- * table's create row. Returns every inserted edge.
- */
-declare const insertRelation: <T extends RelationTable, D extends Codec, P extends Params>(table: T, data: FitsRows<InsertRelationRow<T>, D, Expr<D, P>, T["name"], "INSERT RELATION">) => Insert<T, P, WriteResult<StoredRow<T>, "many">>;
-
-export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, type Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, type FieldExpr, type Fields, type FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, type IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, type OpenStructCodec, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, type ProjectedCodec, type ProjectedFields, type Projection, type PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type ReadAs, type ReadableStore, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type RejectsNone, type RejectsNoneOf, type Relate, type RelationTable, Result, type Returned, type RowCodec, type RowCodecIn, type RowExprs, type RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, type StoredRow, type StringKeyed, type StructCodec, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type VisibleStore, type VisibleTable, type WithVisible, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, readAs, recordId, recurse, relate, rowOf, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, upsert, variance };
+export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type FitsUpdateRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, ProjectedCodec, PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type RejectsNone, type RejectsNoneOf, type Relate, type RelationTable, Result, type Returned, RowCodec, RowCodecIn, RowExprs, RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, StoredRow, type StringKeyed, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateEach, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, recordId, recurse, relate, renameNames, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, updateEach, upsert, variance };

@@ -2,30 +2,6 @@ import { Schema, DateTime as DateTime$2 } from 'effect';
 import { DateTime as DateTime$1, Duration as Duration$1 } from 'surrealdb';
 
 /**
- * NONE versus NULL versus absent.
- *
- * The SDK decodes SurrealQL NONE as `undefined`, so an object coming back
- * from a query can carry a key whose value is `undefined` where the stored
- * record simply has no value. Exact `optionalKey` schemas reject such keys.
- * `NoneAsAbsent` removes them first; `null` is kept, because NULL is a value.
- */
-
-/**
- * Removes properties whose value is `undefined` from plain objects, at every
- * depth, including inside arrays and sets. Arrays keep their `undefined`
- * elements (an `array<option<T>>` element is positional). Class instances
- * (SDK values) are left untouched.
- */
-declare const stripNone: (value: unknown) => unknown;
-/**
- * Decodes through `schema` after {@link stripNone}, so a NONE that the SDK
- * surfaced as an `undefined` property reads as an absent key. Encoding is
- * exactly the wrapped schema's encoding: an `undefined` property is kept, so
- * a `Merge` value still sends NONE to remove a field.
- */
-declare const NoneAsAbsent: <S extends Schema.Top>(schema: S) => Schema.declareConstructor<S["Type"], S["Encoded"], readonly [S], S["Type"]>;
-
-/**
  * `datetime` and `duration`.
  *
  * Out-of-range values are rejected here because the engine does not reject
@@ -77,4 +53,4 @@ declare const Duration: Schema.declareConstructor<Duration$1, Duration$1, readon
 /** A `duration` literal kind such as `1d`: exactly that duration. */
 declare const DurationLiteral: <const V extends string>(value: V) => Schema.declareConstructor<Duration$1, Duration$1, readonly [], Duration$1>;
 
-export { DATETIME_MAX_SECONDS as D, NoneAsAbsent as N, DATETIME_MIN_SECONDS as a, DURATION_MAX_SECONDS as b, DateTime as c, DateTimeEffect as d, Duration as e, DurationLiteral as f, dateTimeFromString as g, dateTimeToString as h, stripNone as s };
+export { DATETIME_MAX_SECONDS as D, DATETIME_MIN_SECONDS as a, DURATION_MAX_SECONDS as b, DateTime as c, DateTimeEffect as d, Duration as e, DurationLiteral as f, dateTimeFromString as g, dateTimeToString as h };

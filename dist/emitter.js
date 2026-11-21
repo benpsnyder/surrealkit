@@ -946,7 +946,7 @@ var printKind = (kind, ctx, hooks = {}) => {
     case "tuple":
       return `Schema.Tuple([${kind.items.map((item) => printKind(item, ctx)).join(", ")}])`;
     case "objectLiteral": {
-      if (kind.fields.length === 0) return "Schema.Struct({})";
+      if (kind.fields.length === 0) return "SurrealSchema.EmptyObject";
       const entries = kind.fields.map((field) => {
         const value = printKind(field.kind, ctx);
         return `${propertyKey(field.name)}: ${field.optional ? `Schema.optionalKey(${value})` : value}`;
@@ -1232,6 +1232,7 @@ var wrap = (code, presence) => {
 };
 var tabs = (indent) => "	".repeat(indent);
 var struct = (entries, indent, open, world = "native", merge = false) => {
+  if (entries.length === 0 && !open) return "SurrealSchema.EmptyObject";
   const body = entries.length === 0 ? "Schema.Struct({})" : `Schema.Struct({
 ${entries.map(
     ([key, value]) => `${tabs(indent + 1)}${propertyKey(key)}: ${value},`

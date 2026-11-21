@@ -1,7 +1,191 @@
 import { Schema } from 'effect';
 import { DateTime, Decimal, Duration, Uuid } from 'surrealdb';
-import { F as FunctionDescriptor, a as Float, S as SurrealNumber, D as Decimal$1, I as Int64 } from './value-AVjTxjJm.js';
-import { C as Codec, P as Params, N as NoParams } from './statement-CW7bavvY.js';
+import { e as FunctionDescriptor } from './table-iF6L7xrW.js';
+import { B as BindingUses } from './uses-BXJXI3if.js';
+
+/**
+ * A statement: one request to SurrealDB, described as a value.
+ *
+ * The SurrealQL text is static. Every value enters through a named binding
+ * that carries its own codec, so the text never depends on input, and the
+ * final result is decoded by a codec the statement names. Nothing here talks
+ * to a database: `effect-surrealkit/client` runs statements.
+ */
+
+/** A codec that needs no services, so a statement needs only a client. */
+type Codec = Schema.Codec<unknown, unknown, never, never>;
+/** The codec of each named binding of a statement or expression. */
+type Params = {
+    readonly [name: string]: Codec;
+};
+/** No bindings. */
+type NoParams = Record<never, never>;
+/** Flattens an intersection so hovers and errors show one object. */
+type Simplify<A> = {
+    readonly [K in keyof A]: A[K];
+} & {};
+type OptionalNames<P extends Params> = {
+    [K in keyof P]: undefined extends P[K]['Type'] ? K : never;
+}[keyof P];
+/**
+ * The values a caller supplies: one per binding, as the codec's decoded type,
+ * in the order the statement reads them. A binding whose codec accepts
+ * `undefined` (NONE) may be omitted.
+ */
+type Input<P extends Params> = Simplify<{
+    readonly [K in keyof P as undefined extends P[K]['Type'] ? never : K]: P[K]['Type'];
+} & {
+    readonly [K in keyof P as undefined extends P[K]['Type'] ? K : never]?: P[K]['Type'];
+}>;
+type RequiredNames<P extends Params> = Exclude<keyof P, OptionalNames<P>>;
+/**
+ * The expected type of the input of a statement reading `P`, given the
+ * input as the caller wrote it, `I`: `Input<P>`, unless `I` leaves a
+ * binding without a value and names nothing else, when it is a message
+ * naming each such binding. The compiler reports an unknown or misspelt
+ * name and a wrong value against `Input<P>` as it always does.
+ *
+ * The first branch is never taken (no statement reads `never`); it is where
+ * the compiler infers `I` from the argument. It tests `P`, not `I`, because
+ * the compiler narrows `I` to `never` inside a branch that tests `I`
+ * against `never`. The second tests `I` against `Input<P>` itself, so
+ * generic code that forwards an `Input<P>` passes.
+ */
+type CheckedInput<P extends Params, I> = [P] extends [never] ? I : [I] extends [Input<P>] ? Input<P> : [Exclude<keyof I, keyof P>] extends [never] ? [Exclude<RequiredNames<P>, keyof I>] extends [never] ? Input<P> : `binding \`${Exclude<RequiredNames<P>, keyof I> & string}\` has no value` : Input<P>;
+declare const StatementTypeId = "~effect-surrealkit/Statement";
+/**
+ * - `sql`: the SurrealQL text, one or more statements.
+ * - `params`: the codec of every binding the text reads. Values are encoded
+ *   through them before anything is sent.
+ * - `result`: decodes the result at `valueSlot`.
+ * - `slots`: how many results the text returns, one per top-level statement.
+ *   Every one but the one at `valueSlot` must be NONE (`LET`, guards,
+ *   `BEGIN`, `COMMIT`).
+ * - `valueSlot`: the 1-based position of the result `result` decodes,
+ *   `slots` unless the text ends with transaction control (`sequence`
+ *   derives it; `make` takes it as declared).
+ * - `throws`: the `THROW` messages the text can raise, which a client
+ *   surfaces as a typed error rather than a request failure.
+ * - `defines`: the names the text `LET`s at the top level. Statements in one
+ *   transaction share one variable scope, so a client refuses to bind a name
+ *   another statement of the same transaction defines.
+ * - `transactional`: the text writes its own `BEGIN`, `COMMIT` or `CANCEL`,
+ *   so it cannot run inside a client's `transaction`.
+ * - `writes`: whether the text changes data or schema, in three states.
+ *   `true`: it certainly does, so a client that cannot decode its result
+ *   says its writes are committed. `false`: it certainly does not, so a
+ *   result that does not decode is a plain `StatementDecodeError`. Absent:
+ *   unknown (authored text can call a function that writes), so a client
+ *   says any writes it made are committed. Write builders set `true`, a
+ *   `select` of stored fields `false`; `sequence` derives it from its
+ *   parts; `make` takes it as declared.
+ * - `nonEmpty`: the last result is a row, or a non-empty list, whenever
+ *   the statement applies (`create` and `relate` returning rows), so a
+ *   client reports NONE or an empty list as an empty result, which
+ *   permissions cause.
+ * - `sources`: where the text came from (the `source` of each part), for
+ *   messages and tracing.
+ * - `variant`: for a variant of a statement family, the key that selected
+ *   it (`axis=value, …`). The statement's name is the family's, so its
+ *   metrics are the family's; a run records the key on its span.
+ * - `throwSites`: for a `THROW` message, the source and lines of the
+ *   first part that declares it with both.
+ * - `tables`, `functions` and `openTargets`: the static tables the text
+ *   reads and writes, the custom functions it calls, and whether some
+ *   target is not a static name, so the lists may be incomplete.
+ *   `sequence` sets them, the union over its parts; builders leave them
+ *   out; `make` takes them as declared.
+ */
+interface Statement<P extends Params = Params, R extends Codec = Codec, Throws extends string = never> {
+    readonly [StatementTypeId]: typeof StatementTypeId;
+    readonly name: string;
+    readonly sql: string;
+    readonly params: P;
+    readonly result: R;
+    readonly slots: number;
+    readonly valueSlot: number;
+    readonly throws: ReadonlyArray<Throws>;
+    readonly defines: ReadonlyArray<string>;
+    readonly transactional: boolean;
+    readonly writes?: boolean;
+    readonly nonEmpty?: boolean;
+    readonly sources?: ReadonlyArray<string>;
+    readonly variant?: string;
+    readonly throwSites?: Readonly<Record<string, ThrowSite>>;
+    readonly tables?: {
+        readonly read: ReadonlyArray<string>;
+        readonly written: ReadonlyArray<string>;
+    };
+    readonly functions?: ReadonlyArray<string>;
+    readonly openTargets?: boolean;
+    /**
+     * What each binding is used as, where the analyzer could tell: an
+     * argument of a custom function, the key of a `type::record`, or a
+     * field of the one table a query targets. `sequence` sets it, merged
+     * over its parts for the names that remain bindings, when there is any;
+     * `make` takes it as declared.
+     */
+    readonly uses?: BindingUses;
+}
+/** Where a declared `THROW` message comes from. */
+interface ThrowSite {
+    readonly source: string;
+    readonly lines: ReadonlyArray<number>;
+}
+/** Any statement, whatever it binds, returns and throws. */
+type AnyStatement = Statement<Params, Codec, string>;
+/** The decoded result of a statement. */
+type Result<S> = S extends Statement<Params, infer R, string> ? R['Type'] : never;
+/** The messages a statement declares it can `THROW`. */
+type Thrown<S> = S extends Statement<Params, Codec, infer T> ? T : never;
+declare const isStatement: (value: unknown) => value is AnyStatement;
+/**
+ * Declares a statement from its parts. The text is stored with exactly one
+ * final `;`. Nothing checks that `params` are the
+ * names `sql` reads, nor that `defines` and `transactional` say what the text
+ * does, so prefer a builder (`select`, `create`, …) or, for authored
+ * SurrealQL, `part` and `sequence`, which derive all of it from the text.
+ *
+ * One cheap check runs: text that appears to `LET` a name at the top level
+ * must declare `defines`, since a transaction relies on it to refuse a
+ * binding that the `LET` would shadow.
+ */
+declare const make: <const P extends Params, R extends Codec, const Throws extends string = never>(options: {
+    readonly name?: string;
+    readonly sql: string;
+    readonly params: P;
+    readonly result: R;
+    readonly slots?: number;
+    /** The 1-based result `result` decodes, in `1..slots`. Default `slots`. */
+    readonly valueSlot?: number;
+    readonly throws?: ReadonlyArray<Throws>;
+    /** The names the text `LET`s at the top level. Default none. */
+    readonly defines?: ReadonlyArray<string>;
+    /** The text writes its own `BEGIN`, `COMMIT` or `CANCEL`. Default false. */
+    readonly transactional?: boolean;
+    /** The text can change data or schema. Default false. */
+    readonly writes?: boolean;
+    /**
+     * The last result is a row or a non-empty list whenever the statement
+     * applies. Default false.
+     */
+    readonly nonEmpty?: boolean;
+    /** Where the text came from. */
+    readonly sources?: ReadonlyArray<string>;
+    /** The source and lines of each declared `THROW` message. */
+    readonly throwSites?: Readonly<Record<string, ThrowSite>>;
+    /** The static tables the text reads and writes. Default unknown. */
+    readonly tables?: {
+        readonly read: ReadonlyArray<string>;
+        readonly written: ReadonlyArray<string>;
+    };
+    /** The custom functions the text calls. Default unknown. */
+    readonly functions?: ReadonlyArray<string>;
+    /** Some target is not a static table name. Default unknown. */
+    readonly openTargets?: boolean;
+    /** What each binding is used as, where known. Default unknown. */
+    readonly uses?: BindingUses;
+}) => Statement<P, R, Throws>;
 
 /**
  * Expressions: SurrealQL fragments as plain values.
@@ -304,81 +488,4 @@ type CheckedArguments<F extends PureFunction, A extends ReadonlyArray<unknown>> 
  */
 declare const call: <F extends PureFunction, const A extends ReadonlyArray<unknown>>(fn: CallTarget<F, A>, ...args: CheckedArguments<F, A>) => Expr<F["returns"], ParamsOfAll<A[number]>>;
 
-/**
- * Arithmetic on numbers: `+`, `-`, `*` and `/`, with the result codec the
- * engine's answer decodes with.
- *
- * SurrealDB 3.3 and 4.0 agree (`test/conformance.test.ts` pins them): two
- * ints give an int, which fails the statement when it overflows a signed
- * 64-bit int ("Cannot perform addition with …"); an int and a float, or two
- * floats, a float (Infinity past the float range); any decimal operand a
- * decimal. Division of two ints truncates toward zero (`7 / 2` is `3`,
- * `-7 / 2` is `-3`), and division by zero, or by NONE, is the float NaN or
- * ±Infinity whatever the operands, so a quotient decodes as its kind or a
- * float. NONE, NULL, strings, booleans and arrays are refused as operands of
- * `+`, `-` and `*` ("Cannot perform addition with 'int' and 'none'"), so an
- * operand here is a number, never possibly NONE.
- *
- * A float binding is cast (`<float>$f`): the SDK sends a whole JS number as
- * an int whatever its codec, so `$f / 2` with `f = 7` would divide as ints
- * (`3`) on both engines. A stored float field is a float already.
- *
- * An operand's kind (int, float, decimal, or any number) is read from its
- * codec: the generated `Int`, `Int64`, `Float`, `Decimal` and
- * `SurrealNumber`, `Schema.Number` as a float, and a numeric literal by its
- * value. The compiler sees ints and floats alike as `number`, so the
- * result's decoded type is `number` for both; the codec is exact.
- */
-
-/** An operand of arithmetic: a numeric expression, or a number to inline. */
-type NumericOperand = Expr | number | bigint;
-type EncodedOf<V> = V extends Expr<infer S, Params> ? S['Encoded'] : V;
-/**
- * `V`, when it is a number SurrealDB computes with; otherwise a message
- * saying what SurrealDB refuses.
- */
-type Numeric<V> = [EncodedOf<V>] extends [never] ? V : undefined extends EncodedOf<V> ? 'this operand may be NONE, and SurrealDB refuses NONE in arithmetic (`1 + NONE` fails the statement): read it where it is set' : null extends EncodedOf<V> ? 'this operand may be NULL, and SurrealDB refuses NULL in arithmetic' : [EncodedOf<V>] extends [number | bigint | Decimal] ? V : 'arithmetic takes numbers: SurrealDB refuses a string, a boolean, an array or another value as an operand of + - * /';
-/** The kind of number a stored type is, as far as the compiler can tell. */
-type KindOf<E> = [E] extends [Decimal] ? 'decimal' : [E] extends [number] ? 'number' : [E] extends [number | bigint] ? 'int64' : 'any';
-type Joined<A, B> = 'any' extends A | B ? 'any' : 'decimal' extends A | B ? 'decimal' : 'int64' extends A | B ? 'number' extends A | B ? 'mixed' : 'int64' : 'number';
-type ResultOf<K, Quotient extends boolean> = K extends 'any' ? typeof SurrealNumber : K extends 'decimal' ? Quotient extends true ? Schema.Codec<Decimal | number, Decimal | number, never, never> : typeof Decimal$1 : K extends 'int64' ? Quotient extends true ? Schema.Codec<Int64 | number, number | bigint, never, never> : typeof Int64 : K extends 'mixed' ? Schema.Codec<Int64 | number, number | bigint, never, never> : Schema.Codec<number, number, never, never>;
-/** The codec of `left op right`: of a quotient, when `Quotient`. */
-type ArithmeticCodec<A, B, Quotient extends boolean> = ResultOf<Joined<KindOf<EncodedOf<A>>, KindOf<EncodedOf<B>>>, Quotient>;
-/**
- * `true` when a value of stored type `E` may be a decimal, or an array
- * holding one; `false` when it is certainly an int, a float, NONE or NULL
- * (or an array of them). The compiler's answer is never narrower than
- * {@link holdsDecimal}'s.
- */
-type HoldsDecimal<E> = unknown extends E ? true : [E] extends [number | bigint | undefined | null] ? false : [E] extends [ReadonlyArray<infer I> | undefined | null] ? HoldsDecimal<I> : true;
-/**
- * A float, or a decimal: what a function SurrealDB computes in the kind of
- * its input returns when that input may hold a decimal (`math::sqrt`,
- * `math::stddev`); some inputs still give a float (the spread of one value
- * is the int 0, the square root of a negative decimal NaN).
- */
-declare const FloatOrDecimal: Schema.Union<readonly [Schema.declareConstructor<number, number, readonly [], number>, Schema.declareConstructor<Decimal, Decimal, readonly [], Decimal>]>;
-/** {@link FloatOrDecimal} when `E` may hold a decimal, otherwise a float. */
-type FloatOrDecimalOf<E> = HoldsDecimal<E> extends false ? typeof Float : typeof FloatOrDecimal;
-/**
- * `left + right`: an int for two ints (an overflow fails the statement), a
- * float with a float, a decimal with a decimal.
- *
- * @example
- * select(PersonTable).value((row) => add(row.score, param('bonus', SurrealSchema.Int)));
- * // SELECT VALUE score + $bonus FROM ⟨person⟩
- */
-declare const add: <const A, const B>(left: Numeric<A>, right: Numeric<B>) => Expr<ResultOf<Joined<KindOf<EncodedOf<A>>, KindOf<EncodedOf<B>>>, false>, OperandParams<A> & OperandParams<B>>;
-/** `left - right`, of the kinds {@link add} gives. */
-declare const sub: <const A, const B>(left: Numeric<A>, right: Numeric<B>) => Expr<ResultOf<Joined<KindOf<EncodedOf<A>>, KindOf<EncodedOf<B>>>, false>, OperandParams<A> & OperandParams<B>>;
-/** `left * right`, of the kinds {@link add} gives. */
-declare const mul: <const A, const B>(left: Numeric<A>, right: Numeric<B>) => Expr<ResultOf<Joined<KindOf<EncodedOf<A>>, KindOf<EncodedOf<B>>>, false>, OperandParams<A> & OperandParams<B>>;
-/**
- * `left / right`: two ints truncate toward zero (`7 / 2` is `3`); a float
- * or a decimal divides exactly; division by zero is a float, NaN or
- * ±Infinity, whatever the operands, so the result decodes as its kind or
- * a float.
- */
-declare const div: <const A, const B>(left: Numeric<A>, right: Numeric<B>) => Expr<ResultOf<Joined<KindOf<EncodedOf<A>>, KindOf<EncodedOf<B>>>, true>, OperandParams<A> & OperandParams<B>>;
-
-export { type ArithmeticCodec as A, isExpr as B, type CodecOf as C, isNone as D, type Expr as E, type FloatOrDecimalOf as F, isNotNone as G, isPath as H, type ItemOf as I, literal as J, lt as K, type LiteralCodec as L, lte as M, type Numeric as N, type OrNone as O, type Path as P, mul as Q, type Reader as R, ne as S, not as T, or as U, param as V, paramsOf as W, parent as X, sqlOf as Y, sub as Z, unsafeExpr as _, type Primitive as a, type ParamsOfAll as b, type Comparable as c, type ParamsOf as d, type OperandEncoded as e, type OperandParams as f, type Operand as g, type CallArguments as h, type CastKind as i, type Collection as j, type ElementOf as k, ExprTypeId as l, type NumericOperand as m, type PureFunction as n, add as o, and as p, at as q, call as r, cast as s, codecOf as t, contains as u, div as v, eq as w, gt as x, gte as y, inside as z };
+export { or as $, type AnyStatement as A, contains as B, type Codec as C, eq as D, type Expr as E, gt as F, gte as G, inside as H, type ItemOf as I, isExpr as J, isNone as K, type LiteralCodec as L, isNotNone as M, type NoParams as N, type OrNone as O, type Params as P, isPath as Q, type Result as R, type Statement as S, type ThrowSite as T, isStatement as U, literal as V, lt as W, lte as X, make as Y, ne as Z, not as _, type Primitive as a, param as a0, paramsOf as a1, parent as a2, sqlOf as a3, unsafeExpr as a4, type ParamsOfAll as b, type Simplify as c, type OperandEncoded as d, type Comparable as e, type CodecOf as f, type ParamsOf as g, type Path as h, type OperandParams as i, type Operand as j, type CallArguments as k, type CastKind as l, type CheckedInput as m, type Collection as n, type ElementOf as o, ExprTypeId as p, type Input as q, type PureFunction as r, type Reader as s, StatementTypeId as t, type Thrown as u, and as v, at as w, call as x, cast as y, codecOf as z };

@@ -1,10 +1,22 @@
 import { Effect, Context, Layer, Scope } from 'effect';
 import { Surreal, SurrealSession } from 'surrealdb';
-import { Client, SurrealClient, StatementError } from './client.js';
+import { C as Client, v as SurrealClient, o as StatementError, t as StatementUnsupported, Q as Queryable } from './bulk-CRnalAeb.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { P as Params, C as Codec, S as Statement, I as Input } from './statement-CW7bavvY.js';
+import { P as Params, C as Codec, S as Statement, q as Input } from './expr-Bt9oR1pC.js';
+import './live-n0zkmyK9.js';
+import './row-CLBe1uWx.js';
+import './table-iF6L7xrW.js';
 import './uses-BXJXI3if.js';
+
+interface LiveHandle {
+    readonly messages: AsyncIterable<{
+        readonly action: 'CREATE' | 'UPDATE' | 'DELETE' | 'KILLED';
+        readonly id?: unknown;
+        readonly value?: unknown;
+    }>;
+    readonly kill: () => PromiseLike<void>;
+}
 
 declare const TestingError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "TestingError";
@@ -241,6 +253,8 @@ declare const expectNoIndex: <P extends Params, R extends Codec, T extends strin
  */
 
 declare const ReplyTypeId = "~effect-surrealkit/testing/Reply";
+type LiveMessage = LiveHandle['messages'] extends AsyncIterable<infer Message> ? Message : never;
+type Feature = StatementUnsupported['feature'];
 /** What a scripted statement answers. */
 type Reply = {
     readonly [ReplyTypeId]: 'result';
@@ -254,6 +268,12 @@ type Reply = {
 } | {
     readonly [ReplyTypeId]: 'failure';
     readonly message: string;
+} | {
+    readonly [ReplyTypeId]: 'events';
+    readonly messages: ReadonlyArray<LiveMessage>;
+} | {
+    readonly [ReplyTypeId]: 'unsupported';
+    readonly feature: Feature;
 };
 /** The statement's last result is `value`; the ones before it are NONE. */
 declare const result: (value: unknown) => Reply;
@@ -263,38 +283,59 @@ declare const thrown: (message: string) => Reply;
 declare const conflict: () => Reply;
 /** The request fails, as a SurrealQL or transport error would. */
 declare const failure: (message: string) => Reply;
+/** The events a scripted live query delivers, in order. */
+declare const events: (messages: ReadonlyArray<LiveMessage>) => Reply;
+/** The scripted connection refuses a feature. For begin, use the script entry named begin. */
+declare const unsupported: (feature: Feature) => Reply;
 /**
  * The script: for each statement name, a reply, a plain value (the same as
  * `result(value)`), or a function of the statement's encoded bindings that
- * returns either.
+ * returns either. The begin, commit, cancel and kill entries also script
+ * their corresponding lifecycle operations when a client uses them.
  */
 type Script = Readonly<Record<string, unknown | ((bindings: Readonly<Record<string, unknown>>) => unknown)>>;
 /** One request the scripted client answered. */
 interface Call {
     /** The statement's name. */
     readonly statement: string;
-    /** Its bindings, encoded, as they would have been sent. */
+    /** Its encoded bindings under the statement's own names. */
     readonly bindings: Readonly<Record<string, unknown>>;
     /** The transaction it was sent in, when it was. */
     readonly transaction?: string;
+    /** The pipeline it was sent in, when it was. */
+    readonly pipeline?: string;
+    /** The interactive transaction it was sent in, when it was. */
+    readonly interactive?: string;
+    /** Lifecycle operations use their name in statement, or the live query's name for kill. */
+    readonly operation?: 'begin' | 'commit' | 'cancel' | 'kill';
 }
 /** A client over a script, and the requests it answered, in order. */
 interface FakeClient extends Client {
     readonly calls: ReadonlyArray<Call>;
 }
 /**
- * A client that answers each statement by its name from `script`, and
- * records every request in `calls`. A statement the script does not name
- * fails as a request would, naming it.
- *
- * @example
- * const client = fake({
- *   'adults in a city': [{ id: personId, name: 'Ann', nickname: undefined }],
- *   'read own profile': thrown('Not the owner'),
- * });
+ * A client that answers each statement by its name from the script, and
+ * records every request in calls. A missing reply is a request failure.
  */
 declare const fake: (script: Script) => FakeClient;
 /** Provides {@link SurrealClient} as a scripted client. */
 declare const fakeLayer: (script: Script) => Layer.Layer<SurrealClient>;
 
-export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, conflict, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordUser, result, schemaDrift, thrown };
+/**
+ * Injects the SDK's transaction conflict into the first matching requests.
+ * None of an injected request reaches the engine. For slot responses, the
+ * first matching statement receives the conflict and all other slots report
+ * that they did not execute. The count includes matching requests passed
+ * through after the injections are exhausted.
+ */
+declare const conflictingSession: <S extends Queryable>(session: S, options: {
+    readonly marker: string;
+    readonly times: number;
+}) => {
+    readonly session: S;
+    readonly matched: {
+        readonly count: number;
+    };
+};
+
+export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordUser, result, schemaDrift, thrown, unsupported };

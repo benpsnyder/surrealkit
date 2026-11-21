@@ -1,12 +1,11 @@
 import {
   NoneAsAbsent,
   stripNone
-} from "./chunk-FN4HR4GU.js";
+} from "./chunk-EEFZAKBV.js";
 import {
   Level,
   RowScope,
   admit,
-  assertResolved,
   codecOf,
   conjunct,
   contextOf,
@@ -18,14 +17,17 @@ import {
   operand,
   orNone,
   paramsOf,
-  sqlOf,
-  withoutRefs
-} from "./chunk-ZJPZBNCL.js";
+  sqlOf
+} from "./chunk-NSEQQEQJ.js";
 import {
   isPlainObject,
   runtimeCode,
   wrap
-} from "./chunk-PHSAVORF.js";
+} from "./chunk-MUBWQQFC.js";
+import {
+  assertResolved,
+  withoutRefs
+} from "./chunk-QRSY4HQJ.js";
 
 // src/statement/row.ts
 import { Schema } from "effect";
@@ -238,7 +240,10 @@ var enforced = (leaf, relation) => wrap(leaf, {
   payload: { relation },
   expected: `a record the ENFORCED relation \`${relation}\` reaches`,
   code: ([inner]) => runtimeCode(inner?.runtime ?? "", inner?.Type ?? "unknown"),
-  refuse: (input) => input === void 0 ? `a record reached through \`${relation}\` is NONE, but the generated descriptors declare \`${relation}\` ENFORCED, so SurrealDB would refuse to relate to a missing record and delete a record's edges with it: the live schema may differ from the generated descriptors (is \`${relation}\` ENFORCED there, and does it lead to these tables?); regenerate them, or check the database with \`schemaDrift\` from \`effect-surrealkit/testing\`` : void 0
+  refuse: {
+    when: (input) => input === void 0,
+    message: `a record reached through \`${relation}\` is NONE, but the generated descriptors declare \`${relation}\` ENFORCED, so SurrealDB would refuse to relate to a missing record and delete a record's edges with it: the live schema may differ from the generated descriptors (is \`${relation}\` ENFORCED there, and does it lead to these tables?); regenerate them, or check the database with \`schemaDrift\` from \`effect-surrealkit/testing\``
+  }
 });
 var lift = (shape, present, leaf, relation) => {
   switch (shape.kind) {
@@ -713,4 +718,4 @@ export {
   collect,
   shortest
 };
-//# sourceMappingURL=chunk-KRFS2OMG.js.map
+//# sourceMappingURL=chunk-MZRUKDVT.js.map

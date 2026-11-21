@@ -1,10 +1,12 @@
-import { Schema } from 'effect';
+import { Schema, SchemaAST } from 'effect';
 import * as surrealdb from 'surrealdb';
 import { Range as Range$1, Bound, Geometry as Geometry$1, GeometryCollection as GeometryCollection$1, GeometryLine as GeometryLine$1, GeometryMultiLine as GeometryMultiLine$1, GeometryMultiPoint as GeometryMultiPoint$1, GeometryMultiPolygon as GeometryMultiPolygon$1, GeometryPoint as GeometryPoint$1, GeometryPolygon as GeometryPolygon$1, Decimal, Duration, RecordId, Table, Uuid, FileRef, RecordIdValue } from 'surrealdb';
-import { I as Int64 } from './value-AVjTxjJm.js';
-export { B as Bytes, b as DECIMAL_MAX_MANTISSA, c as DECIMAL_MAX_SCALE, D as Decimal, d as DecimalLiteral, E as EdgeDescriptor, e as EdgeIn, f as EdgeOut, g as FieldPermissions, h as FieldPresence, a as Float, i as FunctionArgs, F as FunctionDescriptor, j as FunctionResult, k as INT64_MAX, l as INT64_MIN, m as IndexDescriptor, n as IndexType, o as Int, p as Int64Literal, q as IntProfile, N as Narrowing, r as NoEntries, O as Operation, P as Permission, s as Presence, R as Refinements, t as Replaced, u as RowSchema, v as StoreDescriptor, w as String, x as SurrealJsonValue, y as SurrealMergeValue, S as SurrealNumber, z as SurrealValue, T as TableDescriptor, A as TablePermissions, U as Unsupported, C as Uuid, V as ViewDescriptor, G as decimalFromString, H as edge, J as fn, K as int64, L as intFor, M as refine, Q as replaceField, W as store, X as table, Y as toWellFormed, Z as view, _ as withPresence } from './value-AVjTxjJm.js';
+import { I as Int64 } from './value-Dzlmtd6Q.js';
+export { B as Bytes, D as DECIMAL_MAX_MANTISSA, a as DECIMAL_MAX_SCALE, b as Decimal, c as DecimalLiteral, F as Float, d as INT64_MAX, e as INT64_MIN, f as Int, g as Int64Literal, h as IntProfile, i as String, j as SurrealJsonValue, k as SurrealMergeValue, l as SurrealNumber, S as SurrealValue, U as Unsupported, m as Uuid, n as decimalFromString, o as int64, p as intFor, t as toWellFormed } from './value-Dzlmtd6Q.js';
 import * as effect_DateTime from 'effect/DateTime';
-export { D as DATETIME_MAX_SECONDS, a as DATETIME_MIN_SECONDS, b as DURATION_MAX_SECONDS, c as DateTime, d as DateTimeEffect, e as Duration, f as DurationLiteral, N as NoneAsAbsent, g as dateTimeFromString, h as dateTimeToString, s as stripNone } from './temporal-s2ISz75j.js';
+export { N as NoneAsAbsent, s as stripNone } from './row-CLBe1uWx.js';
+export { E as EdgeDescriptor, a as EdgeIn, b as EdgeOut, F as FieldPermissions, c as FieldPresence, d as FunctionArgs, e as FunctionDescriptor, f as FunctionResult, I as IndexDescriptor, g as IndexType, N as Narrowing, h as NoEntries, O as Operation, P as Permission, i as Presence, R as Refinements, j as Replaced, k as RowSchema, S as StoreDescriptor, T as TableDescriptor, l as TablePermissions, V as ViewDescriptor, m as edge, n as fn, r as refine, o as replaceField, s as store, t as table, v as view, w as withPresence } from './table-iF6L7xrW.js';
+export { D as DATETIME_MAX_SECONDS, a as DATETIME_MIN_SECONDS, b as DURATION_MAX_SECONDS, c as DateTime, d as DateTimeEffect, e as Duration, f as DurationLiteral, g as dateTimeFromString, h as dateTimeToString } from './temporal-6pYMjhGw.js';
 
 /** `set<T>` / `set<T, N>` and `range`. */
 
@@ -40,6 +42,40 @@ type RangeBound<T> = Bound<T>;
  * parameterise ranges).
  */
 declare const Range: Schema.declareConstructor<Range$1<unknown, unknown>, Range$1<unknown, unknown>, readonly [], Range$1<unknown, unknown>>;
+
+/**
+ * The exactly empty object.
+ *
+ * In Effect 4 `Schema.Struct({})` declares no keys and so checks only that
+ * the value is not `null` or `undefined`: it accepts any object, string,
+ * number or array and passes it through unchanged, even under
+ * `onExcessProperty: "error"`. SurrealDB is stricter: a `{}` literal kind,
+ * a closed object with no declared fields and the content of a schemafull
+ * table with no writable fields all accept exactly `{}`. {@link EmptyObject}
+ * is that shape.
+ */
+
+/**
+ * A check that the value is a plain object without own enumerable keys:
+ * `{}` or `Object.create(null)`, not an array or a class instance. Its JSON
+ * Schema is `{ "type": "object", "additionalProperties": false }`.
+ */
+declare const isEmptyObject: (annotations?: Schema.Annotations.Filter) => SchemaAST.Filter<object>;
+/**
+ * Exactly `{}`: a `Schema.Struct({})` that also refuses every key, every
+ * array and every value that is not a plain object, in both directions.
+ *
+ * Generated modules print it wherever an object has no fields: the create,
+ * merge and content inputs of a schemafull table with no writable fields, a
+ * closed nested object with no declared fields, and the `{}` literal kind.
+ * It stays a `Schema.Struct`, so a table descriptor's operation schemas keep
+ * their `fields` (none) and its TypeScript type stays `{}`: a caller that
+ * passes `{}` is unaffected, and a stray key fails at run time instead of
+ * reaching SurrealDB. The base of an open row (`Schema.StructWithRest` over a
+ * record) stays a plain `Schema.Struct({})`, because there the rest holds the
+ * keys.
+ */
+declare const EmptyObject: Schema.Struct<{}>;
 
 /** `geometry` / `geometry<point | polygon | …>`: the SDK geometry classes. */
 
@@ -201,4 +237,4 @@ type TaggedRecordId<M extends RecordIdSchemas> = {
  */
 declare const taggedRecordId: <const M extends RecordIdSchemas>(ids: M) => Schema.declareConstructor<TaggedRecordId<M>, M[keyof M]["Encoded"], readonly [Schema.Codec<unknown, unknown>]>;
 
-export { BytesFromJson, type BytesJsonEncoded, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, DecimalFromJson, type DecimalJsonEncoded, DurationFromJson, type DurationJsonEncoded, FileRefFor, FileRefFromJson, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, Int64, Int64FromJson, type Int64JsonEncoded, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealNumberFromJson, TableFor, TableFromJson, type TaggedRecordId, UuidFromJson, type UuidJsonEncoded, taggedRecordId };
+export { BytesFromJson, type BytesJsonEncoded, DateTimeEffectFromJson, DateTimeFromJson, type DateTimeJsonEncoded, DecimalFromJson, type DecimalJsonEncoded, DurationFromJson, type DurationJsonEncoded, EmptyObject, FileRefFor, FileRefFromJson, Geometry, GeometryCollection, GeometryFromJson, type GeometryKind, GeometryLine, GeometryMultiLine, GeometryMultiPoint, GeometryMultiPolygon, GeometryOf, GeometryPoint, GeometryPolygon, Int64, Int64FromJson, type Int64JsonEncoded, Range, type RangeBound, RangeFromJson, RecordIdAny, RecordIdAnyFromJson, RecordIdFor, RecordIdFromJson, RecordIdFromJsonAs, type RecordIdOf, RecordKey, type SetEquality, SetFromJson, SetOf, type SetOptions, SurrealNumberFromJson, TableFor, TableFromJson, type TaggedRecordId, UuidFromJson, type UuidJsonEncoded, isEmptyObject, taggedRecordId };

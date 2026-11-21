@@ -953,7 +953,7 @@ var printKind = (kind, ctx, hooks = {}) => {
     case "tuple":
       return `Schema.Tuple([${kind.items.map((item) => printKind(item, ctx)).join(", ")}])`;
     case "objectLiteral": {
-      if (kind.fields.length === 0) return "Schema.Struct({})";
+      if (kind.fields.length === 0) return "SurrealSchema.EmptyObject";
       const entries = kind.fields.map((field) => {
         const value = printKind(field.kind, ctx);
         return `${propertyKey(field.name)}: ${field.optional ? `Schema.optionalKey(${value})` : value}`;
@@ -1239,6 +1239,7 @@ var wrap = (code, presence) => {
 };
 var tabs = (indent) => "	".repeat(indent);
 var struct = (entries, indent, open, world = "native", merge = false) => {
+  if (entries.length === 0 && !open) return "SurrealSchema.EmptyObject";
   const body = entries.length === 0 ? "Schema.Struct({})" : `Schema.Struct({
 ${entries.map(
     ([key, value]) => `${tabs(indent + 1)}${propertyKey(key)}: ${value},`
@@ -2261,13 +2262,9 @@ import { join as join2, relative, resolve as resolve2, sep } from "path";
 import { parseArgs } from "util";
 import { Effect as Effect6 } from "effect";
 
-// src/analyze/lexer.ts
+// src/internal/surql-lexer.ts
 import { Data as Data4 } from "effect";
 var AnalyzeError = class extends Data4.TaggedError("AnalyzeError") {
-};
-var DEFAULT_HOLE_DELIMITERS = {
-  open: "__",
-  close: "__"
 };
 var STRING_PREFIXES = /* @__PURE__ */ new Set([
   "r",
@@ -2350,41 +2347,22 @@ var EXPRESSION_WORDS = /* @__PURE__ */ new Set([
   "ASSERT",
   "DEFAULT"
 ]);
+var EXPRESSION_STATEMENTS = /* @__PURE__ */ new Set([
+  "IF",
+  "RETURN",
+  "SELECT",
+  "THROW"
+]);
+var WORD_LITERALS = /* @__PURE__ */ new Set([
+  "NONE",
+  "NULL",
+  "TRUE",
+  "FALSE",
+  "NAN"
+]);
 var isWordChar = (c) => c !== void 0 && /[A-Za-z0-9_]/u.test(c);
 var isNameStart = (c) => c !== void 0 && /[A-Za-z_]/u.test(c);
-var isCapital = (c) => c !== void 0 && c >= "A" && c <= "Z";
-var isHoleNameChar = (c) => isCapital(c) || c !== void 0 && c >= "0" && c <= "9" || c === "_";
-var isBlank = (c) => c.trim().length === 0;
-var holeDelimiters = (holes) => {
-  if (holes === void 0) return DEFAULT_HOLE_DELIMITERS;
-  for (const [which, text] of [
-    ["open", holes.open],
-    ["close", holes.close]
-  ]) {
-    if (typeof text !== "string" || text.length === 0 || [...text].some(isBlank)) {
-      throw new AnalyzeError({
-        code: "invalidHoleDelimiters",
-        message: `the ${which} delimiter of a hole must be non-empty text without whitespace`,
-        line: 1,
-        column: 1,
-        offset: 0
-      });
-    }
-  }
-  return { open: holes.open, close: holes.close };
-};
-var holeEnd = (sql, at, holes) => {
-  if (!sql.startsWith(holes.open, at)) return -1;
-  const name = at + holes.open.length;
-  if (!isCapital(sql[name])) return -1;
-  let run2 = name + 1;
-  while (run2 < sql.length && isHoleNameChar(sql[run2])) run2++;
-  for (let end = run2; end > name; end--) {
-    if (sql.startsWith(holes.close, end)) return end + holes.close.length;
-  }
-  return -1;
-};
-var lex = (sql, holes) => {
+var lex = (sql, holeEndingAt, options) => {
   const lineStarts = [0];
   for (let i2 = 0; i2 < sql.length; i2++) {
     if (sql[i2] === "\n") lineStarts.push(i2 + 1);
@@ -2467,20 +2445,38 @@ var lex = (sql, holes) => {
     }
     return fail2("unterminated", `unterminated ${what}`, from);
   };
-  const operandBefore = () => {
-    const last = tokens[tokens.length - 1];
-    if (last === void 0) return false;
+  const startsStatement = (index) => {
+    const before = tokens[index - 1];
+    return before === void 0 || before.kind === "punct" && (before.value === ";" || before.value === "{");
+  };
+  const slashRole = () => {
+    const index = tokens.length - 1;
+    const last = tokens[index];
+    if (last === void 0) return "regex";
     switch (last.kind) {
       case "param":
       case "string":
       case "ident":
       case "regex":
       case "hole":
-        return true;
-      case "word":
-        return !EXPRESSION_WORDS.has(last.value.toUpperCase());
+        return "division";
+      case "word": {
+        const word = last.value.toUpperCase();
+        const before = tokens[index - 1];
+        if (before?.kind === "punct" && before.value === "." && tokens[index - 2]?.value !== ".") {
+          return "division";
+        }
+        if (!options?.unambiguousSlashes) {
+          return EXPRESSION_WORDS.has(word) ? "regex" : "division";
+        }
+        if (WORD_LITERALS.has(word) || /^[0-9]/u.test(word)) {
+          return "division";
+        }
+        const introducesExpression = EXPRESSION_STATEMENTS.has(word) && startsStatement(index) || word === "VALUE" && before?.kind === "word" && before.value.toUpperCase() === "SELECT" && startsStatement(index - 1);
+        return introducesExpression ? "regex" : "uncertain";
+      }
       case "punct":
-        return CLOSE.has(last.value);
+        return CLOSE.has(last.value) ? "division" : "regex";
     }
   };
   let i = 0;
@@ -2493,7 +2489,19 @@ var lex = (sql, holes) => {
     }
     if (c === "-" && next === "-" || c === "/" && next === "/" || c === "#") {
       const end = sql.indexOf("\n", i);
-      i = end === -1 ? sql.length : end + 1;
+      const nextLine = end === -1 ? sql.length : end + 1;
+      if (options?.unambiguousLineComments) {
+        const text = sql.slice(i, nextLine);
+        const separator = text.search(/[\r\u0085\u2028\u2029]/u);
+        if (separator !== -1 && text.slice(separator + 1).trim() !== "") {
+          fail2(
+            "ambiguousComment",
+            "ambiguous line comment ending",
+            i + separator
+          );
+        }
+      }
+      i = nextLine;
       continue;
     }
     if (c === "/" && next === "*") {
@@ -2502,7 +2510,7 @@ var lex = (sql, holes) => {
       i = end + 2;
       continue;
     }
-    const holeAt = holeEnd(sql, i, holes);
+    const holeAt = holeEndingAt?.(i) ?? -1;
     if (holeAt > i && !(isWordChar(sql[holeAt - 1]) && isWordChar(sql[holeAt])) && !(isWordChar(c) && isWordChar(sql[i - 1]))) {
       push("hole", i, holeAt, sql.slice(i, holeAt));
       i = holeAt;
@@ -2596,21 +2604,30 @@ var lex = (sql, holes) => {
       continue;
     }
     if (c === "/") {
-      if (operandBefore()) {
-        push("punct", i, i + 1, c);
-        i++;
-        continue;
+      const role = slashRole();
+      if (role !== "division") {
+        let end = i + 1;
+        while (end < sql.length && sql[end] !== "/") {
+          if (role === "regex" && sql[end] === "\n") break;
+          end += sql[end] === "\\" ? 2 : 1;
+        }
+        if (role === "regex") {
+          if (sql[end] !== "/")
+            fail2("unterminated", "unterminated regex literal", i);
+          push("regex", i, end + 1, sql.slice(i + 1, end));
+          i = end + 1;
+          continue;
+        }
+        if (sql[end] === "/") {
+          fail2(
+            "ambiguousSlash",
+            "cannot distinguish division from a regex after this word",
+            i
+          );
+        }
       }
-      let end = i + 1;
-      while (end < sql.length && sql[end] !== "/") {
-        if (sql[end] === "\n") break;
-        end += sql[end] === "\\" ? 2 : 1;
-      }
-      if (sql[end] !== "/") {
-        fail2("unterminated", "unterminated regex literal", i);
-      }
-      push("regex", i, end + 1, sql.slice(i + 1, end));
-      i = end + 1;
+      push("punct", i, i + 1, c);
+      i++;
       continue;
     }
     if (OPERATOR_CHARS.has(c)) {
@@ -2630,6 +2647,45 @@ var lex = (sql, holes) => {
   }
   return { tokens, locate };
 };
+
+// src/analyze/lexer.ts
+var DEFAULT_HOLE_DELIMITERS = {
+  open: "__",
+  close: "__"
+};
+var isCapital = (c) => c !== void 0 && c >= "A" && c <= "Z";
+var isHoleNameChar = (c) => isCapital(c) || c !== void 0 && c >= "0" && c <= "9" || c === "_";
+var isBlank = (c) => c.trim().length === 0;
+var holeDelimiters = (holes) => {
+  if (holes === void 0) return DEFAULT_HOLE_DELIMITERS;
+  for (const [which, text] of [
+    ["open", holes.open],
+    ["close", holes.close]
+  ]) {
+    if (typeof text !== "string" || text.length === 0 || [...text].some(isBlank)) {
+      throw new AnalyzeError({
+        code: "invalidHoleDelimiters",
+        message: `the ${which} delimiter of a hole must be non-empty text without whitespace`,
+        line: 1,
+        column: 1,
+        offset: 0
+      });
+    }
+  }
+  return { open: holes.open, close: holes.close };
+};
+var holeEnd = (sql, at, holes) => {
+  if (!sql.startsWith(holes.open, at)) return -1;
+  const name = at + holes.open.length;
+  if (!isCapital(sql[name])) return -1;
+  let run2 = name + 1;
+  while (run2 < sql.length && isHoleNameChar(sql[run2])) run2++;
+  for (let end = run2; end > name; end--) {
+    if (sql.startsWith(holes.close, end)) return end + holes.close.length;
+  }
+  return -1;
+};
+var lex2 = (sql, holes) => lex(sql, (start) => holeEnd(sql, start, holes));
 
 // src/analyze/render.ts
 import { Data as Data5, Effect as Effect5 } from "effect";
@@ -3702,7 +3758,7 @@ var holeScopesOf = (sites, reads, kind) => {
   }
   return out;
 };
-var analyzeSync = (sql, options = {}) => analyzeLexed(sql, lex(sql, holeDelimiters(options.holes)));
+var analyzeSync = (sql, options = {}) => analyzeLexed(sql, lex2(sql, holeDelimiters(options.holes)));
 
 // src/analyze/render.ts
 var STATEMENTS_MARK = "// Generated by effect-surrealkit from SurrealQL files. Do not edit.";
@@ -3811,7 +3867,7 @@ var checkUses = (uses, detail, schemaChanges) => {
   return { problems, binds, rejectsNone: rejectsNone2 };
 };
 var changesSchema = (sql, holes) => {
-  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  const tokens = lex2(sql, holeDelimiters(holes)).tokens;
   return tokens.some(
     (token, i) => token.kind === "word" && ["DEFINE", "ALTER", "REMOVE"].includes(token.value.toUpperCase()) && tokens[i + 1]?.kind === "word" && ["TABLE", "FIELD"].includes(
       (tokens[i + 1]?.value ?? "").toUpperCase()
@@ -3852,7 +3908,7 @@ var renderConstant = (scope, name, analysis, binds, rejectsNone2) => {
   ].join("\n");
 };
 var undeclared = (sql, declared, holes) => {
-  const targets = analyzeTargets(lex(sql, holeDelimiters(holes)).tokens);
+  const targets = analyzeTargets(lex2(sql, holeDelimiters(holes)).tokens);
   const tables = /* @__PURE__ */ new Set([...declared.tables, ...targets.definedTables]);
   const functions = /* @__PURE__ */ new Set([
     ...declared.functions,

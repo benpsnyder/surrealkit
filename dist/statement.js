@@ -5,15 +5,13 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-ACZISPEL.js";
+} from "./chunk-ZIXU7FMB.js";
 import {
   SurrealValue
-} from "./chunk-F4HWMI2D.js";
+} from "./chunk-BOMQHKJG.js";
 import {
-  DEFAULT_HOLE_DELIMITERS,
-  analyzeSync,
-  lex
-} from "./chunk-774SB3OG.js";
+  analyzeSync
+} from "./chunk-DHQRAJ4W.js";
 import {
   TraversalTypeId,
   andAll,
@@ -50,19 +48,16 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-KRFS2OMG.js";
+} from "./chunk-MZRUKDVT.js";
 import {
   NoneAsAbsent
-} from "./chunk-FN4HR4GU.js";
+} from "./chunk-EEFZAKBV.js";
 import {
   ExprTypeId,
   Level,
   RowScope,
-  StatementTypeId,
   admit,
   and,
-  assertBindingName,
-  assertIdentifier,
   assertReader,
   at,
   call,
@@ -79,12 +74,10 @@ import {
   isNone,
   isNotNone,
   isPath,
-  isStatement,
   joinContexts,
   literal,
   lt,
   lte,
-  make,
   makeExpr,
   mergeParams,
   ne,
@@ -98,9 +91,8 @@ import {
   pathOf,
   settle,
   sqlOf,
-  unsafeExpr,
-  withRefs
-} from "./chunk-ZJPZBNCL.js";
+  unsafeExpr
+} from "./chunk-NSEQQEQJ.js";
 import {
   Decimal,
   Float,
@@ -109,7 +101,24 @@ import {
   SurrealNumber,
   SurrealString,
   isPlainObject
-} from "./chunk-PHSAVORF.js";
+} from "./chunk-MUBWQQFC.js";
+import {
+  renameNames
+} from "./chunk-6LS7V54M.js";
+import {
+  StatementTypeId,
+  assertBindingName,
+  assertIdentifier,
+  isStatement,
+  make,
+  withRefs
+} from "./chunk-QRSY4HQJ.js";
+import "./chunk-3SWEJO3L.js";
+import {
+  DEFAULT_HOLE_DELIMITERS,
+  lex
+} from "./chunk-LJSHE6F3.js";
+import "./chunk-FBUMKT7I.js";
 import "./chunk-PZ5AY32C.js";
 
 // src/statement/block.ts
@@ -553,6 +562,38 @@ var block = () => open({
   writes: false
 });
 
+// src/statement/bulk.ts
+import { Schema as Schema2 } from "effect";
+function updateEach(table, rows2, options) {
+  const data = rows2;
+  const missing = options?.missing ?? "error";
+  return {
+    build: (name = `update each ${table.name}`) => {
+      const params = paramsOf(data);
+      if (Object.hasOwn(params, "row")) {
+        throw new RangeError(
+          "UPDATE EACH reserves the binding name `row` for its loop variable"
+        );
+      }
+      const what = `statement \`${name}\``;
+      const context = admit({ own: void 0, what, parents: "refuse" }, [
+        data
+      ]);
+      assertReader(readerOf(table), settle(context, what), what);
+      const guard = missing === "error" ? "IF !record::exists($row.id) { THROW 'Record not found'; }; " : "";
+      return make({
+        name,
+        // FOR itself returns NONE. The block provides the empty list of a many-row write.
+        sql: `{ FOR $row IN ${operand(data)} { ${guard}UPDATE $row.id MERGE $row.set RETURN NONE; }; [] };`,
+        params,
+        result: Schema2.Tuple([]),
+        throws: missing === "error" ? ["Record not found"] : [],
+        writes: true
+      });
+    }
+  };
+}
+
 // src/statement/family.ts
 var TextNodeTypeId = "~effect-surrealkit/TextNode";
 var empty = { [TextNodeTypeId]: "empty" };
@@ -922,7 +963,7 @@ var family = (checkedAxes, root) => ({
 });
 
 // src/statement/group.ts
-import { Schema as Schema2 } from "effect";
+import { Schema as Schema3 } from "effect";
 import {
   escapeIdent as escapeIdent2
 } from "surrealdb";
@@ -967,7 +1008,7 @@ var sumCodec = (value) => {
     case "effect-surrealkit/Int64":
       return Int64;
     case "effect-surrealkit/Decimal":
-      return empty2(value) ? Schema2.Union([Decimal, Int]) : Decimal;
+      return empty2(value) ? Schema3.Union([Decimal, Int]) : Decimal;
     case "effect-surrealkit/SurrealNumber":
       return SurrealNumber;
     default:
@@ -1003,7 +1044,7 @@ var median = (value) => {
   return aggregate(
     "math::median",
     value,
-    empty2(value) ? Schema2.UndefinedOr(codec) : codec
+    empty2(value) ? Schema3.UndefinedOr(codec) : codec
   );
 };
 var extreme = (fn) => (value) => {
@@ -1011,7 +1052,7 @@ var extreme = (fn) => (value) => {
   return aggregate(
     fn,
     value,
-    empty2(value) ? Schema2.Union([data.codec, Float]) : data.codec
+    empty2(value) ? Schema3.Union([data.codec, Float]) : data.codec
   );
 };
 var min = extreme("math::min");
@@ -1021,7 +1062,7 @@ var time = (fn) => (value) => {
   return aggregate(
     fn,
     value,
-    empty2(value) ? Schema2.UndefinedOr(data.codec) : data.codec
+    empty2(value) ? Schema3.UndefinedOr(data.codec) : data.codec
   );
 };
 var timeMin = time("time::min");
@@ -1031,7 +1072,7 @@ var distinct = (fn) => (value) => {
   return aggregate(
     fn,
     value,
-    Schema2.Array(data.optional ? orNone(data.codec) : data.codec)
+    Schema3.Array(data.optional ? orNone(data.codec) : data.codec)
   );
 };
 var arrayGroup = distinct("array::group");
@@ -1099,7 +1140,7 @@ var finishing = (state) => ({
       name: label2,
       sql: `${render2(state)};`,
       params: mergeParams(state.params, output.params),
-      result: all ? Schema2.Tuple([output.codec]) : Schema2.Array(output.codec)
+      result: all ? Schema3.Tuple([output.codec]) : Schema3.Array(output.codec)
     });
   }
 });
@@ -1181,6 +1222,801 @@ var groupAll = (base) => {
     aggregate: (fields) => finishing(withAggregates(state, fields))
   };
 };
+
+// src/statement/select.ts
+import { Schema as Schema5, SchemaAST as SchemaAST2 } from "effect";
+import { escapeIdent as escapeIdent4 } from "surrealdb";
+
+// src/statement/fetch.ts
+import { Schema as Schema4 } from "effect";
+import { escapeIdent as escapeIdent3 } from "surrealdb";
+var treeOf = (paths) => {
+  const root = {};
+  for (const path of paths) {
+    let node = root;
+    for (const segment of path.split(".")) {
+      node[segment] ??= {};
+      node = node[segment];
+    }
+  }
+  return root;
+};
+var fetchPath = (path) => {
+  const segments = path.split(".");
+  if (segments.some((segment) => segment.length === 0)) {
+    throw new RangeError(
+      `\`${path}\` is not a FETCH path: name fields separated by dots`
+    );
+  }
+  return segments.map((segment) => escapeIdent3(segment)).join(".");
+};
+var rebuildRow = (row, fields) => "records" in row && "schema" in row ? Schema4.StructWithRest(
+  Schema4.Struct(fields),
+  row.records
+) : Schema4.Struct(fields);
+var targetsOf = (store, tables, path) => {
+  if (tables === "any") {
+    throw new TypeError(
+      `\`${path}\` can point at any table (\`record\`), so FETCH has no row type for it`
+    );
+  }
+  return tables.map((name) => {
+    const table = store.tables[name];
+    if (table === void 0) {
+      throw new RangeError(
+        `\`${path}\` points at \`${name}\`, which is not a table of this store`
+      );
+    }
+    return table;
+  });
+};
+var fetchedRow = (store, tables, tree, path) => union(
+  targetsOf(store, tables, path).map(
+    (table) => Object.keys(tree).length === 0 ? rowCodec(table.select) : rowCodec(
+      rebuildRow(
+        table.select,
+        rewrite(store, selectFields(table), tree, path)
+      )
+    )
+  )
+);
+var rewriteValue = (store, codec, tree, path) => {
+  const shape = linkShape(codec);
+  if (shape !== void 0) {
+    const inner = shape.kind === "optional" ? shape.of : shape;
+    if (inner.kind === "id") {
+      return {
+        codec: fetchedRow(store, inner.tables, tree, path),
+        absent: true
+      };
+    }
+    if (inner.kind === "list" && inner.of.kind !== "list") {
+      const row = fetchedRow(store, shapeTables(inner.of), tree, path);
+      const list = Schema4.Array(
+        Schema4.UndefinedOr(row)
+      );
+      return {
+        codec: shape.kind === "optional" ? Schema4.UndefinedOr(list) : list,
+        absent: false
+      };
+    }
+  }
+  const nested = fieldsOf(codec);
+  if (nested !== void 0 && Object.keys(tree).length > 0) {
+    return {
+      codec: rebuildRow(codec, rewrite(store, nested, tree, path)),
+      absent: false
+    };
+  }
+  if ("value" in codec && Schema4.isSchema(codec.value) && Object.keys(tree).length > 0) {
+    const item = fieldsOf(codec.value);
+    if (item !== void 0) {
+      return {
+        codec: Schema4.Array(
+          rebuildRow(
+            codec.value,
+            rewrite(store, item, tree, path)
+          )
+        ),
+        absent: false
+      };
+    }
+  }
+  throw new TypeError(
+    `\`${path}\` is not a record link, so FETCH has nothing to replace`
+  );
+};
+var rewrite = (store, fields, tree, prefix) => {
+  const next = { ...fields };
+  for (const [key2, subtree] of Object.entries(tree)) {
+    const path = prefix === "" ? key2 : `${prefix}.${key2}`;
+    const declared = fields[key2];
+    if (declared === void 0) {
+      throw new RangeError(
+        path === key2 ? `\`${key2}\` is not a field of what the select returns` : `\`${path}\`: \`${key2}\` is not a field of what the select returns`
+      );
+    }
+    const optional = isOptionalField(declared);
+    const { codec, absent } = rewriteValue(
+      store,
+      unwrapField(declared),
+      subtree,
+      path
+    );
+    next[key2] = absent ? Schema4.optional(codec) : optional ? Schema4.optionalKey(codec) : codec;
+  }
+  return next;
+};
+var fetchedCodec = (store, base, paths) => {
+  for (const path of paths) fetchPath(path);
+  const tree = treeOf(paths);
+  switch (base.kind) {
+    case "row":
+      return rowCodec(
+        rebuildRow(
+          base.table.select,
+          rewrite(store, selectFields(base.table), tree, "")
+        )
+      );
+    case "projection":
+      return projectedCodec(
+        rewrite(store, base.fields, tree, "")
+      );
+    case "value":
+      throw new TypeError(
+        "FETCH replaces fields of the row or of a projection; `SELECT VALUE` has none: project the value instead"
+      );
+  }
+};
+
+// src/statement/record.ts
+var part = (value) => {
+  if (isExpr(value)) return value;
+  if (typeof value === "object" && value !== null) {
+    throw new TypeError(
+      "a key part is an expression or a constant; nest no array or object inside a key"
+    );
+  }
+  return literal(value);
+};
+var keyOf = (key2) => {
+  if (isExpr(key2) || typeof key2 !== "object" || key2 === null) {
+    const value = part(key2);
+    return { sql: operand(value), params: paramsOf(value), parts: [value] };
+  }
+  if (Array.isArray(key2)) {
+    if (key2.length === 0) {
+      throw new RangeError("an array key needs at least one part");
+    }
+    const parts = key2.map(part);
+    return {
+      sql: `[${parts.map(operand).join(", ")}]`,
+      params: mergeParams(...parts.map(paramsOf)),
+      parts
+    };
+  }
+  const entries = Object.entries(key2).map(
+    ([name, value]) => [name, part(value)]
+  );
+  if (entries.length === 0) {
+    throw new RangeError("an object key needs at least one part");
+  }
+  return {
+    sql: `{ ${entries.map(
+      ([name, value]) => `${JSON.stringify(name)}: ${operand(value)}`
+    ).join(", ")} }`,
+    params: mergeParams(...entries.map(([, value]) => paramsOf(value))),
+    parts: entries.map(([, value]) => value)
+  };
+};
+var typeRecord = (table, inner) => `type::record(${sqlOf(literal(table.name))}, ${inner})`;
+var recordId = (table, key2) => {
+  const built = keyOf(key2);
+  const id = derive(
+    table.id,
+    typeRecord(table, built.sql),
+    Level.atom,
+    built.parts,
+    built.params
+  );
+  builtIds.add(id);
+  return id;
+};
+var builtIds = /* @__PURE__ */ new WeakSet();
+var isBuiltRecordId = (expr) => typeof expr === "object" && expr !== null && builtIds.has(expr);
+var IdRangeTypeId = "~effect-surrealkit/IdRange";
+var isIdRange = (value) => typeof value === "object" && value !== null && IdRangeTypeId in value;
+var idRange = (table, bounds) => {
+  const given = bounds;
+  if (given.from !== void 0 && given.after !== void 0) {
+    throw new RangeError(
+      "a range starts `from` a key (included) or `after` one (excluded), not both"
+    );
+  }
+  if (given.to !== void 0 && given.through !== void 0) {
+    throw new RangeError(
+      "a range ends `to` a key (excluded) or `through` one (included), not both"
+    );
+  }
+  const start2 = given.from ?? given.after;
+  const end = given.to ?? given.through;
+  const low = start2 === void 0 ? void 0 : keyOf(start2);
+  const high = end === void 0 ? void 0 : keyOf(end);
+  const sql = `${low?.sql ?? ""}${given.after === void 0 ? "" : ">"}..${given.through === void 0 ? "" : "="}${high?.sql ?? ""}`;
+  return {
+    [IdRangeTypeId]: {
+      table: table.name,
+      sql: typeRecord(table, sql),
+      params: mergeParams(
+        low?.params ?? {},
+        high?.params ?? {}
+      ),
+      parts: [...low?.parts ?? [], ...high?.parts ?? []]
+    }
+  };
+};
+
+// src/statement/select.ts
+var ownReader = (state, what) => {
+  assertReader(readerOf(state.table), state.context?.readers, what);
+  if (state.context?.readers === void 0) return state.context;
+  const { readers: _, ...rest } = state.context;
+  return Object.keys(rest).length === 0 ? void 0 : rest;
+};
+var siteOf = (state) => ({
+  own: state.scope,
+  what: `a select of \`${state.table.name}\``,
+  parents: "select"
+});
+var reading = (state, exprs, callback = true) => {
+  const context = joinContexts([
+    state.context,
+    callback ? admit(siteOf(state), exprs) : joinContexts(exprs.map(contextOf))
+  ]);
+  return {
+    ...state,
+    ...context !== void 0 && { context }
+  };
+};
+var valueHasNoNames = "SELECT VALUE returns one value per row, with no names to order by; order by a field path of the stored row with `orderBy`";
+var missingName = (state, name) => {
+  const missing = `\`${name}\` is not a name the result row holds`;
+  if (state.base.kind === "value") return `${missing}: ${valueHasNoNames}`;
+  const holds = state.fields === "*" ? Object.hasOwn(fieldsOf(state.table.select) ?? {}, name) && !(state.omit ?? []).includes(name) : state.aliases.has(name);
+  return holds ? void 0 : missing;
+};
+var assertOrder = (state) => {
+  for (const { alias, path, sql } of state.order) {
+    if (alias !== void 0) {
+      const missing = missingName(state, alias);
+      if (missing !== void 0) {
+        throw new RangeError(`ORDER BY \`${alias}\`: ${missing}`);
+      }
+    }
+    if (path === void 0) continue;
+    const source = state.aliases.get(path.root);
+    if (source !== void 0 && source !== path.rootSql) {
+      throw new RangeError(
+        `the projection alias \`${path.root}\` stands for \`${source}\` and shadows the stored field \`${path.root}\` that ORDER BY ${sql} reads, so SurrealDB would order by the alias; rename the alias`
+      );
+    }
+  }
+};
+var count2 = (value, clause) => {
+  if (isExpr(value)) return sqlOf(value);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new RangeError(
+      `${clause} takes a non-negative integer, not ${value}`
+    );
+  }
+  return String(value);
+};
+var render3 = (state) => {
+  assertOrder(state);
+  const limit = state.only && readsMany(state) ? "1" : state.limit;
+  return [
+    `SELECT ${state.fields}${state.omit === void 0 || state.omit.length === 0 ? "" : ` OMIT ${state.omit.map((field) => escapeIdent4(field)).join(", ")}`} FROM ${state.only ? "ONLY " : ""}${state.source === void 0 ? tableName(state.table) : sqlOf(state.source)}`,
+    ...state.index === void 0 ? [] : [`WITH INDEX ${escapeIdent4(state.index)}`],
+    ...state.where.length > 0 ? [`WHERE ${andAll(state.where)}`] : [],
+    ...state.split === void 0 ? [] : [`SPLIT ${splitTarget(state, state.split)}`],
+    ...state.order.length > 0 ? [
+      `ORDER BY ${state.order.map(({ direction, sql }) => `${sql} ${direction}`).join(", ")}`
+    ] : [],
+    ...limit === void 0 ? [] : [`LIMIT ${limit}`],
+    ...state.start === void 0 ? [] : [`START ${state.start}`],
+    ...state.fetch.length > 0 ? [`FETCH ${state.fetch.map(fetchPath).join(", ")}`] : [],
+    ...state.lock === true ? ["FOR UPDATE"] : []
+  ].join(" ");
+};
+var assertNoFetch = (state, method) => {
+  if (state.fetch.length > 0) {
+    throw new RangeError(
+      `FETCH ${state.fetch.join(", ")} names fields of what the select returns; call \`${method}\` before \`fetch\``
+    );
+  }
+};
+var splitTarget = (state, field) => {
+  const sql = escapeIdent4(field);
+  if (state.fields !== "*" && state.aliases.get(field) !== sql) {
+    throw new RangeError(
+      `the SPLIT field \`${field}\` must be projected under its own name (\`${field}: row.${field}\`)`
+    );
+  }
+  return sql;
+};
+var baseOf = (state) => {
+  if (state.split !== void 0 || state.omit !== void 0 || state.fetch.length > 0 || state.fields !== "*" || state.only || state.order.length > 0 || state.limit !== void 0 || state.start !== void 0) {
+    throw new RangeError(
+      "group a SELECT before projecting, ordering, limiting, fetching it or reading ONLY one row"
+    );
+  }
+  return {
+    table: state.table,
+    scope: state.scope,
+    ...state.context !== void 0 && { context: state.context },
+    row: state.row,
+    from: state.source === void 0 ? tableName(state.table) : sqlOf(state.source),
+    where: state.where,
+    params: state.params,
+    pure: state.pure
+  };
+};
+var rebuild = (row, fields) => "records" in row && "schema" in row ? Schema5.StructWithRest(
+  Schema5.Struct(fields),
+  row.records
+) : Schema5.Struct(fields);
+var readsMany = (state) => state.source === void 0 || state.range === true;
+var resultOf = (state) => state.only ? Schema5.UndefinedOr(state.out) : Schema5.Array(state.out);
+var parameter = /^\$[A-Za-z_][A-Za-z0-9_]*$/u;
+var recordLiteral = /^r"(?:[^"\\]|\\.)*"$/u;
+var lockable = (id) => parameter.test(sqlOf(id)) || recordLiteral.test(sqlOf(id)) || isBuiltRecordId(id);
+var builder = (state) => {
+  const row = state.row;
+  const bounded = (rows2) => isExpr(rows2) ? mergeParams(state.params, paramsOf(rows2)) : state.params;
+  return {
+    where: (predicate) => {
+      if (state.split !== void 0) {
+        throw new RangeError(
+          "WHERE reads the stored row, before SPLIT; add conditions before `.split(\u2026)`"
+        );
+      }
+      const condition = predicate(row);
+      return builder({
+        ...reading(state, [condition]),
+        where: [...state.where, condition],
+        pure: false,
+        params: mergeParams(state.params, paramsOf(condition))
+      });
+    },
+    orderBy: (key2, direction = "ASC") => {
+      const by = key2(row);
+      const path = isPath(by) ? pathOf(by) : void 0;
+      if (path === void 0) {
+        throw new TypeError(
+          "ORDER BY takes a field path of the row (`row.name`, `row.address.city`, `at(row.pins, 0)`); SurrealDB parses nothing else there"
+        );
+      }
+      return builder({
+        ...reading(state, [by]),
+        order: [
+          ...state.order,
+          { sql: sqlOf(by), direction, path }
+        ]
+      });
+    },
+    orderByAlias: (alias, direction = "ASC") => {
+      const name = alias;
+      const missing = missingName(state, name);
+      if (missing !== void 0) throw new RangeError(missing);
+      return builder({
+        ...state,
+        order: [
+          ...state.order,
+          { sql: escapeIdent4(name), direction, alias: name }
+        ]
+      });
+    },
+    limit: (rows2) => {
+      if (state.only && readsMany(state)) {
+        throw new RangeError(
+          "a SELECT \u2026 FROM ONLY a table already reads at most one row"
+        );
+      }
+      return builder({
+        ...reading(state, isExpr(rows2) ? [rows2] : [], false),
+        limit: count2(rows2, "LIMIT"),
+        params: bounded(rows2),
+        pure: state.pure && !isExpr(rows2)
+      });
+    },
+    start: (rows2) => builder({
+      ...reading(state, isExpr(rows2) ? [rows2] : [], false),
+      start: count2(rows2, "START"),
+      params: bounded(rows2),
+      pure: state.pure && !isExpr(rows2)
+    }),
+    project: (fields) => {
+      if (state.omit !== void 0) {
+        throw new RangeError(
+          "OMIT leaves fields out of `SELECT *`; a projection names the fields it keeps instead"
+        );
+      }
+      const projection = fields(row);
+      const projected = project(projection);
+      assertNoFetch(state, "project");
+      return builder({
+        ...reading(state, Object.values(projection)),
+        base: {
+          kind: "projection",
+          fields: Object.fromEntries(
+            Object.entries(projection).map(([alias, value]) => [
+              alias,
+              codecOf(value)
+            ])
+          )
+        },
+        fields: projected.sql,
+        aliases: projected.aliases,
+        pure: state.pure && Object.values(projection).every(isPath),
+        out: projected.codec,
+        params: mergeParams(state.params, projected.params)
+      });
+    },
+    value: (pick) => {
+      if (state.omit !== void 0 || state.split !== void 0) {
+        throw new RangeError(
+          "`SELECT VALUE` takes no OMIT or SPLIT here; project the field instead"
+        );
+      }
+      const picked = pick(row);
+      assertNoFetch(state, "value");
+      return builder({
+        ...reading(state, [picked]),
+        base: { kind: "value" },
+        fields: `VALUE ${sqlOf(picked)}`,
+        aliases: /* @__PURE__ */ new Map(),
+        pure: state.pure && isPath(picked),
+        out: rowCodec(codecOf(picked)),
+        params: mergeParams(state.params, paramsOf(picked))
+      });
+    },
+    fetch: (store, ...paths) => {
+      const fetch = [...state.fetch, ...paths];
+      const context = joinContexts([state.context, viewOf(store)]);
+      return builder({
+        ...state,
+        ...context !== void 0 && { context },
+        fetch,
+        out: fetchedCodec(store, state.base, fetch)
+      });
+    },
+    only: () => {
+      if (readsMany(state) && state.limit !== void 0) {
+        throw new RangeError(
+          "a SELECT \u2026 FROM ONLY a table reads at most one row; drop the LIMIT"
+        );
+      }
+      return builder({ ...state, only: true });
+    },
+    omit: (...names2) => {
+      assertNoFetch(state, "omit");
+      if (state.fields !== "*") {
+        throw new RangeError(
+          "OMIT leaves fields out of `SELECT *`; a projection names the fields it keeps instead"
+        );
+      }
+      const stored = fieldsOf(state.table.select);
+      if (stored === void 0) {
+        throw new TypeError("OMIT takes a generated row schema");
+      }
+      const omitted = [
+        ...state.omit ?? [],
+        ...names2
+      ];
+      for (const name of omitted) {
+        if (!Object.hasOwn(stored, name)) {
+          throw new RangeError(
+            `\`${name}\` is not a field of \`${state.table.name}\``
+          );
+        }
+        if (name === state.split) {
+          throw new RangeError(
+            `\`${name}\` is the SPLIT field, which the row must hold`
+          );
+        }
+      }
+      const kept = Object.fromEntries(
+        Object.entries(stored).filter(
+          ([name]) => !omitted.includes(name)
+        )
+      );
+      const select2 = rebuild(state.table.select, kept);
+      return builder({
+        ...state,
+        omit: omitted,
+        out: rowCodec(select2),
+        base: { kind: "row", table: { ...state.table, select: select2 } }
+      });
+    },
+    split: (field) => {
+      assertNoFetch(state, "split");
+      const name = field;
+      if (state.fields !== "*" || state.only || state.omit !== void 0) {
+        throw new RangeError(
+          "split a SELECT before projecting it, omitting fields or reading ONLY one row"
+        );
+      }
+      if (state.split !== void 0) {
+        throw new RangeError("this SELECT splits one field");
+      }
+      const stored = fieldsOf(state.table.select);
+      const declared = stored?.[name];
+      const codec = declared === void 0 ? void 0 : unwrap(declared);
+      if (stored === void 0 || declared === void 0 || codec === void 0 || !("value" in codec) || !Schema5.isSchema(codec.value)) {
+        throw new RangeError(
+          `\`${name}\` is not an array field of \`${state.table.name}\`: SPLIT takes one`
+        );
+      }
+      const element = Schema5.Union([codec.value, codec]);
+      const select2 = rebuild(state.table.select, {
+        ...stored,
+        [name]: isOptional(declared) ? Schema5.optionalKey(element) : element
+      });
+      const table = { ...state.table, select: select2 };
+      return builder({
+        ...state,
+        table,
+        row: rowExprs(table, state.scope),
+        out: storedRow(table),
+        base: { kind: "row", table },
+        split: name
+      });
+    },
+    groupBy: (keys) => groupBy(
+      baseOf(state),
+      keys
+    ),
+    groupAll: () => groupAll(baseOf(state)),
+    toExpr: () => subquery(
+      resultOf(state),
+      render3(state),
+      state.params,
+      ownReader(state, `the subquery of \`${state.table.name}\``)
+    ),
+    build: (name, options) => {
+      const writes = options?.writes ?? (state.pure ? false : void 0);
+      const label2 = name ?? `select ${state.table.name}`;
+      settle(
+        ownReader(state, `statement \`${label2}\``),
+        `statement \`${label2}\``
+      );
+      return make({
+        ...writes !== void 0 && { writes },
+        name: label2,
+        sql: `${render3(state)};`,
+        params: state.params,
+        result: resultOf(state)
+      });
+    }
+  };
+};
+var select = (table, id, values) => {
+  const scope = new RowScope("select", table.name);
+  const state = {
+    table,
+    scope,
+    row: rowExprs(table, scope),
+    source: void 0,
+    out: storedRow(table),
+    fields: "*",
+    where: [],
+    pure: id === void 0,
+    order: [],
+    aliases: /* @__PURE__ */ new Map(),
+    limit: void 0,
+    start: void 0,
+    only: false,
+    params: {},
+    base: { kind: "row", table },
+    fetch: []
+  };
+  if (typeof id === "string") {
+    const where = uniqueLookup(table, state.row, id, values ?? {});
+    return builder({
+      ...reading(state, where),
+      where,
+      pure: false,
+      only: true,
+      index: id,
+      params: mergeParams(...where.map(paramsOf))
+    });
+  }
+  if (isIdRange(id)) {
+    const { sql, params, parts = [] } = id[IdRangeTypeId];
+    if (id[IdRangeTypeId].table !== table.name) {
+      throw new RangeError(
+        `a range of \`${id[IdRangeTypeId].table}\` is not a subject of \`${table.name}\``
+      );
+    }
+    const source = derive(Schema5.Unknown, sql, Level.atom, parts, params);
+    return {
+      ...builder({
+        ...reading(state, [source], false),
+        source,
+        range: true,
+        pure: false,
+        params
+      }),
+      forUpdate: () => {
+        throw new RangeError(
+          `FOR UPDATE reads one record, and an id range of \`${table.name}\` reads many; select the record by its id`
+        );
+      }
+    };
+  }
+  if (id === void 0) {
+    return builder(state);
+  }
+  const record = {
+    ...reading(state, [id], false),
+    source: id,
+    params: paramsOf(id)
+  };
+  return {
+    ...builder(record),
+    forUpdate: () => {
+      if (!lockable(id)) {
+        throw new RangeError(
+          `FOR UPDATE reads one record from a binding or a local (\`$name\`), a literal record id or a \`recordId(\u2026)\`, and SurrealDB refuses \`${sqlOf(id)}\` as its target; LET the id in a block first`
+        );
+      }
+      return builder({
+        ...record,
+        lock: true
+      });
+    }
+  };
+};
+var selectFrom = (store, records) => {
+  const source = records;
+  const data = traversalOf(source);
+  if (data === void 0) {
+    throw new TypeError(
+      "a select reads the records of a graph step or a recursive path"
+    );
+  }
+  const shape = linkShape(data.item);
+  const names2 = shape === void 0 ? "any" : shapeTables(shape);
+  if (names2 === "any") {
+    throw new TypeError(
+      "the records of this step can be of any table, so a select has no row to read them with"
+    );
+  }
+  if (names2.length !== 1) {
+    throw new RangeError(
+      `the records of this step are of several tables (${names2.map((name2) => `\`${name2}\``).join(", ")}), and a select reads the rows of one`
+    );
+  }
+  const [name] = names2;
+  const table = store.tables[name];
+  if (table === void 0) {
+    throw new RangeError(`\`${name}\` is not a table of this store`);
+  }
+  const scope = new RowScope("select", table.name);
+  const state = {
+    table,
+    scope,
+    row: rowExprs(table, scope),
+    source,
+    range: true,
+    out: storedRow(table),
+    fields: "*",
+    where: [],
+    pure: false,
+    order: [],
+    aliases: /* @__PURE__ */ new Map(),
+    limit: void 0,
+    start: void 0,
+    only: false,
+    params: paramsOf(source),
+    base: { kind: "row", table },
+    fetch: []
+  };
+  return builder(reading(state, [source], false));
+};
+var arrayShape = (ast, seen = /* @__PURE__ */ new Set()) => {
+  if (seen.has(ast)) return { array: false, other: false };
+  seen.add(ast);
+  if (SchemaAST2.isUndefined(ast) || SchemaAST2.isNull(ast)) {
+    return { array: false, other: false };
+  }
+  if (SchemaAST2.isUnknown(ast) || SchemaAST2.isAny(ast)) {
+    return { array: true, other: true };
+  }
+  if (SchemaAST2.isArrays(ast)) return { array: true, other: false };
+  if (SchemaAST2.isSuspend(ast)) return arrayShape(ast.thunk(), seen);
+  if (SchemaAST2.isUnion(ast)) {
+    const members = ast.types.map((member) => arrayShape(member, seen));
+    return {
+      array: members.some((member) => member.array),
+      other: members.some((member) => member.other)
+    };
+  }
+  return { array: false, other: true };
+};
+var assertSameOnBoth = (field, value, key2, index) => {
+  const stored = arrayShape(codecOf(field).ast);
+  if (!stored.array || !stored.other || !isExpr(value)) return;
+  if (!arrayShape(codecOf(value).ast).array) return;
+  throw new RangeError(
+    `\`${key2}\` of the unique index \`${index}\` may hold an array or another kind, and SurrealDB 3.3 finds no array through such an index (4.0 does): look it up by a value that is not an array, or declare \`${key2}\` an array kind only`
+  );
+};
+var uniqueLookup = (table, row, name, values) => {
+  const index = table.indexes?.[name];
+  if (index === void 0) {
+    throw new RangeError(`\`${table.name}\` has no index \`${name}\``);
+  }
+  if (index.type !== "unique") {
+    throw new RangeError(
+      `\`${name}\` is a ${index.type} index of \`${table.name}\`, not a unique one`
+    );
+  }
+  const keys = index.columns.map((path) => path.join("."));
+  if (index.columns.some((path) => path.includes("*"))) {
+    throw new RangeError(
+      `\`${name}\` indexes array elements, which a unique lookup cannot address`
+    );
+  }
+  for (const key2 of keys) {
+    if (!Object.hasOwn(values, key2)) {
+      throw new RangeError(
+        `the unique index \`${name}\` also needs \`${key2}\``
+      );
+    }
+  }
+  for (const key2 of Object.keys(values)) {
+    if (!keys.includes(key2)) {
+      throw new RangeError(
+        `\`${key2}\` is not a field of the unique index \`${name}\``
+      );
+    }
+  }
+  return index.columns.map((path, at2) => {
+    let field = row;
+    for (const segment of path) {
+      field = typeof field === "object" && field !== null && Object.hasOwn(field, segment) ? field[segment] : void 0;
+    }
+    if (!isPath(field)) {
+      throw new RangeError(
+        `\`${keys[at2]}\` of the unique index \`${name}\` is not a declared field of \`${table.name}\``
+      );
+    }
+    const value = values[keys[at2]];
+    assertSameOnBoth(field, value, keys[at2], name);
+    const compare = eq;
+    return compare(field, value);
+  });
+};
+
+// src/statement/live.ts
+var LiveStatementTypeId = "~effect-surrealkit/LiveStatement";
+var builder2 = (table, selection) => ({
+  where: (predicate) => builder2(table, selection.where(predicate)),
+  project: (fields) => builder2(table, selection.project(fields)),
+  build: (name) => {
+    const statement = selection.build(name);
+    return {
+      [LiveStatementTypeId]: LiveStatementTypeId,
+      name: statement.name,
+      sql: `LIVE ${statement.sql}`,
+      params: statement.params,
+      row: statement.result.value,
+      id: table.id
+    };
+  }
+});
+var live = (table) => builder2(table, select(table));
 
 // src/statement/part.ts
 var checked = /* @__PURE__ */ new WeakMap();
@@ -1371,7 +2207,7 @@ var verify = (item, label2) => {
   return analysis;
 };
 var nameOf = (name, fallback) => name === void 0 ? fallback : `part \`${name}\``;
-var part = (options) => {
+var part2 = (options) => {
   const declared = {
     ...options.name !== void 0 && { name: options.name },
     ...options.source !== void 0 && { source: options.source },
@@ -1534,95 +2370,8 @@ var sequence = (...parts) => ({
   }
 });
 
-// src/statement/record.ts
-var part2 = (value) => {
-  if (isExpr(value)) return value;
-  if (typeof value === "object" && value !== null) {
-    throw new TypeError(
-      "a key part is an expression or a constant; nest no array or object inside a key"
-    );
-  }
-  return literal(value);
-};
-var keyOf = (key2) => {
-  if (isExpr(key2) || typeof key2 !== "object" || key2 === null) {
-    const value = part2(key2);
-    return { sql: operand(value), params: paramsOf(value), parts: [value] };
-  }
-  if (Array.isArray(key2)) {
-    if (key2.length === 0) {
-      throw new RangeError("an array key needs at least one part");
-    }
-    const parts = key2.map(part2);
-    return {
-      sql: `[${parts.map(operand).join(", ")}]`,
-      params: mergeParams(...parts.map(paramsOf)),
-      parts
-    };
-  }
-  const entries = Object.entries(key2).map(
-    ([name, value]) => [name, part2(value)]
-  );
-  if (entries.length === 0) {
-    throw new RangeError("an object key needs at least one part");
-  }
-  return {
-    sql: `{ ${entries.map(
-      ([name, value]) => `${JSON.stringify(name)}: ${operand(value)}`
-    ).join(", ")} }`,
-    params: mergeParams(...entries.map(([, value]) => paramsOf(value))),
-    parts: entries.map(([, value]) => value)
-  };
-};
-var typeRecord = (table, inner) => `type::record(${sqlOf(literal(table.name))}, ${inner})`;
-var recordId = (table, key2) => {
-  const built = keyOf(key2);
-  const id = derive(
-    table.id,
-    typeRecord(table, built.sql),
-    Level.atom,
-    built.parts,
-    built.params
-  );
-  builtIds.add(id);
-  return id;
-};
-var builtIds = /* @__PURE__ */ new WeakSet();
-var isBuiltRecordId = (expr) => typeof expr === "object" && expr !== null && builtIds.has(expr);
-var IdRangeTypeId = "~effect-surrealkit/IdRange";
-var isIdRange = (value) => typeof value === "object" && value !== null && IdRangeTypeId in value;
-var idRange = (table, bounds) => {
-  const given = bounds;
-  if (given.from !== void 0 && given.after !== void 0) {
-    throw new RangeError(
-      "a range starts `from` a key (included) or `after` one (excluded), not both"
-    );
-  }
-  if (given.to !== void 0 && given.through !== void 0) {
-    throw new RangeError(
-      "a range ends `to` a key (excluded) or `through` one (included), not both"
-    );
-  }
-  const start2 = given.from ?? given.after;
-  const end = given.to ?? given.through;
-  const low = start2 === void 0 ? void 0 : keyOf(start2);
-  const high = end === void 0 ? void 0 : keyOf(end);
-  const sql = `${low?.sql ?? ""}${given.after === void 0 ? "" : ">"}..${given.through === void 0 ? "" : "="}${high?.sql ?? ""}`;
-  return {
-    [IdRangeTypeId]: {
-      table: table.name,
-      sql: typeRecord(table, sql),
-      params: mergeParams(
-        low?.params ?? {},
-        high?.params ?? {}
-      ),
-      parts: [...low?.parts ?? [], ...high?.parts ?? []]
-    }
-  };
-};
-
 // src/statement/search.ts
-import { Schema as Schema3, SchemaAST as SchemaAST2, SchemaTransformation } from "effect";
+import { Schema as Schema6, SchemaAST as SchemaAST3, SchemaTransformation } from "effect";
 var U32 = 4294967295;
 var assertRef = (ref) => {
   if (!Number.isInteger(ref) || ref < 0 || ref > 255) {
@@ -1681,7 +2430,7 @@ var match = (table, field, terms, options) => {
   );
   return {
     ...derive(
-      Schema3.Boolean,
+      Schema6.Boolean,
       sql,
       Level.comparison,
       [target, query],
@@ -1704,7 +2453,7 @@ var refOf = (target) => {
   }
   return data.ref;
 };
-var reading = (codec, sql, ref) => makeExpr(
+var reading2 = (codec, sql, ref) => makeExpr(
   codec,
   sql,
   withRefs({}, { reads: /* @__PURE__ */ new Set([ref]) }),
@@ -1712,39 +2461,39 @@ var reading = (codec, sql, ref) => makeExpr(
 );
 var score = (target) => {
   const ref = refOf(target);
-  return reading(Float, `search::score(${ref})`, ref);
+  return reading2(Float, `search::score(${ref})`, ref);
 };
 var MarkedText = SurrealString;
-var MarkedOptionalText = Schema3.UndefinedOr(SurrealString);
-var MarkedList = Schema3.Union([
-  Schema3.Array(SurrealString),
+var MarkedOptionalText = Schema6.UndefinedOr(SurrealString);
+var MarkedList = Schema6.Union([
+  Schema6.Array(SurrealString),
   SurrealString,
-  Schema3.Undefined
+  Schema6.Undefined
 ]).pipe(
-  Schema3.decodeTo(
-    Schema3.Array(SurrealString),
+  Schema6.decodeTo(
+    Schema6.Array(SurrealString),
     SchemaTransformation.transform({
       decode: (answer) => answer === void 0 ? [] : typeof answer === "string" ? [answer] : answer,
       encode: (list) => list
     })
   )
 );
-var MarkedAny = Schema3.UndefinedOr(
-  Schema3.Union([SurrealString, Schema3.Array(SurrealString)])
+var MarkedAny = Schema6.UndefinedOr(
+  Schema6.Union([SurrealString, Schema6.Array(SurrealString)])
 );
 var textShape = (ast, seen = /* @__PURE__ */ new Set()) => {
   const nothing = { list: false, text: false, none: false };
   if (seen.has(ast)) return nothing;
   seen.add(ast);
-  if (SchemaAST2.isUndefined(ast) || SchemaAST2.isNull(ast)) {
+  if (SchemaAST3.isUndefined(ast) || SchemaAST3.isNull(ast)) {
     return { ...nothing, none: true };
   }
-  if (SchemaAST2.isUnknown(ast) || SchemaAST2.isAny(ast)) {
+  if (SchemaAST3.isUnknown(ast) || SchemaAST3.isAny(ast)) {
     return { list: true, text: true, none: true };
   }
-  if (SchemaAST2.isArrays(ast)) return { ...nothing, list: true };
-  if (SchemaAST2.isSuspend(ast)) return textShape(ast.thunk(), seen);
-  if (SchemaAST2.isUnion(ast)) {
+  if (SchemaAST3.isArrays(ast)) return { ...nothing, list: true };
+  if (SchemaAST3.isSuspend(ast)) return textShape(ast.thunk(), seen);
+  if (SchemaAST3.isUnion(ast)) {
     const members = ast.types.map((member) => textShape(member, seen));
     return {
       list: members.some((member) => member.list),
@@ -1783,15 +2532,15 @@ var highlight = (target, open2, close) => {
     })
   );
 };
-var Offsets = Schema3.UndefinedOr(
-  Schema3.Record(
-    Schema3.String,
-    Schema3.Array(Schema3.Struct({ s: Int, e: Int }))
+var Offsets = Schema6.UndefinedOr(
+  Schema6.Record(
+    Schema6.String,
+    Schema6.Array(Schema6.Struct({ s: Int, e: Int }))
   )
 );
 var offsets = (target) => {
   const ref = refOf(target);
-  return reading(Offsets, `search::offsets(${ref})`, ref);
+  return reading2(Offsets, `search::offsets(${ref})`, ref);
 };
 var KnnTypeId = "~effect-surrealkit/Knn";
 var distances = /* @__PURE__ */ new Set([
@@ -1835,7 +2584,7 @@ var withDimension = (codec, dimensions) => {
   const existing = known.get(id);
   if (existing !== void 0) return existing;
   const [first, ...rest] = dimensions.map(
-    (dimension) => Schema3.isBetweenLength(dimension, dimension, {
+    (dimension) => Schema6.isBetweenLength(dimension, dimension, {
       expected: `a vector of ${dimension} numbers (the index dimension)`
     })
   );
@@ -1862,7 +2611,7 @@ var knn = (table, field, vector, options) => {
   ];
   let bound;
   if (typeof vector === "string") {
-    bound = param(vector, withDimension(Schema3.Array(Float), dimensions));
+    bound = param(vector, withDimension(Schema6.Array(Float), dimensions));
   } else {
     const own = vector;
     const names2 = Object.keys(paramsOf(own));
@@ -1878,7 +2627,7 @@ var knn = (table, field, vector, options) => {
   const sql = `${sqlOf(target)} <|${k},${how}|> ${operand(bound)}`;
   return {
     ...derive(
-      Schema3.Boolean,
+      Schema6.Boolean,
       sql,
       Level.comparison,
       [target, bound],
@@ -1895,12 +2644,12 @@ var knnDistance = (_search) => makeExpr(
 );
 var rowAst = (list) => {
   let node = list.ast;
-  if (SchemaAST2.isArrays(node) && node.rest[0] !== void 0) {
+  if (SchemaAST3.isArrays(node) && node.rest[0] !== void 0) {
     node = node.rest[0];
-    while (SchemaAST2.isDeclaration(node) && node.typeParameters[0]) {
+    while (SchemaAST3.isDeclaration(node) && node.typeParameters[0]) {
       node = node.typeParameters[0];
     }
-    if (SchemaAST2.isObjects(node)) return node;
+    if (SchemaAST3.isObjects(node)) return node;
   }
   throw new TypeError(
     "a fused list is a list of rows, such as `select(\u2026).project(\u2026).toExpr()`"
@@ -1908,7 +2657,7 @@ var rowAst = (list) => {
 };
 var union2 = (codecs) => {
   const distinct2 = [...new Set(codecs)];
-  return distinct2.length === 1 && distinct2[0] !== void 0 ? distinct2[0] : Schema3.Union(distinct2);
+  return distinct2.length === 1 && distinct2[0] !== void 0 ? distinct2[0] : Schema6.Union(distinct2);
 };
 var fusedCodec = (lists, scoreField) => {
   const fields = /* @__PURE__ */ new Map();
@@ -1927,18 +2676,18 @@ var fusedCodec = (lists, scoreField) => {
           `a fused list has a field \`${scoreField}\`, which the fused score replaces; rename it`
         );
       }
-      const codec = asts.get(type) ?? Schema3.make(type);
+      const codec = asts.get(type) ?? Schema6.make(type);
       asts.set(type, codec);
       fields.set(name, [...fields.get(name) ?? [], codec]);
     }
   }
   const struct = {};
   for (const [name, codecs] of fields) {
-    struct[name] = name === "id" ? union2(codecs) : Schema3.optionalKey(union2(codecs));
+    struct[name] = name === "id" ? union2(codecs) : Schema6.optionalKey(union2(codecs));
   }
   struct[scoreField] = Float;
-  return Schema3.Array(
-    NoneAsAbsent(Schema3.Struct(struct))
+  return Schema6.Array(
+    NoneAsAbsent(Schema6.Struct(struct))
   );
 };
 var countText = (value, what, minimum) => {
@@ -1979,7 +2728,7 @@ var linear = (lists, options) => {
         `there are ${all.length} lists and ${given.length} weights; give one weight per list`
       );
     }
-    weights = literal([...given], Schema3.Array(Schema3.Finite));
+    weights = literal([...given], Schema6.Array(Schema6.Finite));
   }
   if (options.normalisation !== "minmax" && options.normalisation !== "zscore") {
     throw new RangeError(
@@ -2013,717 +2762,28 @@ var evaluate = (expr, name = "evaluate", options) => {
   });
 };
 
-// src/statement/select.ts
-import { Schema as Schema5, SchemaAST as SchemaAST3 } from "effect";
-import { escapeIdent as escapeIdent4 } from "surrealdb";
-
-// src/statement/fetch.ts
-import { Schema as Schema4 } from "effect";
-import { escapeIdent as escapeIdent3 } from "surrealdb";
-var treeOf = (paths) => {
-  const root = {};
-  for (const path of paths) {
-    let node = root;
-    for (const segment of path.split(".")) {
-      node[segment] ??= {};
-      node = node[segment];
-    }
-  }
-  return root;
-};
-var fetchPath = (path) => {
-  const segments = path.split(".");
-  if (segments.some((segment) => segment.length === 0)) {
-    throw new RangeError(
-      `\`${path}\` is not a FETCH path: name fields separated by dots`
-    );
-  }
-  return segments.map((segment) => escapeIdent3(segment)).join(".");
-};
-var rebuildRow = (row, fields) => "records" in row && "schema" in row ? Schema4.StructWithRest(
-  Schema4.Struct(fields),
-  row.records
-) : Schema4.Struct(fields);
-var targetsOf = (store, tables, path) => {
-  if (tables === "any") {
-    throw new TypeError(
-      `\`${path}\` can point at any table (\`record\`), so FETCH has no row type for it`
-    );
-  }
-  return tables.map((name) => {
-    const table = store.tables[name];
-    if (table === void 0) {
-      throw new RangeError(
-        `\`${path}\` points at \`${name}\`, which is not a table of this store`
-      );
-    }
-    return table;
-  });
-};
-var fetchedRow = (store, tables, tree, path) => union(
-  targetsOf(store, tables, path).map(
-    (table) => Object.keys(tree).length === 0 ? rowCodec(table.select) : rowCodec(
-      rebuildRow(
-        table.select,
-        rewrite(store, selectFields(table), tree, path)
-      )
-    )
-  )
-);
-var rewriteValue = (store, codec, tree, path) => {
-  const shape = linkShape(codec);
-  if (shape !== void 0) {
-    const inner = shape.kind === "optional" ? shape.of : shape;
-    if (inner.kind === "id") {
-      return {
-        codec: fetchedRow(store, inner.tables, tree, path),
-        absent: true
-      };
-    }
-    if (inner.kind === "list" && inner.of.kind !== "list") {
-      const row = fetchedRow(store, shapeTables(inner.of), tree, path);
-      const list = Schema4.Array(
-        Schema4.UndefinedOr(row)
-      );
-      return {
-        codec: shape.kind === "optional" ? Schema4.UndefinedOr(list) : list,
-        absent: false
-      };
-    }
-  }
-  const nested = fieldsOf(codec);
-  if (nested !== void 0 && Object.keys(tree).length > 0) {
-    return {
-      codec: rebuildRow(codec, rewrite(store, nested, tree, path)),
-      absent: false
-    };
-  }
-  if ("value" in codec && Schema4.isSchema(codec.value) && Object.keys(tree).length > 0) {
-    const item = fieldsOf(codec.value);
-    if (item !== void 0) {
-      return {
-        codec: Schema4.Array(
-          rebuildRow(
-            codec.value,
-            rewrite(store, item, tree, path)
-          )
-        ),
-        absent: false
-      };
-    }
-  }
-  throw new TypeError(
-    `\`${path}\` is not a record link, so FETCH has nothing to replace`
-  );
-};
-var rewrite = (store, fields, tree, prefix) => {
-  const next = { ...fields };
-  for (const [key2, subtree] of Object.entries(tree)) {
-    const path = prefix === "" ? key2 : `${prefix}.${key2}`;
-    const declared = fields[key2];
-    if (declared === void 0) {
-      throw new RangeError(
-        path === key2 ? `\`${key2}\` is not a field of what the select returns` : `\`${path}\`: \`${key2}\` is not a field of what the select returns`
-      );
-    }
-    const optional = isOptionalField(declared);
-    const { codec, absent } = rewriteValue(
-      store,
-      unwrapField(declared),
-      subtree,
-      path
-    );
-    next[key2] = absent ? Schema4.optional(codec) : optional ? Schema4.optionalKey(codec) : codec;
-  }
-  return next;
-};
-var fetchedCodec = (store, base, paths) => {
-  for (const path of paths) fetchPath(path);
-  const tree = treeOf(paths);
-  switch (base.kind) {
-    case "row":
-      return rowCodec(
-        rebuildRow(
-          base.table.select,
-          rewrite(store, selectFields(base.table), tree, "")
-        )
-      );
-    case "projection":
-      return projectedCodec(
-        rewrite(store, base.fields, tree, "")
-      );
-    case "value":
-      throw new TypeError(
-        "FETCH replaces fields of the row or of a projection; `SELECT VALUE` has none: project the value instead"
-      );
-  }
-};
-
-// src/statement/select.ts
-var ownReader = (state, what) => {
-  assertReader(readerOf(state.table), state.context?.readers, what);
-  if (state.context?.readers === void 0) return state.context;
-  const { readers: _, ...rest } = state.context;
-  return Object.keys(rest).length === 0 ? void 0 : rest;
-};
-var siteOf = (state) => ({
-  own: state.scope,
-  what: `a select of \`${state.table.name}\``,
-  parents: "select"
-});
-var reading2 = (state, exprs, callback = true) => {
-  const context = joinContexts([
-    state.context,
-    callback ? admit(siteOf(state), exprs) : joinContexts(exprs.map(contextOf))
-  ]);
-  return {
-    ...state,
-    ...context !== void 0 && { context }
-  };
-};
-var valueHasNoNames = "SELECT VALUE returns one value per row, with no names to order by; order by a field path of the stored row with `orderBy`";
-var missingName = (state, name) => {
-  const missing = `\`${name}\` is not a name the result row holds`;
-  if (state.base.kind === "value") return `${missing}: ${valueHasNoNames}`;
-  const holds = state.fields === "*" ? Object.hasOwn(fieldsOf(state.table.select) ?? {}, name) && !(state.omit ?? []).includes(name) : state.aliases.has(name);
-  return holds ? void 0 : missing;
-};
-var assertOrder = (state) => {
-  for (const { alias, path, sql } of state.order) {
-    if (alias !== void 0) {
-      const missing = missingName(state, alias);
-      if (missing !== void 0) {
-        throw new RangeError(`ORDER BY \`${alias}\`: ${missing}`);
-      }
-    }
-    if (path === void 0) continue;
-    const source = state.aliases.get(path.root);
-    if (source !== void 0 && source !== path.rootSql) {
-      throw new RangeError(
-        `the projection alias \`${path.root}\` stands for \`${source}\` and shadows the stored field \`${path.root}\` that ORDER BY ${sql} reads, so SurrealDB would order by the alias; rename the alias`
-      );
-    }
-  }
-};
-var count2 = (value, clause) => {
-  if (isExpr(value)) return sqlOf(value);
-  if (!Number.isInteger(value) || value < 0) {
-    throw new RangeError(
-      `${clause} takes a non-negative integer, not ${value}`
-    );
-  }
-  return String(value);
-};
-var render3 = (state) => {
-  assertOrder(state);
-  const limit = state.only && readsMany(state) ? "1" : state.limit;
-  return [
-    `SELECT ${state.fields}${state.omit === void 0 || state.omit.length === 0 ? "" : ` OMIT ${state.omit.map((field) => escapeIdent4(field)).join(", ")}`} FROM ${state.only ? "ONLY " : ""}${state.source === void 0 ? tableName(state.table) : sqlOf(state.source)}`,
-    ...state.index === void 0 ? [] : [`WITH INDEX ${escapeIdent4(state.index)}`],
-    ...state.where.length > 0 ? [`WHERE ${andAll(state.where)}`] : [],
-    ...state.split === void 0 ? [] : [`SPLIT ${splitTarget(state, state.split)}`],
-    ...state.order.length > 0 ? [
-      `ORDER BY ${state.order.map(({ direction, sql }) => `${sql} ${direction}`).join(", ")}`
-    ] : [],
-    ...limit === void 0 ? [] : [`LIMIT ${limit}`],
-    ...state.start === void 0 ? [] : [`START ${state.start}`],
-    ...state.fetch.length > 0 ? [`FETCH ${state.fetch.map(fetchPath).join(", ")}`] : [],
-    ...state.lock === true ? ["FOR UPDATE"] : []
-  ].join(" ");
-};
-var assertNoFetch = (state, method) => {
-  if (state.fetch.length > 0) {
-    throw new RangeError(
-      `FETCH ${state.fetch.join(", ")} names fields of what the select returns; call \`${method}\` before \`fetch\``
-    );
-  }
-};
-var splitTarget = (state, field) => {
-  const sql = escapeIdent4(field);
-  if (state.fields !== "*" && state.aliases.get(field) !== sql) {
-    throw new RangeError(
-      `the SPLIT field \`${field}\` must be projected under its own name (\`${field}: row.${field}\`)`
-    );
-  }
-  return sql;
-};
-var baseOf = (state) => {
-  if (state.split !== void 0 || state.omit !== void 0 || state.fetch.length > 0 || state.fields !== "*" || state.only || state.order.length > 0 || state.limit !== void 0 || state.start !== void 0) {
-    throw new RangeError(
-      "group a SELECT before projecting, ordering, limiting, fetching it or reading ONLY one row"
-    );
-  }
-  return {
-    table: state.table,
-    scope: state.scope,
-    ...state.context !== void 0 && { context: state.context },
-    row: state.row,
-    from: state.source === void 0 ? tableName(state.table) : sqlOf(state.source),
-    where: state.where,
-    params: state.params,
-    pure: state.pure
-  };
-};
-var rebuild = (row, fields) => "records" in row && "schema" in row ? Schema5.StructWithRest(
-  Schema5.Struct(fields),
-  row.records
-) : Schema5.Struct(fields);
-var readsMany = (state) => state.source === void 0 || state.range === true;
-var resultOf = (state) => state.only ? Schema5.UndefinedOr(state.out) : Schema5.Array(state.out);
-var parameter = /^\$[A-Za-z_][A-Za-z0-9_]*$/u;
-var recordLiteral = /^r"(?:[^"\\]|\\.)*"$/u;
-var lockable = (id) => parameter.test(sqlOf(id)) || recordLiteral.test(sqlOf(id)) || isBuiltRecordId(id);
-var builder = (state) => {
-  const row = state.row;
-  const bounded = (rows2) => isExpr(rows2) ? mergeParams(state.params, paramsOf(rows2)) : state.params;
-  return {
-    where: (predicate) => {
-      if (state.split !== void 0) {
-        throw new RangeError(
-          "WHERE reads the stored row, before SPLIT; add conditions before `.split(\u2026)`"
-        );
-      }
-      const condition = predicate(row);
-      return builder({
-        ...reading2(state, [condition]),
-        where: [...state.where, condition],
-        pure: false,
-        params: mergeParams(state.params, paramsOf(condition))
-      });
-    },
-    orderBy: (key2, direction = "ASC") => {
-      const by = key2(row);
-      const path = isPath(by) ? pathOf(by) : void 0;
-      if (path === void 0) {
-        throw new TypeError(
-          "ORDER BY takes a field path of the row (`row.name`, `row.address.city`, `at(row.pins, 0)`); SurrealDB parses nothing else there"
-        );
-      }
-      return builder({
-        ...reading2(state, [by]),
-        order: [
-          ...state.order,
-          { sql: sqlOf(by), direction, path }
-        ]
-      });
-    },
-    orderByAlias: (alias, direction = "ASC") => {
-      const name = alias;
-      const missing = missingName(state, name);
-      if (missing !== void 0) throw new RangeError(missing);
-      return builder({
-        ...state,
-        order: [
-          ...state.order,
-          { sql: escapeIdent4(name), direction, alias: name }
-        ]
-      });
-    },
-    limit: (rows2) => {
-      if (state.only && readsMany(state)) {
-        throw new RangeError(
-          "a SELECT \u2026 FROM ONLY a table already reads at most one row"
-        );
-      }
-      return builder({
-        ...reading2(state, isExpr(rows2) ? [rows2] : [], false),
-        limit: count2(rows2, "LIMIT"),
-        params: bounded(rows2),
-        pure: state.pure && !isExpr(rows2)
-      });
-    },
-    start: (rows2) => builder({
-      ...reading2(state, isExpr(rows2) ? [rows2] : [], false),
-      start: count2(rows2, "START"),
-      params: bounded(rows2),
-      pure: state.pure && !isExpr(rows2)
-    }),
-    project: (fields) => {
-      if (state.omit !== void 0) {
-        throw new RangeError(
-          "OMIT leaves fields out of `SELECT *`; a projection names the fields it keeps instead"
-        );
-      }
-      const projection = fields(row);
-      const projected = project(projection);
-      assertNoFetch(state, "project");
-      return builder({
-        ...reading2(state, Object.values(projection)),
-        base: {
-          kind: "projection",
-          fields: Object.fromEntries(
-            Object.entries(projection).map(([alias, value]) => [
-              alias,
-              codecOf(value)
-            ])
-          )
-        },
-        fields: projected.sql,
-        aliases: projected.aliases,
-        pure: state.pure && Object.values(projection).every(isPath),
-        out: projected.codec,
-        params: mergeParams(state.params, projected.params)
-      });
-    },
-    value: (pick) => {
-      if (state.omit !== void 0 || state.split !== void 0) {
-        throw new RangeError(
-          "`SELECT VALUE` takes no OMIT or SPLIT here; project the field instead"
-        );
-      }
-      const picked = pick(row);
-      assertNoFetch(state, "value");
-      return builder({
-        ...reading2(state, [picked]),
-        base: { kind: "value" },
-        fields: `VALUE ${sqlOf(picked)}`,
-        aliases: /* @__PURE__ */ new Map(),
-        pure: state.pure && isPath(picked),
-        out: rowCodec(codecOf(picked)),
-        params: mergeParams(state.params, paramsOf(picked))
-      });
-    },
-    fetch: (store, ...paths) => {
-      const fetch = [...state.fetch, ...paths];
-      const context = joinContexts([state.context, viewOf(store)]);
-      return builder({
-        ...state,
-        ...context !== void 0 && { context },
-        fetch,
-        out: fetchedCodec(store, state.base, fetch)
-      });
-    },
-    only: () => {
-      if (readsMany(state) && state.limit !== void 0) {
-        throw new RangeError(
-          "a SELECT \u2026 FROM ONLY a table reads at most one row; drop the LIMIT"
-        );
-      }
-      return builder({ ...state, only: true });
-    },
-    omit: (...names2) => {
-      assertNoFetch(state, "omit");
-      if (state.fields !== "*") {
-        throw new RangeError(
-          "OMIT leaves fields out of `SELECT *`; a projection names the fields it keeps instead"
-        );
-      }
-      const stored = fieldsOf(state.table.select);
-      if (stored === void 0) {
-        throw new TypeError("OMIT takes a generated row schema");
-      }
-      const omitted = [
-        ...state.omit ?? [],
-        ...names2
-      ];
-      for (const name of omitted) {
-        if (!Object.hasOwn(stored, name)) {
-          throw new RangeError(
-            `\`${name}\` is not a field of \`${state.table.name}\``
-          );
-        }
-        if (name === state.split) {
-          throw new RangeError(
-            `\`${name}\` is the SPLIT field, which the row must hold`
-          );
-        }
-      }
-      const kept = Object.fromEntries(
-        Object.entries(stored).filter(
-          ([name]) => !omitted.includes(name)
-        )
-      );
-      const select2 = rebuild(state.table.select, kept);
-      return builder({
-        ...state,
-        omit: omitted,
-        out: rowCodec(select2),
-        base: { kind: "row", table: { ...state.table, select: select2 } }
-      });
-    },
-    split: (field) => {
-      assertNoFetch(state, "split");
-      const name = field;
-      if (state.fields !== "*" || state.only || state.omit !== void 0) {
-        throw new RangeError(
-          "split a SELECT before projecting it, omitting fields or reading ONLY one row"
-        );
-      }
-      if (state.split !== void 0) {
-        throw new RangeError("this SELECT splits one field");
-      }
-      const stored = fieldsOf(state.table.select);
-      const declared = stored?.[name];
-      const codec = declared === void 0 ? void 0 : unwrap(declared);
-      if (stored === void 0 || declared === void 0 || codec === void 0 || !("value" in codec) || !Schema5.isSchema(codec.value)) {
-        throw new RangeError(
-          `\`${name}\` is not an array field of \`${state.table.name}\`: SPLIT takes one`
-        );
-      }
-      const element = Schema5.Union([codec.value, codec]);
-      const select2 = rebuild(state.table.select, {
-        ...stored,
-        [name]: isOptional(declared) ? Schema5.optionalKey(element) : element
-      });
-      const table = { ...state.table, select: select2 };
-      return builder({
-        ...state,
-        table,
-        row: rowExprs(table, state.scope),
-        out: storedRow(table),
-        base: { kind: "row", table },
-        split: name
-      });
-    },
-    groupBy: (keys) => groupBy(
-      baseOf(state),
-      keys
-    ),
-    groupAll: () => groupAll(baseOf(state)),
-    toExpr: () => subquery(
-      resultOf(state),
-      render3(state),
-      state.params,
-      ownReader(state, `the subquery of \`${state.table.name}\``)
-    ),
-    build: (name, options) => {
-      const writes = options?.writes ?? (state.pure ? false : void 0);
-      const label2 = name ?? `select ${state.table.name}`;
-      settle(
-        ownReader(state, `statement \`${label2}\``),
-        `statement \`${label2}\``
-      );
-      return make({
-        ...writes !== void 0 && { writes },
-        name: label2,
-        sql: `${render3(state)};`,
-        params: state.params,
-        result: resultOf(state)
-      });
-    }
-  };
-};
-var select = (table, id, values) => {
-  const scope = new RowScope("select", table.name);
-  const state = {
-    table,
-    scope,
-    row: rowExprs(table, scope),
-    source: void 0,
-    out: storedRow(table),
-    fields: "*",
-    where: [],
-    pure: id === void 0,
-    order: [],
-    aliases: /* @__PURE__ */ new Map(),
-    limit: void 0,
-    start: void 0,
-    only: false,
-    params: {},
-    base: { kind: "row", table },
-    fetch: []
-  };
-  if (typeof id === "string") {
-    const where = uniqueLookup(table, state.row, id, values ?? {});
-    return builder({
-      ...reading2(state, where),
-      where,
-      pure: false,
-      only: true,
-      index: id,
-      params: mergeParams(...where.map(paramsOf))
-    });
-  }
-  if (isIdRange(id)) {
-    const { sql, params, parts = [] } = id[IdRangeTypeId];
-    if (id[IdRangeTypeId].table !== table.name) {
-      throw new RangeError(
-        `a range of \`${id[IdRangeTypeId].table}\` is not a subject of \`${table.name}\``
-      );
-    }
-    const source = derive(Schema5.Unknown, sql, Level.atom, parts, params);
-    return {
-      ...builder({
-        ...reading2(state, [source], false),
-        source,
-        range: true,
-        pure: false,
-        params
-      }),
-      forUpdate: () => {
-        throw new RangeError(
-          `FOR UPDATE reads one record, and an id range of \`${table.name}\` reads many; select the record by its id`
-        );
-      }
-    };
-  }
-  if (id === void 0) {
-    return builder(state);
-  }
-  const record = {
-    ...reading2(state, [id], false),
-    source: id,
-    params: paramsOf(id)
-  };
-  return {
-    ...builder(record),
-    forUpdate: () => {
-      if (!lockable(id)) {
-        throw new RangeError(
-          `FOR UPDATE reads one record from a binding or a local (\`$name\`), a literal record id or a \`recordId(\u2026)\`, and SurrealDB refuses \`${sqlOf(id)}\` as its target; LET the id in a block first`
-        );
-      }
-      return builder({
-        ...record,
-        lock: true
-      });
-    }
-  };
-};
-var selectFrom = (store, records) => {
-  const source = records;
-  const data = traversalOf(source);
-  if (data === void 0) {
-    throw new TypeError(
-      "a select reads the records of a graph step or a recursive path"
-    );
-  }
-  const shape = linkShape(data.item);
-  const names2 = shape === void 0 ? "any" : shapeTables(shape);
-  if (names2 === "any") {
-    throw new TypeError(
-      "the records of this step can be of any table, so a select has no row to read them with"
-    );
-  }
-  if (names2.length !== 1) {
-    throw new RangeError(
-      `the records of this step are of several tables (${names2.map((name2) => `\`${name2}\``).join(", ")}), and a select reads the rows of one`
-    );
-  }
-  const [name] = names2;
-  const table = store.tables[name];
-  if (table === void 0) {
-    throw new RangeError(`\`${name}\` is not a table of this store`);
-  }
-  const scope = new RowScope("select", table.name);
-  const state = {
-    table,
-    scope,
-    row: rowExprs(table, scope),
-    source,
-    range: true,
-    out: storedRow(table),
-    fields: "*",
-    where: [],
-    pure: false,
-    order: [],
-    aliases: /* @__PURE__ */ new Map(),
-    limit: void 0,
-    start: void 0,
-    only: false,
-    params: paramsOf(source),
-    base: { kind: "row", table },
-    fetch: []
-  };
-  return builder(reading2(state, [source], false));
-};
-var arrayShape = (ast, seen = /* @__PURE__ */ new Set()) => {
-  if (seen.has(ast)) return { array: false, other: false };
-  seen.add(ast);
-  if (SchemaAST3.isUndefined(ast) || SchemaAST3.isNull(ast)) {
-    return { array: false, other: false };
-  }
-  if (SchemaAST3.isUnknown(ast) || SchemaAST3.isAny(ast)) {
-    return { array: true, other: true };
-  }
-  if (SchemaAST3.isArrays(ast)) return { array: true, other: false };
-  if (SchemaAST3.isSuspend(ast)) return arrayShape(ast.thunk(), seen);
-  if (SchemaAST3.isUnion(ast)) {
-    const members = ast.types.map((member) => arrayShape(member, seen));
-    return {
-      array: members.some((member) => member.array),
-      other: members.some((member) => member.other)
-    };
-  }
-  return { array: false, other: true };
-};
-var assertSameOnBoth = (field, value, key2, index) => {
-  const stored = arrayShape(codecOf(field).ast);
-  if (!stored.array || !stored.other || !isExpr(value)) return;
-  if (!arrayShape(codecOf(value).ast).array) return;
-  throw new RangeError(
-    `\`${key2}\` of the unique index \`${index}\` may hold an array or another kind, and SurrealDB 3.3 finds no array through such an index (4.0 does): look it up by a value that is not an array, or declare \`${key2}\` an array kind only`
-  );
-};
-var uniqueLookup = (table, row, name, values) => {
-  const index = table.indexes?.[name];
-  if (index === void 0) {
-    throw new RangeError(`\`${table.name}\` has no index \`${name}\``);
-  }
-  if (index.type !== "unique") {
-    throw new RangeError(
-      `\`${name}\` is a ${index.type} index of \`${table.name}\`, not a unique one`
-    );
-  }
-  const keys = index.columns.map((path) => path.join("."));
-  if (index.columns.some((path) => path.includes("*"))) {
-    throw new RangeError(
-      `\`${name}\` indexes array elements, which a unique lookup cannot address`
-    );
-  }
-  for (const key2 of keys) {
-    if (!Object.hasOwn(values, key2)) {
-      throw new RangeError(
-        `the unique index \`${name}\` also needs \`${key2}\``
-      );
-    }
-  }
-  for (const key2 of Object.keys(values)) {
-    if (!keys.includes(key2)) {
-      throw new RangeError(
-        `\`${key2}\` is not a field of the unique index \`${name}\``
-      );
-    }
-  }
-  return index.columns.map((path, at2) => {
-    let field = row;
-    for (const segment of path) {
-      field = typeof field === "object" && field !== null && Object.hasOwn(field, segment) ? field[segment] : void 0;
-    }
-    if (!isPath(field)) {
-      throw new RangeError(
-        `\`${keys[at2]}\` of the unique index \`${name}\` is not a declared field of \`${table.name}\``
-      );
-    }
-    const value = values[keys[at2]];
-    assertSameOnBoth(field, value, keys[at2], name);
-    const compare = eq;
-    return compare(field, value);
-  });
-};
-
 // src/statement/write.ts
-import { Schema as Schema6, SchemaTransformation as SchemaTransformation2 } from "effect";
+import { Schema as Schema7, SchemaTransformation as SchemaTransformation2 } from "effect";
 import { escapeIdent as escapeIdent5 } from "surrealdb";
-var PatchOperation = Schema6.Union([
-  Schema6.Struct({
-    op: Schema6.Literal("add"),
-    path: Schema6.String,
+var PatchOperation = Schema7.Union([
+  Schema7.Struct({
+    op: Schema7.Literal("add"),
+    path: Schema7.String,
     value: SurrealValue
   }),
-  Schema6.Struct({ op: Schema6.Literal("remove"), path: Schema6.String }),
-  Schema6.Struct({
-    op: Schema6.Literal("replace"),
-    path: Schema6.String,
-    value: Schema6.optional(SurrealValue)
+  Schema7.Struct({ op: Schema7.Literal("remove"), path: Schema7.String }),
+  Schema7.Struct({
+    op: Schema7.Literal("replace"),
+    path: Schema7.String,
+    value: Schema7.optional(SurrealValue)
   }),
-  Schema6.Struct({
-    op: Schema6.Literal("change"),
-    path: Schema6.String,
-    value: Schema6.String
+  Schema7.Struct({
+    op: Schema7.Literal("change"),
+    path: Schema7.String,
+    value: Schema7.String
   })
 ]);
-var Diff = Schema6.Array(PatchOperation);
+var Diff = Schema7.Array(PatchOperation);
 var siteOf2 = (state) => ({
   own: state.scope,
   what: `${/^[AEIOU]/u.test(state.verb) ? "an" : "a"} ${state.verb}`,
@@ -2741,9 +2801,9 @@ var returnClause = (state) => {
   if (state.returning !== void 0) return `RETURN ${state.returning.sql}`;
   return state.verb === "UPSERT" ? "RETURN VALUE NONE" : "RETURN NONE";
 };
-var NoRows = Schema6.Array(Schema6.Undefined).pipe(
-  Schema6.decodeTo(
-    Schema6.Tuple([]),
+var NoRows = Schema7.Array(Schema7.Undefined).pipe(
+  Schema7.decodeTo(
+    Schema7.Tuple([]),
     SchemaTransformation2.transform({
       decode: () => [],
       encode: () => []
@@ -2759,24 +2819,24 @@ var render4 = (state) => [
 ].join(" ");
 var elementOf = (state) => {
   const returning = state.returning;
-  if (returning === void 0) return Schema6.Undefined;
+  if (returning === void 0) return Schema7.Undefined;
   switch (returning.mode) {
     case "after":
-      return state.verb === "DELETE" ? Schema6.Undefined : returning.codec;
+      return state.verb === "DELETE" ? Schema7.Undefined : returning.codec;
     case "before":
-      return state.verb === "UPSERT" || state.verb === "INSERT" ? Schema6.UndefinedOr(returning.codec) : returning.codec;
+      return state.verb === "UPSERT" || state.verb === "INSERT" ? Schema7.UndefinedOr(returning.codec) : returning.codec;
     default:
       return returning.codec;
   }
 };
 var resultOf2 = (state) => {
   if (state.returning === void 0) {
-    if (state.shape !== "many") return Schema6.Undefined;
-    return state.verb === "UPSERT" ? NoRows : Schema6.Tuple([]);
+    if (state.shape !== "many") return Schema7.Undefined;
+    return state.verb === "UPSERT" ? NoRows : Schema7.Tuple([]);
   }
   const element = elementOf(state);
   if (state.shape === "one") return element;
-  return state.shape === "maybe" ? Schema6.UndefinedOr(element) : Schema6.Array(element);
+  return state.shape === "maybe" ? Schema7.UndefinedOr(element) : Schema7.Array(element);
 };
 var nonEmpty = (state) => {
   const mode = state.returning?.mode;
@@ -3050,6 +3110,7 @@ export {
   ExprTypeId,
   IdRangeTypeId,
   KnnTypeId,
+  LiveStatementTypeId,
   MarkedAny,
   MarkedList,
   MarkedOptionalText,
@@ -3105,6 +3166,7 @@ export {
   knnDistance,
   linear,
   literal,
+  live,
   lt,
   lte,
   make,
@@ -3123,11 +3185,12 @@ export {
   param,
   paramsOf,
   parent,
-  part,
+  part2 as part,
   readAs,
   recordId,
   recurse,
   relate,
+  renameNames,
   rowOf,
   rows,
   rrf,
@@ -3144,6 +3207,7 @@ export {
   timeMin,
   unsafeExpr,
   update,
+  updateEach,
   upsert,
   variance
 };
