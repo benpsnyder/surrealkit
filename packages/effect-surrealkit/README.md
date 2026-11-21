@@ -1934,6 +1934,29 @@ see [Generating modules](#generating-modules).
 SDK surfaces NONE) before decoding, so exact `Schema.optionalKey` fields work
 on projections and object values; `null` is kept.
 
+The open values come in four codecs. Each decodes and encodes as the
+identity: nothing is coerced or stripped.
+
+| Codec | NONE (`undefined`) | Use it for |
+| --- | --- | --- |
+| `SurrealValue` | refused at every depth | a binding, or an open value as it is stored |
+| `SurrealMergeValue` | as a record member, at any depth; not as an array element | an `UPDATE … MERGE` patch |
+| `SurrealResultValue` | at the top level, as a record member and as an array or set element, at any depth | anything a native query result can contain, before its own decoder runs |
+| `SurrealJsonValue` | refused: the JSON world has no NONE | HTTP `/sql` and JSON exports |
+
+`SurrealResultObject` (an open object of `SurrealResultValue`s, such as a
+result row before its table's decoder runs) and `SurrealResultArray` (an
+array of them, such as a statement's result set) are built on it. Carry a raw
+row or a statement's answer with these rather than `Schema.Unknown`: they
+still refuse functions, symbols, class instances that are not SDK values and
+objects that are not plain. A generated row with an optional field that may
+hold NONE is a `SurrealResultObject`, and a compare-and-swap answer such as
+`[NONE, 5, NULL]` (`[undefined, 5, null]`) is a `SurrealResultArray`;
+neither is a `SurrealValue`. The engine removes an object key set to NONE
+when it stores a record, so a NONE property reaches a client through a
+projection (a selected field the record does not hold); NONE array elements
+are stored as they are. `test/result-value-engine.test.ts` reads both back.
+
 Every schema carries `toCode` metadata, so
 `SchemaRepresentation.toCodeDocument` prints a schema built from them back to
 source.

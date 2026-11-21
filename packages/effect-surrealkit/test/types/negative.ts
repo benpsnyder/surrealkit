@@ -152,3 +152,21 @@ decodeNativeAsJson(ledgerNative);
 // @ts-expect-error [schema/json-field-as-native] the JSON field schemas are not native shared fields
 export const jsonFieldAsNative: typeof CorpusValues.LedgerFields.amount =
 	CorpusValues.LedgerJsonFields.amount;
+
+// ---- a query result value holds NONE, which stored and JSON values do not
+
+declare const resultValue: SurrealSchema.SurrealResultValue;
+declare const resultRow: {
+	readonly id: RecordId;
+	readonly rewrite?: SurrealSchema.SurrealValue | undefined;
+};
+// @ts-expect-error [values/result-value-as-surreal-value] a result value may be NONE; SurrealValue never is
+export const resultAsStored: SurrealSchema.SurrealValue = resultValue;
+// @ts-expect-error [values/none-property-as-surreal-value] an optional property holding NONE is not a SurrealValue
+export const resultRowAsStored: SurrealSchema.SurrealValue = resultRow;
+// @ts-expect-error [values/none-element-as-merge-value] SurrealMergeValue keeps NONE out of arrays
+export const casAsMerge: SurrealSchema.SurrealMergeValue = [undefined, 5, null];
+// @ts-expect-error [values/none-property-as-json] the JSON world has no NONE
+export const noneAsJson: SurrealSchema.SurrealJsonValue = { a: undefined };
+// @ts-expect-error [values/result-array-as-object] a result set is not a row
+export const setAsRow: SurrealSchema.SurrealResultObject = [undefined];

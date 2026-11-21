@@ -1611,3 +1611,42 @@ exports[`type diagnostics > upsert/one-record-where 1`] = `
   "TS7006: Parameter 'row' implicitly has an 'any' type.",
 ]
 `;
+
+exports[`type diagnostics > values/none-element-as-merge-value 1`] = `
+[
+  "TS2322: Type '(number | null | undefined)[]' is not assignable to type 'SurrealMergeValue'.
+  Type '(number | null | undefined)[]' is not assignable to type '{ readonly [key: string]: SurrealMergeValue; }'.
+    Index signature for type 'string' is missing in type '(number | null | undefined)[]'.",
+]
+`;
+
+exports[`type diagnostics > values/none-property-as-json 1`] = `
+[
+  "TS2322: Type '{ a: undefined; }' is not assignable to type 'SurrealJsonValue'.
+  Type '{ a: undefined; }' is not assignable to type 'null'.",
+]
+`;
+
+exports[`type diagnostics > values/none-property-as-surreal-value 1`] = `
+[
+  "TS2322: Type '{ readonly id: _RecordId; readonly rewrite?: SurrealValue | undefined; }' is not assignable to type 'SurrealValue'.
+  Type '{ readonly id: _RecordId; readonly rewrite?: SurrealValue | undefined; }' is not assignable to type '{ readonly [key: string]: SurrealValue; }'.
+    Property 'rewrite' is incompatible with index signature.
+      Type 'SurrealValue | undefined' is not assignable to type 'SurrealValue'.
+        Type 'undefined' is not assignable to type 'SurrealValue'.",
+]
+`;
+
+exports[`type diagnostics > values/result-array-as-object 1`] = `
+[
+  "TS2322: Type 'undefined[]' is not assignable to type 'SurrealResultObject'.
+  Index signature for type 'string' is missing in type 'undefined[]'.",
+]
+`;
+
+exports[`type diagnostics > values/result-value-as-surreal-value 1`] = `
+[
+  "TS2322: Type 'SurrealResultValue' is not assignable to type 'SurrealValue'.
+  Type 'undefined' is not assignable to type 'SurrealValue'.",
+]
+`;

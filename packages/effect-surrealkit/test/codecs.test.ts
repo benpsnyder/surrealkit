@@ -386,6 +386,140 @@ describe('open values', () => {
 	});
 });
 
+describe('query result values (NONE at any depth)', () => {
+	class CustomObject {
+		value = 1;
+	}
+
+	/** Decodes and encodes, and requires both to give the input back. */
+	const identity = <T>(schema: Schema.Codec<T>, value: unknown) => {
+		// toStrictEqual tells an `undefined` property from an absent key and
+		// an `undefined` element from a hole.
+		expect(decode(schema, value)).toStrictEqual(value);
+		expect(encode(schema, value)).toStrictEqual(value);
+	};
+
+	const natives = [
+		null,
+		true,
+		0,
+		NaN,
+		-Infinity,
+		-0,
+		2n ** 60n,
+		'text',
+		new DateTime('2024-01-02T03:04:05.123456789Z'),
+		new RecordId('person', 'ann'),
+		new Duration('1s'),
+		new Decimal('1.5'),
+		new Uuid('0189a8f6-0000-7000-8000-000000000000'),
+		new GeometryPoint([1, 2]),
+		new GeometryLine([
+			new GeometryPoint([1, 2]),
+			new GeometryPoint([3, 4]),
+		]),
+		new Range(new BoundIncluded(1), undefined),
+		new Date('2024-01-02T03:04:05.123Z'),
+		new Table('person'),
+		new FileRef('avatars', '/a.png'),
+		new Uint8Array([1, 2]),
+		new Set([1, 'a']),
+		[1, 'a'],
+		{ a: 1 },
+	] satisfies ReadonlyArray<S.SurrealValue>;
+
+	it('accepts every native value kind alone', () => {
+		for (const value of natives) {
+			identity(S.SurrealResultValue, value);
+		}
+	});
+
+	it('accepts NONE at the top level, as a property and as an element', () => {
+		identity(S.SurrealResultValue, undefined);
+		identity(S.SurrealResultValue, { a: undefined, b: 1 });
+		identity(S.SurrealResultValue, [undefined, 1]);
+		identity(S.SurrealResultValue, new Set([undefined, 1]));
+		identity(S.SurrealResultObject, { a: undefined, b: 1 });
+		identity(S.SurrealResultArray, [undefined, 1]);
+	});
+
+	it('accepts NONE nested three levels deep in mixed arrays and records', () => {
+		const value = {
+			a: [{ b: [undefined, { c: undefined }] }, undefined],
+			d: { e: [[undefined]], f: { g: { h: undefined } } },
+			i: natives,
+		} satisfies S.SurrealResultObject;
+		identity(S.SurrealResultValue, value);
+		identity(S.SurrealResultObject, value);
+		identity(S.SurrealResultArray, [value, [value], undefined]);
+	});
+
+	it('accepts what the SDK hands back for a CAS result and a generated row', () => {
+		// `[NONE, 5, NULL]` as the SDK decodes it.
+		identity(S.SurrealResultArray, [undefined, 5, null]);
+		identity(S.SurrealResultValue, [undefined, 5, null]);
+		// An optional property the SDK filled with NONE.
+		const row = {
+			id: new RecordId('policy', 'p'),
+			allowedRelations: [
+				{ name: 'owner', rewrite: undefined },
+				{ name: 'viewer', rewrite: { union: ['owner'] } },
+			],
+		};
+		identity(S.SurrealResultObject, row);
+		identity(S.SurrealResultArray, [row]);
+	});
+
+	it('refuses functions, symbols and foreign class instances at any depth', () => {
+		for (const value of [() => 1, Symbol('key'), new CustomObject()]) {
+			for (const input of [
+				value,
+				[value],
+				{ a: value },
+				{ a: [undefined, { b: value }] },
+				new Set([value]),
+			]) {
+				expect(() => decode(S.SurrealResultValue, input)).toThrow();
+				expect(() => encode(S.SurrealResultValue, input)).toThrow();
+			}
+			for (const input of [{ a: value }, { a: [{ b: value }] }]) {
+				expect(() => decode(S.SurrealResultObject, input)).toThrow();
+				expect(() => encode(S.SurrealResultObject, input)).toThrow();
+			}
+			for (const input of [[value], [undefined, { a: [value] }]]) {
+				expect(() => decode(S.SurrealResultArray, input)).toThrow();
+				expect(() => encode(S.SurrealResultArray, input)).toThrow();
+			}
+		}
+	});
+
+	it('the object and array codecs refuse the other shapes', () => {
+		for (const input of [
+			undefined,
+			null,
+			[],
+			new RecordId('person', 'ann'),
+			new CustomObject(),
+		]) {
+			expect(() => decode(S.SurrealResultObject, input)).toThrow();
+		}
+		for (const input of [undefined, null, {}, new Set([1])]) {
+			expect(() => decode(S.SurrealResultArray, input)).toThrow();
+		}
+	});
+
+	it('leaves the stored-value and JSON codecs without NONE', () => {
+		for (const input of [undefined, { a: undefined }, [undefined]]) {
+			expect(() => decode(S.SurrealValue, input)).toThrow();
+			expect(() => decode(S.SurrealJsonValue, input)).toThrow();
+		}
+		expect(
+			decode(S.SurrealMergeValue, { a: { b: undefined } }),
+		).toStrictEqual({ a: { b: undefined } });
+		expect(() => decode(S.SurrealMergeValue, { a: [undefined] })).toThrow();
+	});
+});
+
 describe('Uuid and Bytes', () => {
 	it('Uuid accepts SDK Uuids only', () => {
 		const uuid = new Uuid('0189a8f6-0000-7000-8000-000000000000');

@@ -186,3 +186,34 @@ export const storeFunction: typeof Corpus.fn_greet = (
 export const storeView: typeof Corpus.TeamSizeTable = (
 	null as unknown as typeof Corpus.store
 ).views.team_size;
+
+// Query result values hold NONE at any depth; every stored value is one.
+// Shaped like a generated row (`typeof X.Type`, an object type, not an
+// interface): an optional property may hold NONE.
+declare const generatedShapedRow: {
+	readonly id: RecordId;
+	readonly allowedRelations: ReadonlyArray<{
+		readonly name: string;
+		readonly rewrite?: SurrealSchema.SurrealValue | undefined;
+	}>;
+};
+export const generatedRowAsResult: SurrealSchema.SurrealResultObject =
+	generatedShapedRow;
+export const generatedRowsAsResult: SurrealSchema.SurrealResultArray = [
+	generatedShapedRow,
+];
+declare const kindsRow: Corpus.Kinds;
+export const kindsRowAsResult: SurrealSchema.SurrealResultObject = kindsRow;
+declare const storedValue: SurrealSchema.SurrealValue;
+export const storedAsResult: SurrealSchema.SurrealResultValue = storedValue;
+declare const mergeValue: SurrealSchema.SurrealMergeValue;
+export const mergeAsResult: SurrealSchema.SurrealResultValue = mergeValue;
+declare const resultObject: SurrealSchema.SurrealResultObject;
+declare const resultArray: SurrealSchema.SurrealResultArray;
+export const objectAsResult: SurrealSchema.SurrealResultValue = resultObject;
+export const arrayAsResult: SurrealSchema.SurrealResultValue = resultArray;
+export const casResult: SurrealSchema.SurrealResultArray = [undefined, 5, null];
+export const decodedResultRow: SurrealSchema.SurrealResultObject =
+	Schema.decodeUnknownSync(SurrealSchema.SurrealResultObject)({});
+export const encodedResultRow: SurrealSchema.SurrealResultObject =
+	Schema.encodeSync(SurrealSchema.SurrealResultObject)(resultObject);
