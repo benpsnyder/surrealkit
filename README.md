@@ -601,7 +601,7 @@ turns schema document v2 into [Effect](https://effect.website) v4 schemas whose
 and accepts, plus runtime codecs for every SurrealDB value.
 
 `effect-surrealkit` is not published to npm yet. Build it from this repository
-(`packages/effect-surrealkit`: `npm install && npm run build`) and depend on that
+(`packages/effect-surrealkit`: `pnpm install --frozen-lockfile && pnpm run build`) and depend on that
 directory, or on the package from a Git checkout (its `prepare` script builds it),
 with `effect` 4 (4.0.6 or later) and `surrealdb` 2 (2.1.1 or later) as peers.
 

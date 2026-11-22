@@ -1,6 +1,6 @@
 /**
  * Using the generated contracts. Nothing here connects to a database: this
- * file exists to be type-checked (`npm run typecheck`), and every
+ * file exists to be type-checked (`pnpm run typecheck`), and every
  * `@ts-expect-error` line is a mistake the generated types catch at compile
  * time. With a connection, encode inputs with the generated schemas before
  * handing them to the SDK, and decode what it returns with them.

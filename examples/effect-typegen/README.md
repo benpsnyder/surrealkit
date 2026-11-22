@@ -18,10 +18,10 @@ the schema document, and runs `effect-surrealkit` as an
 modules atomically and records them in `src/generated/surreal/.surrealkit-emit.json`.
 
 ```bash
-npm install --no-package-lock      # effect-surrealkit comes from ../../packages (build it first)
-npm run generate                   # surrealkit compile
-npm run check                      # CI: fail if the committed generated files are stale
-npm run typecheck                  # tsc --noEmit, strict + exactOptionalPropertyTypes
+pnpm install --no-lockfile         # effect-surrealkit comes from ../../packages (build it first)
+pnpm run generate                  # surrealkit compile
+pnpm run check                     # CI: fail if the committed generated files are stale
+pnpm run typecheck                 # tsc --noEmit, strict + exactOptionalPropertyTypes
 ```
 
 `surrealkit` must be on `PATH` (`cargo install surrealkit`, or the workspace's
@@ -31,7 +31,7 @@ generated code fails until the committed files are regenerated.
 
 The generated files also record the versions that produced them (the SurrealKit
 version, commit and engine version in `schema.json` and `manifest.ts`, the
-emitter version in `manifest.ts`). `npm run check` compares bytes, so in a
+emitter version in `manifest.ts`). `pnpm run check` compares bytes, so in a
 project that pins its tools, regenerate as part of the change that bumps them.
 This repository's CI ignores only those version lines, so a SurrealKit or
 `effect-surrealkit` release, or a bump of the `surrealdb` crate, does not need

@@ -33,7 +33,7 @@ const SEED = 20261025;
 
 if (!prepared) {
 	console.warn(
-		'[effect-surrealkit] round-trip suite skipped: run it through `surrealkit test --exec` (bun run test:roundtrip)',
+		'[effect-surrealkit] round-trip suite skipped: run it through `surrealkit test --exec` (pnpm run test:roundtrip)',
 	);
 }
 
