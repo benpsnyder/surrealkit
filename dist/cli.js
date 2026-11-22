@@ -1722,7 +1722,7 @@ var printJsonWorld = (input, fields, endpoint, relationType) => {
 
 // src/emitter/version.ts
 var EMITTER_VERSION = "0.1.0";
-var PEER_VERSIONS = { effect: "4.0.6", surrealdb: "2.1.1" };
+var PEER_VERSIONS = { effect: "4.1.5", surrealdb: "2.2.2" };
 
 // src/emitter/generate.ts
 var GenerateError = class extends Data3.TaggedError("GenerateError") {

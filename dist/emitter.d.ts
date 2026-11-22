@@ -650,8 +650,8 @@ declare const generate: (document: unknown, options: unknown, hooks?: GenerateHo
 declare const EMITTER_VERSION = "0.1.0";
 /** The exact peer versions generated code is written and tested against. */
 declare const PEER_VERSIONS: {
-    readonly effect: "4.0.6";
-    readonly surrealdb: "2.1.1";
+    readonly effect: "4.1.5";
+    readonly surrealdb: "2.2.2";
 };
 
 export { DocumentError, EMITTER_VERSION, EmitterOptions, Field, GenerateError, type GenerateHooks, type GenerateResult, type GeneratedFile, type Kind, OptionsError, PEER_VERSIONS, SchemaDocument, Table, canonicalJson, declaredNames, decodeDocument, decodeOptions, emit, generate, kindText, semanticDigest, semanticProjection };

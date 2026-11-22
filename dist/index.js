@@ -19,15 +19,16 @@ import {
   SurrealValue,
   TableFor,
   taggedRecordId
-} from "./chunk-BOMQHKJG.js";
+} from "./chunk-LHVQILTS.js";
 import {
   NoneAsAbsent,
   stripNone
-} from "./chunk-EEFZAKBV.js";
+} from "./chunk-ZMDEVTBR.js";
 import {
   Bytes,
   DATETIME_MAX_SECONDS,
   DATETIME_MIN_SECONDS,
+  DATETIME_TYPE_IMPORT,
   DECIMAL_MAX_MANTISSA,
   DECIMAL_MAX_SCALE,
   DURATION_MAX_SECONDS,
@@ -49,7 +50,6 @@ import {
   SurrealString,
   Unsupported,
   Uuid,
-  codeOf,
   dateTimeFromString,
   dateTimeToString,
   decimalFromString,
@@ -62,7 +62,7 @@ import {
   runtimeCode,
   toWellFormed,
   wrap
-} from "./chunk-MUBWQQFC.js";
+} from "./chunk-VZONF6WY.js";
 import "./chunk-3SWEJO3L.js";
 import "./chunk-PZ5AY32C.js";
 
@@ -282,13 +282,8 @@ var RecordIdAnyFromJson = textTo(RecordIdAny, {
 var RecordIdFromJsonAs = (id) => wrap(RecordIdAnyFromJson.pipe(Schema2.decodeTo(id)), {
   id: "effect-surrealkit/RecordIdFromJsonAs",
   expected: "a record id string",
-  code: () => {
-    const inner = codeOf(id);
-    return runtimeCode(
-      `RecordIdFromJsonAs(${inner.runtime})`,
-      inner.Type
-    );
-  }
+  codeParameters: [id],
+  code: ([, idCode]) => runtimeCode(`RecordIdFromJsonAs(${idCode.runtime})`, idCode.Type)
 });
 var TableFromJson = (tables) => textTo(TableFor(tables), {
   id: "effect-surrealkit/TableFromJson",
@@ -338,13 +333,11 @@ var GeometryFromJson = (geometry) => wrap(
   {
     id: "effect-surrealkit/GeometryFromJson",
     expected: "a GeoJSON geometry",
-    code: () => {
-      const inner = codeOf(geometry);
-      return runtimeCode(
-        `GeometryFromJson(${inner.runtime})`,
-        inner.Type
-      );
-    }
+    codeParameters: [geometry],
+    code: ([, geometryCode]) => runtimeCode(
+      `GeometryFromJson(${geometryCode.runtime})`,
+      geometryCode.Type
+    )
   }
 );
 var SurrealNumberFromJson = wrap(
@@ -373,7 +366,9 @@ var DateTimeEffectFromJson = wrap(
   {
     id: "effect-surrealkit/DateTimeEffectFromJson",
     expected: "an RFC 3339 datetime string",
-    code: () => runtimeCode("DateTimeEffectFromJson", "DateTime.Utc")
+    code: () => runtimeCode("DateTimeEffectFromJson", "DateTime.Utc", [
+      DATETIME_TYPE_IMPORT
+    ])
   }
 );
 var SetFromJson = (item, options = {}) => wrap(
@@ -397,9 +392,8 @@ var SetFromJson = (item, options = {}) => wrap(
   {
     id: "effect-surrealkit/SetFromJson",
     expected: "an array of distinct elements",
-    // The wrapped array only shows the encoded side, so print the item.
-    code: () => {
-      const itemCode = codeOf(item);
+    codeParameters: [item],
+    code: ([, itemCode]) => {
       const lengthCode = options.length === void 0 ? "" : `, { length: ${options.length} }`;
       return runtimeCode(
         `SetFromJson(${itemCode.runtime}${lengthCode})`,

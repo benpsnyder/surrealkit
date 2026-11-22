@@ -4,7 +4,6 @@ import {
   Duration,
   Int,
   Uuid,
-  codeOf,
   invalid,
   isPlainObject,
   leaf,
@@ -16,7 +15,7 @@ import {
   toWellFormed,
   wrap,
   wrongType
-} from "./chunk-MUBWQQFC.js";
+} from "./chunk-VZONF6WY.js";
 
 // src/collections.ts
 import {
@@ -549,21 +548,22 @@ var taggedRecordId = (ids) => {
     id: "effect-surrealkit/TaggedRecordId",
     payload: tables,
     expected: `a record id of ${tables.join(", ")}`,
-    // The wrapped union only shows the encoded side, so print the map.
-    code: () => {
-      const entries = tables.map((table) => {
-        const code = codeOf(ids[table]);
+    codeParameters: idSchemas,
+    code: ([, ...idCodes]) => {
+      const entries = tables.map((table, index) => {
+        const code = idCodes[index];
+        if (code === void 0)
+          throw new Error(`Missing schema code for ${table}`);
         return { table, code };
       });
       const runtimeMap = entries.map(({ table, code }) => `${quote(table)}: ${code.runtime}`).join(", ");
       const typeMap = entries.map(
         ({ table, code }) => `${quote(table)}: Schema.Codec<${code.Type}>`
       ).join("; ");
-      return {
-        runtime: `SurrealSchema.taggedRecordId({ ${runtimeMap} })`,
-        Type: `SurrealSchema.TaggedRecordId<{ ${typeMap} }>`,
-        importDeclarations: runtimeCode("", "").importDeclarations
-      };
+      return runtimeCode(
+        `taggedRecordId({ ${runtimeMap} })`,
+        `SurrealSchema.TaggedRecordId<{ ${typeMap} }>`
+      );
     },
     equivalence: (self, that) => self._tag === that._tag && equals2(self.id, that.id)
   });
@@ -649,4 +649,4 @@ export {
   SurrealMergeValue,
   SurrealJsonValue
 };
-//# sourceMappingURL=chunk-BOMQHKJG.js.map
+//# sourceMappingURL=chunk-LHVQILTS.js.map

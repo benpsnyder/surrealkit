@@ -2,16 +2,16 @@ import {
   linkShape,
   shapeTables,
   tableName
-} from "./chunk-MZRUKDVT.js";
-import "./chunk-EEFZAKBV.js";
-import "./chunk-NSEQQEQJ.js";
-import "./chunk-MUBWQQFC.js";
+} from "./chunk-LWAKMPZO.js";
+import "./chunk-ZMDEVTBR.js";
+import "./chunk-DVT5GPYS.js";
+import "./chunk-VZONF6WY.js";
 import {
   SurrealClient,
   make as make2,
   makeWith,
   run
-} from "./chunk-RT5I7YT6.js";
+} from "./chunk-MUR2DZX4.js";
 import "./chunk-6LS7V54M.js";
 import {
   make,

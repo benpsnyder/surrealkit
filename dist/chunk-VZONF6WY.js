@@ -6,27 +6,17 @@ import {
 import { Schema as Schema2, SchemaGetter as SchemaGetter2 } from "effect";
 
 // src/internal/code.ts
-import { SchemaRepresentation } from "effect";
 var PACKAGE_NAME = "effect-surrealkit";
 var RUNTIME_IMPORT = `import * as SurrealSchema from "${PACKAGE_NAME}"`;
 var SDK_TYPE_IMPORT = 'import type * as Surreal from "surrealdb"';
+var DATETIME_TYPE_IMPORT = 'import type { DateTime } from "effect"';
 var quote = (value) => JSON.stringify(value);
 var quoteList = (values) => `[${values.map(quote).join(", ")}]`;
 var literalUnion = (values) => values.length === 0 ? "string" : values.map(quote).join(" | ");
-var codeOf = (schema) => {
-  const document = SchemaRepresentation.toCodeDocument(
-    SchemaRepresentation.toMultiDocument(
-      SchemaRepresentation.toRepresentation(schema.ast)
-    )
-  );
-  const [code] = document.codes;
-  if (code === void 0) throw new Error("no code generated");
-  return code;
-};
-var runtimeCode = (runtime, Type) => ({
+var runtimeCode = (runtime, Type, extraImports = []) => ({
   runtime: `SurrealSchema.${runtime}`,
   Type,
-  importDeclarations: [RUNTIME_IMPORT, SDK_TYPE_IMPORT]
+  importDeclarations: [RUNTIME_IMPORT, SDK_TYPE_IMPORT, ...extraImports]
 });
 
 // src/internal/declare.ts
@@ -96,7 +86,9 @@ var wrap = (inner, annotations) => {
       id: annotations.id,
       payload: annotations.payload ?? null
     },
-    toCode: ({ typeParameters }) => annotations.code(typeParameters),
+    toCode: ({ typeParameters }) => annotations.code(
+      typeParameters
+    ),
     // Arbitraries and equivalences come from the wrapped codec.
     toCodecArbitrary: ({ typeParameters: [type] }) => annotations.arbitrary?.() ?? Schema.link()(type, {
       decode: identityGetter(),
@@ -106,7 +98,10 @@ var wrap = (inner, annotations) => {
   };
   return Schema.make(
     new SchemaAST.Declaration(
-      [inner.ast],
+      [
+        inner.ast,
+        ...annotations.codeParameters?.map((schema) => schema.ast) ?? []
+      ],
       parser(preprocess, annotations.refuse),
       declaration,
       void 0,
@@ -604,13 +599,9 @@ var DateTimeEffect = wrap(
   {
     id: "effect-surrealkit/DateTimeEffect",
     expected: "a SurrealDB DateTime (as Effect DateTime.Utc, millisecond precision)",
-    code: () => ({
-      ...runtimeCode("DateTimeEffect", "DateTime.Utc"),
-      importDeclarations: [
-        ...runtimeCode("", "").importDeclarations,
-        'import type { DateTime } from "effect"'
-      ]
-    }),
+    code: () => runtimeCode("DateTimeEffect", "DateTime.Utc", [
+      DATETIME_TYPE_IMPORT
+    ]),
     equivalence: (self, that) => EffectDateTime.toEpochMillis(self) === EffectDateTime.toEpochMillis(that),
     // Effect's own arbitrary spans ±275,760 years, beyond SurrealDB's range.
     arbitrary: () => Schema5.link()(
@@ -707,10 +698,10 @@ var DurationLiteral = (value) => {
 export {
   RUNTIME_IMPORT,
   SDK_TYPE_IMPORT,
+  DATETIME_TYPE_IMPORT,
   quote,
   quoteList,
   literalUnion,
-  codeOf,
   runtimeCode,
   ok,
   wrongType,
@@ -747,4 +738,4 @@ export {
   Duration,
   DurationLiteral
 };
-//# sourceMappingURL=chunk-MUBWQQFC.js.map
+//# sourceMappingURL=chunk-VZONF6WY.js.map

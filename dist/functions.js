@@ -1,13 +1,13 @@
 import {
   FloatOrDecimal,
   holdsDecimal
-} from "./chunk-ZIXU7FMB.js";
+} from "./chunk-NG37QA4Y.js";
 import {
   Geometry,
   Range,
   RecordIdAny,
   SurrealValue
-} from "./chunk-BOMQHKJG.js";
+} from "./chunk-LHVQILTS.js";
 import {
   Level,
   codecOf,
@@ -18,7 +18,7 @@ import {
   operand,
   orNone,
   sqlOf
-} from "./chunk-NSEQQEQJ.js";
+} from "./chunk-DVT5GPYS.js";
 import {
   Bytes,
   DateTime,
@@ -30,7 +30,7 @@ import {
   SurrealNumber,
   SurrealString,
   Uuid
-} from "./chunk-MUBWQQFC.js";
+} from "./chunk-VZONF6WY.js";
 import "./chunk-QRSY4HQJ.js";
 import "./chunk-3SWEJO3L.js";
 import {
@@ -900,7 +900,84 @@ __export(time_exports, {
   yday: () => yday,
   year: () => year
 });
-var age = (from, to) => apply("time::age", StringCodec, 2, [from, to]);
+
+// src/functions/result.ts
+import { Schema as Schema3, SchemaAST } from "effect";
+import * as Surreal from "surrealdb";
+var isSdkValue = (input, name) => {
+  const sdkClass = Reflect.get(Surreal, name);
+  return typeof sdkClass === "function" && input instanceof sdkClass;
+};
+var accepting = (codec, convert) => {
+  const { ast } = codec;
+  return Schema3.make(
+    new SchemaAST.Declaration(
+      ast.typeParameters,
+      (typeParameters) => {
+        const run = ast.run(typeParameters);
+        return (input, self, options) => run(convert(input), self, options);
+      },
+      ast.annotations,
+      ast.checks,
+      ast.encoding,
+      ast.context,
+      ast.encodingChecks,
+      ast.encodingRun ?? ast.run
+    )
+  );
+};
+var infiniteDate = (positive) => {
+  const timestamp2 = Reflect.get(Surreal, "Timestamp");
+  return (positive ? timestamp2.INFINITY : timestamp2.NEG_INFINITY).toCompact();
+};
+var DateResult = /* @__PURE__ */ accepting(DateTime, (input) => {
+  if (!isSdkValue(
+    input,
+    "PlainDate"
+  ))
+    return input;
+  return new Surreal.DateTime(
+    input.isInfinite ? infiniteDate(input.days > 0) : [BigInt(input.days) * 86400n, 0n]
+  );
+});
+var TimeResult = /* @__PURE__ */ accepting(Duration, (input) => {
+  if (!isSdkValue(input, "PlainTime"))
+    return input;
+  const nanos2 = BigInt(input.nanos);
+  return new Surreal.Duration([
+    nanos2 / 1000000000n,
+    nanos2 % 1000000000n
+  ]);
+});
+var TimestampResult = /* @__PURE__ */ accepting(
+  DateTime,
+  (input) => isSdkValue(input, "Timestamp") ? new Surreal.DateTime(input.toCompact()) : input
+);
+var IntervalResult = /* @__PURE__ */ accepting(
+  SurrealString,
+  (input) => isSdkValue(input, "Interval") ? input.toString() : input
+);
+var sized = (input, kinds) => isSdkValue(input, "SizedNumber") && kinds.includes(input.kind) ? input : void 0;
+var SizedFloatResult = /* @__PURE__ */ accepting(
+  Float,
+  (input) => sized(input, ["f16", "f32"])?.value ?? input
+);
+var SizedIntResult = /* @__PURE__ */ accepting(Int, (input) => {
+  const value = sized(input, [
+    "i8",
+    "i16",
+    "i32",
+    "u8",
+    "u16",
+    "u32",
+    "u64"
+  ])?.value;
+  if (value === void 0) return input;
+  return typeof value === "bigint" && value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value;
+});
+
+// src/functions/generated/time.ts
+var age = (from, to) => apply("time::age", IntervalResult, 2, [from, to]);
 var ceil2 = (time3, step) => apply("time::ceil", DateTimeCodec, 2, [time3, step]);
 var day = (time3) => apply("time::day", IntCodec, 0, [time3]);
 var epoch = /* @__PURE__ */ constant("time::epoch", DateTimeCodec);
@@ -916,9 +993,9 @@ var fromUuid = (uuid3) => apply("time::from_uuid", DateTimeCodec, 1, [uuid3]);
 var group2 = (time3, unit) => apply("time::group", DateTimeCodec, 2, [time3, unit]);
 var hour = (time3) => apply("time::hour", IntCodec, 0, [time3]);
 var isLeapYear = (time3) => apply("time::is_leap_year", BoolCodec, 0, [time3]);
-var makeDate = (year2, month2, day2) => apply("time::make_date", DateTimeCodec, 3, [year2, month2, day2]);
-var makeTime = (hour2, minute2, second2) => apply("time::make_time", DurationCodec, 3, [hour2, minute2, second2]);
-var makeTimestamp = (year2, month2, day2, hour2, minute2, second2) => apply("time::make_timestamp", DateTimeCodec, 6, [
+var makeDate = (year2, month2, day2) => apply("time::make_date", DateResult, 3, [year2, month2, day2]);
+var makeTime = (hour2, minute2, second2) => apply("time::make_time", TimeResult, 3, [hour2, minute2, second2]);
+var makeTimestamp = (year2, month2, day2, hour2, minute2, second2) => apply("time::make_timestamp", TimestampResult, 6, [
   year2,
   month2,
   day2,
@@ -1032,21 +1109,21 @@ __export(type_exports, {
 var array = (value) => apply("type::array", ArrayCodec, 1, [value]);
 var bool2 = (value) => apply("type::bool", BoolCodec, 1, [value]);
 var bytes = (value) => apply("type::bytes", BytesCodec, 1, [value]);
-var date = (value) => apply("type::date", DateTimeCodec, 1, [value]);
+var date = (value) => apply("type::date", DateResult, 1, [value]);
 var datetime = (value) => apply("type::datetime", DateTimeCodec, 1, [value]);
 var decimal = (value) => apply("type::decimal", DecimalCodec, 1, [value]);
 var duration2 = (value) => apply("type::duration", DurationCodec, 1, [value]);
-var f16 = (value) => apply("type::f16", FloatCodec, 1, [value]);
-var f32 = (value) => apply("type::f32", FloatCodec, 1, [value]);
+var f16 = (value) => apply("type::f16", SizedFloatResult, 1, [value]);
+var f32 = (value) => apply("type::f32", SizedFloatResult, 1, [value]);
 var field = (field2) => apply("type::field", AnyCodec, 1, [field2]);
 var fields = (fields2) => apply("type::fields", ArrayCodec, 1, [fields2]);
 var float2 = (value) => apply("type::float", FloatCodec, 1, [value]);
 var geometry = (value) => apply("type::geometry", GeometryCodec, 1, [value]);
-var i16 = (value) => apply("type::i16", IntCodec, 1, [value]);
-var i32 = (value) => apply("type::i32", IntCodec, 1, [value]);
-var i8 = (value) => apply("type::i8", IntCodec, 1, [value]);
+var i16 = (value) => apply("type::i16", SizedIntResult, 1, [value]);
+var i32 = (value) => apply("type::i32", SizedIntResult, 1, [value]);
+var i8 = (value) => apply("type::i8", SizedIntResult, 1, [value]);
 var int2 = (value) => apply("type::int", IntCodec, 1, [value]);
-var interval = (value) => apply("type::interval", StringCodec, 1, [value]);
+var interval = (value) => apply("type::interval", IntervalResult, 1, [value]);
 var isArray = (value) => apply("type::is_array", BoolCodec, 1, [value]);
 var isBool = (value) => apply("type::is_bool", BoolCodec, 1, [value]);
 var isBytes = (value) => apply("type::is_bytes", BoolCodec, 1, [value]);
@@ -1094,12 +1171,12 @@ var set = (value) => apply("type::set", AnyCodec, 1, [value]);
 var string2 = (value) => apply("type::string", StringCodec, 1, [value]);
 var stringLossy = (value) => apply("type::string_lossy", StringCodec, 1, [value]);
 var table2 = (value) => apply("type::table", AnyCodec, 1, [value]);
-var time2 = (value) => apply("type::time", DurationCodec, 1, [value]);
-var timestamp = (value) => apply("type::timestamp", DateTimeCodec, 1, [value]);
-var u16 = (value) => apply("type::u16", IntCodec, 1, [value]);
-var u32 = (value) => apply("type::u32", IntCodec, 1, [value]);
-var u64 = (value) => apply("type::u64", IntCodec, 1, [value]);
-var u8 = (value) => apply("type::u8", IntCodec, 1, [value]);
+var time2 = (value) => apply("type::time", TimeResult, 1, [value]);
+var timestamp = (value) => apply("type::timestamp", TimestampResult, 1, [value]);
+var u16 = (value) => apply("type::u16", SizedIntResult, 1, [value]);
+var u32 = (value) => apply("type::u32", SizedIntResult, 1, [value]);
+var u64 = (value) => apply("type::u64", SizedIntResult, 1, [value]);
+var u8 = (value) => apply("type::u8", SizedIntResult, 1, [value]);
 var uuid2 = (value) => apply("type::uuid", UuidCodec, 1, [value]);
 
 // src/functions/generated/value.ts

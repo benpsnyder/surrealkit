@@ -6,7 +6,7 @@ that turns a SurrealKit schema document v2 into typed Effect modules, and
 typed statements built from those modules.
 
 ```sh
-npm i effect-surrealkit effect@4.0.6 surrealdb@2.1.1
+npm i effect-surrealkit effect@4.1.5 surrealdb@2.2.2
 ```
 
 Every runtime export imports only `effect` and `surrealdb` value classes, so it
@@ -272,10 +272,10 @@ the rest-record codec. Array and set elements still use the stored-value codec.
 ### Printer: SchemaRepresentation versus a template printer
 
 The emitter prints modules with its own small template printer. The
-alternative was to build live schemas from the codecs and print them with
-`SchemaRepresentation.toRepresentation` → `toCodeDocument`, which every codec
-supports (each carries `toCode` metadata; `test/to-code.test.ts` prints a
-struct of all of them). It works mechanically but was not adopted because:
+alternative was to build live schemas from the codecs, convert them with
+`SchemaRepresentation.toRepresentation`, and print them with Effect's code
+generator (`Codegen.Module.addSchemas` and `finalize` in 4.1.5). Every codec
+carries `toCode` metadata for this. The emitter uses templates because:
 
 - it emits one line per schema, so readable output needs an external
   formatter in the generation path;
@@ -457,7 +457,7 @@ that is not an address, `math.median([])`, `vector.sum([])`). After changing
 the table, run:
 
 ```sh
-npm run generate:functions   # node scripts/generate-functions.mjs
+pnpm run generate:functions  # node scripts/generate-functions.mjs
 ```
 
 It writes `src/functions/generated/` (a file per family, `codecs.ts` and
@@ -498,6 +498,15 @@ it does not, the engine must reject the sample call as an unknown function. 32 f
 with their `type::is_*` checks. None exists only on 3.3. Non-deterministic
 functions (`rand::*`, `time::now`, salted hashes) are checked by decoding
 alone.
+
+Over the `cbor.2` protocol, which SDK 2.2.2 negotiates, SurrealDB 4 returns
+17 of these results as SDK classes of their own: `PlainDate`, `PlainTime`,
+`Timestamp`, `Interval` and the sized numbers. Their functions keep the result
+types the table records and decode the same values as over `cbor`: a date
+becomes midnight UTC (an infinite date becomes the engine's datetime bound), a
+time becomes a duration, a timestamp a datetime, an interval its ISO 8601
+text, and a sized number a float or a safe integer. A raw query still returns
+the SDK classes.
 
 Not in the table: functions that take a closure (`array::map`,
 `array::fold`, `array::reduce`, `value::chain`, `value::expect`); the
@@ -1510,7 +1519,7 @@ value, for an application that names its own services, one per session.
 For replay-sensitive WebSocket writes and for live queries that must report a
 lost connection, connect with `reconnect: false` on the root SDK connection.
 Forked sessions inherit that setting. With automatic reconnect enabled, SDK
-2.1.1 can resend a buffered request whose acknowledgement was lost, even
+2.2.2 can resend a buffered request whose acknowledgement was lost, even
 with conflict retries disabled. An unmanaged live listener can also keep
 waiting after its original socket is gone. The client counts its own sends;
 the SDK can make additional physical sends inside one attempt.
@@ -1556,7 +1565,8 @@ sends without loss: the package's `SurrealValue` shape (plus `undefined`
 for NONE, `ArrayBuffer` for bytes and the SDK's record id and range
 values), with well-formed strings and integers the SDK can encode. The SDK
 would otherwise send a class instance as its own fields, a `Map` as a
-document, a lone surrogate as U+FFFD, or a bound negative zero as positive zero. The check never throws; `{
+document or a lone surrogate as U+FFFD. Older supported SDK versions can also
+encode a bound negative zero as positive zero. The check never throws; `{
 unsafeSkipValueCheck: true }` turns it off.
 
 `{ retry: schedule }` takes an Effect `Schedule` and sends the same,
@@ -2021,7 +2031,7 @@ record IDs, and nested lists and objects.
 
 | Capability | 4.0.1 embedded | 4.0.0 WebSocket | 4.0.0 HTTP | 3.3.4 WebSocket | 3.3.4 HTTP |
 | --- | --- | --- | --- | --- | --- |
-| JavaScript SDK | 2.1.1 | 2.1.1 | 2.1.1 | 2.1.1 | 2.1.1 |
+| JavaScript SDK | 2.2.2 | 2.2.2 | 2.2.2 | 2.2.2 | 2.2.2 |
 | `run` | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only |
 | `transaction` | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only | 1 request, client timing only |
 | `pipeline`, each statement | 1 request, server timing | 1 request, server timing | 1 request, server timing | 1 request, server timing | 1 request, server timing |
@@ -2032,7 +2042,7 @@ record IDs, and nested lists and objects.
 | `bulk`, two chunks, atomic | 4 requests, server timing | 4 requests, server timing | 1 request, client timing only | 4 requests, server timing | 1 request, client timing only |
 | `bulk`, two chunks, non-atomic | 2 requests, client timing only | 2 requests, client timing only | 2 requests, client timing only | 2 requests, client timing only | 2 requests, client timing only |
 | Checked `-0` binding | refused before dispatch | refused before dispatch | refused before dispatch | refused before dispatch | refused before dispatch |
-| Unchecked `-0` binding | returned +0 | returned +0 | returned +0 | returned +0 | returned +0 |
+| Unchecked `-0` binding | returned -0 | returned -0 | returned -0 | returned -0 | returned -0 |
 | Engine float literal `-0.0f` | preserved | preserved | preserved | preserved | preserved |
 
 The counts include begin and commit for an interactive transaction, and
@@ -2040,10 +2050,11 @@ start and kill for a live query. The interactive example runs one
 statement. Each bulk example writes two chunks. Timing describes what
 the client reports for these requests.
 
-The SDK's CBOR encoder writes both signs of JavaScript zero as integer
-zero. With value checking enabled, a bound `-0` raises
-`StatementEncodeError` before dispatch and names the original binding
-path. `unsafeSkipValueCheck` allows the SDK to encode it.
+SDK 2.2.2 encodes JavaScript `-0` as a CBOR float and preserved it on all
+five transports when sent with `unsafeSkipValueCheck`. With value checking
+enabled, a bound `-0` still raises `StatementEncodeError` before dispatch
+and names the binding path. This protects callers on supported older SDK
+versions such as 2.1.1, which encode it as positive zero.
 
 #### Measured costs
 
@@ -2073,9 +2084,9 @@ client process. Stream timing includes consuming all 20,000 rows.
 The streamed read had higher peak process RSS in this workload.
 
 ```sh
-npm run build
-npm run --silent bench
-SURREAL_BIN=/path/to/surreal npm run --silent bench > benchmark.json
+pnpm run build
+pnpm run --silent bench
+SURREAL_BIN=/path/to/surreal pnpm run --silent bench > benchmark.json
 ```
 
 The binary adds a WebSocket run. The JSON includes all five samples for
@@ -2499,9 +2510,9 @@ see [Generating modules](#generating-modules).
 SDK surfaces NONE) before decoding, so exact `Schema.optionalKey` fields work
 on projections and object values; `null` is kept.
 
-Every schema carries `toCode` metadata, so
-`SchemaRepresentation.toCodeDocument` prints a schema built from them back to
-source.
+Every schema carries `toCode` metadata. In Effect 4.1.5,
+`Codegen.Module.addSchemas` and `finalize` print schemas built from them back
+to source after conversion with `SchemaRepresentation.toRepresentation`.
 
 ## What the codecs refuse, and why
 
@@ -2537,16 +2548,19 @@ these is a silent corruption or a hang without the check:
 
 ## Development
 
+The package is developed with pnpm (the version is the `packageManager` field)
+and commits its own `pnpm-lock.yaml`; the repository has no root workspace.
+
 ```sh
-bun install
-bun run lint
-bun run typecheck
-bun run test
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run typecheck
+pnpm run test
 ```
 
 The property suites round-trip every codec through the SDK's CBOR codec in
 process (`Arbitrary.schema` + `Arbitrary.checkEffect`). Golden output lives in
-`test/golden/` (regenerate with `UPDATE_GOLDEN=1 bun run test`): the contract's
+`test/golden/` (regenerate with `UPDATE_GOLDEN=1 pnpm run test`): the contract's
 `example.v2.json`, the same with the `bigint`/`effect-datetime`/`patch`
 options, the whole corpus, the integer-keyed corpus tables in the `bigint` profile (the
 whole corpus in that profile is checked line by line against the `corpus`
@@ -2570,15 +2584,15 @@ for 30 eight-member pipelines and 30 bulk calls. `test/requests.test.ts`
 counts transport calls for each execution method.
 
 The engine, statement, field-presence and conformance suites need a real
-engine. A plain `bun run test` runs them on the in-process, in-memory engine of
+engine. A plain `pnpm run test` runs them on the in-process, in-memory engine of
 `@surrealdb/node` (SurrealDB 4.0.1; a dev dependency). Set one of these to run
 them against a server instead, which is also the only way to run the JSON
 round trips over HTTP `/sql`; the embedded engine has no HTTP endpoint, so
 those are skipped (with a notice) without a server:
 
 ```sh
-SURREAL_BIN=/usr/local/bin/surreal bun run test          # starts `surreal start … memory`
-SURREAL_URL=ws://127.0.0.1:8000/rpc bun run test         # a throwaway container, root/root
+SURREAL_BIN=/usr/local/bin/surreal pnpm run test         # starts `surreal start … memory`
+SURREAL_URL=ws://127.0.0.1:8000/rpc pnpm run test        # a throwaway container, root/root
 ```
 
 `test/conformance.test.ts` pins engine and SDK behaviour the documentation
@@ -2598,11 +2612,36 @@ generated schemas and `Arbitrary.checkEffect` required to report `Passed`. The
 SurrealKit binary is the workspace build (`cargo build`) or `SURREALKIT_BIN`:
 
 ```sh
-SURREAL_BIN=/usr/local/bin/surreal bun run test:roundtrip            # starts its own server
+SURREAL_BIN=/usr/local/bin/surreal pnpm run test:roundtrip           # starts its own server
 SURREALDB_HOST=ws://127.0.0.1:8000 SURREALDB_USER=root SURREALDB_PASSWORD=root \
-  bun run test:roundtrip                                               # a disposable server
+  pnpm run test:roundtrip                                              # a disposable server
 ```
 
 `scripts/roundtrip.mjs` compiles the corpus's portable modules, then runs
 `surrealkit test --exec`; the suite's first check is that the prepared
 database's `SURREALKIT_EXEC_SCHEMA_DIGEST` equals the compiled `semanticDigest`.
+
+### Prebuilt package
+
+A consumer that installs this package from Git with build scripts blocked
+needs `dist/` already built. The fork's `dist/effect-surrealkit-statements`
+branch holds that build at its root, one commit per source commit, and is
+made with `scripts/build-dist.mjs`:
+
+```sh
+node scripts/build-dist.mjs --out /tmp/effect-surrealkit-dist
+```
+
+The script refuses to write anything unless the repository's working tree is
+clean before and after, and `pnpm install --frozen-lockfile`, `lint`,
+`typecheck`, `test` and `build` all pass. It then writes the files
+`package.json` lists and a `package.json` without `scripts`,
+`devDependencies` or `packageManager`, so installing it runs nothing. The
+`version` is `<version>-fork.<sha>`, where `<sha>` is the first seven hex
+digits of the commit built, so the copy cannot pass for the npm release of
+the same version. `gitHead` is that commit in full. The emitter version recorded in generated manifests is not
+changed.
+
+Publishing the directory is a separate, manual step: replace the dist
+branch's tree with it, commit (`build(effect-surrealkit): prebuilt package
+from <sha>`, naming the built commit and the gate that passed), and push.

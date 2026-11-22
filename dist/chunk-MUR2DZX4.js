@@ -126,6 +126,7 @@ import {
   Effect as Effect2,
   Exit,
   References,
+  Scope,
   Stream,
   Tracer
 } from "effect";
@@ -142,26 +143,51 @@ var end = (span, exit, clock, timingEnabled) => Effect2.sync(() => {
     spanExit(exit)
   );
 });
+var start = (name2, options) => Effect2.gen(function* () {
+  const span = yield* Effect2.makeSpan(name2, options);
+  const clock = yield* Clock.Clock;
+  const timingEnabled = yield* References.TracerTimingEnabled;
+  return { span, clock, timingEnabled };
+});
 var withClientSpan = (name2, options) => (effect) => Effect2.acquireUseRelease(
-  Effect2.gen(function* () {
-    const span = yield* Effect2.makeSpan(name2, options);
-    const clock = yield* Clock.Clock;
-    const timingEnabled = yield* References.TracerTimingEnabled;
-    return { span, clock, timingEnabled };
-  }),
+  start(name2, options),
   ({ span }) => effect.pipe(Effect2.withParentSpan(span)),
   ({ span, clock, timingEnabled }, exit) => end(span, exit, clock, timingEnabled)
 );
 var withClientStreamSpan = (name2, options) => (stream2) => Stream.fromChannel(
-  Channel.acquireUseRelease(
-    Effect2.makeSpan(name2, options),
-    (span) => Stream.toChannel(stream2).pipe(
-      Channel.provideService(Tracer.ParentSpan, span)
-    ),
-    (span, exit) => Effect2.gen(function* () {
-      const clock = yield* Clock.Clock;
-      const timingEnabled = yield* References.TracerTimingEnabled;
-      yield* end(span, exit, clock, timingEnabled);
+  Channel.fromTransformBracket(
+    Effect2.fnUntraced(function* (upstream, _scope, channelScope) {
+      const { span, streamScope } = yield* Effect2.uninterruptible(
+        Effect2.gen(function* () {
+          const { span: span2, clock, timingEnabled } = yield* start(
+            name2,
+            options
+          );
+          const streamScope2 = yield* Scope.make("sequential");
+          yield* Scope.addFinalizerExit(
+            channelScope,
+            (exit) => Scope.close(streamScope2, exit).pipe(
+              Effect2.withParentSpan(span2),
+              Effect2.ensuring(
+                end(
+                  span2,
+                  exit,
+                  clock,
+                  timingEnabled
+                )
+              )
+            )
+          );
+          return { span: span2, streamScope: streamScope2 };
+        })
+      );
+      const channel = Stream.toChannel(stream2).pipe(
+        Channel.provideService(Tracer.ParentSpan, span)
+      );
+      return yield* Channel.toTransform(channel)(
+        upstream,
+        streamScope
+      );
     })
   )
 );
@@ -280,14 +306,14 @@ var report = (timing) => Effect3.gen(function* () {
 });
 var measure = (effect, save, onStart) => Effect3.uninterruptibleMask(
   (restore) => Effect3.gen(function* () {
-    const start = yield* Clock2.currentTimeNanos;
+    const start2 = yield* Clock2.currentTimeNanos;
     onStart?.();
     return yield* restore(effect).pipe(
       Effect3.ensuring(
         Effect3.gen(function* () {
           save(
             Duration.nanos(
-              (yield* Clock2.currentTimeNanos) - start
+              (yield* Clock2.currentTimeNanos) - start2
             )
           );
         })
@@ -296,7 +322,7 @@ var measure = (effect, save, onStart) => Effect3.uninterruptibleMask(
   })
 );
 var startRecording = (kind, name2) => Effect3.gen(function* () {
-  const start = yield* Clock2.currentTimeNanos;
+  const start2 = yield* Clock2.currentTimeNanos;
   const statements = [];
   let sends = 0;
   let encode2 = Duration.zero;
@@ -345,7 +371,7 @@ var startRecording = (kind, name2) => Effect3.gen(function* () {
   };
   const finish = Effect3.gen(function* () {
     const total = Duration.nanos(
-      (yield* Clock2.currentTimeNanos) - start
+      (yield* Clock2.currentTimeNanos) - start2
     );
     yield* report({
       kind,
@@ -706,7 +732,7 @@ var check = (value, path, seen) => {
       if (Object.is(value, -0)) {
         return fail(
           path,
-          "negative zero, which the SDK encodes as positive zero"
+          "negative zero, which surrealdb.js 2.1.1 encodes as positive zero"
         );
       }
       return Number.isInteger(value) && Math.abs(value) > MAX_NUMBER ? fail(
@@ -1985,7 +2011,7 @@ import {
   Exit as Exit3,
   Metric as Metric2,
   Schema as Schema4,
-  Scope,
+  Scope as Scope2,
   Stream as Stream5
 } from "effect";
 import { UnavailableFeatureError as UnavailableFeatureError4, UnsupportedFeatureError as UnsupportedFeatureError4 } from "surrealdb";
@@ -2068,8 +2094,8 @@ var makeStream = (transport) => (statement, ...args) => {
         bindings,
         parts: [requestPart(statement, bindings, 0, slots)]
       };
-      const scope = yield* Scope.Scope;
-      const sourceScope = yield* Scope.fork(scope, "sequential");
+      const scope = yield* Scope2.Scope;
+      const sourceScope = yield* Scope2.fork(scope, "sequential");
       const signal = yield* Effect12.abortSignal;
       const frames = Stream5.fromAsyncIterable(
         {
@@ -2080,7 +2106,7 @@ var makeStream = (transport) => (statement, ...args) => {
         classifyError
       );
       const pull = yield* Stream5.toPull(frames).pipe(
-        Effect12.provideService(Scope.Scope, sourceScope)
+        Effect12.provideService(Scope2.Scope, sourceScope)
       );
       const nextFrame = recorder.pull(pull);
       const completed = /* @__PURE__ */ new Set();
@@ -2449,4 +2475,4 @@ export {
   withTransaction,
   stream
 };
-//# sourceMappingURL=chunk-RT5I7YT6.js.map
+//# sourceMappingURL=chunk-MUR2DZX4.js.map

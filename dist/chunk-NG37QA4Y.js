@@ -6,14 +6,14 @@ import {
   literal,
   operand,
   sqlOf
-} from "./chunk-NSEQQEQJ.js";
+} from "./chunk-DVT5GPYS.js";
 import {
   Decimal,
   Float,
   Int,
   Int64,
   SurrealNumber
-} from "./chunk-MUBWQQFC.js";
+} from "./chunk-VZONF6WY.js";
 
 // src/statement/arithmetic.ts
 import { Schema, SchemaAST } from "effect";
@@ -138,4 +138,4 @@ export {
   mul,
   div
 };
-//# sourceMappingURL=chunk-ZIXU7FMB.js.map
+//# sourceMappingURL=chunk-NG37QA4Y.js.map
