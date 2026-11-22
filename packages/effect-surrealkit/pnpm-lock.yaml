@@ -199,8 +199,8 @@ snapshots:
 					"version": "24.19.2",
 				},
 				"ajv": "8.17.1",
-				"effect": "4.0.6",
-				"surrealdb": "2.1.1",
+				"effect": "4.1.5",
+				"surrealdb": "2.2.2",
 				"tsup": {
 					"specifier": "^8.2.4",
 					"version": "8.5.1",
@@ -1026,13 +1026,13 @@ snapshots:
 				},
 				"surrealdb": {
 					"specifier": "^2.0.1",
-					"version": "2.1.1",
+					"version": "2.2.2",
 				},
 			},
 		},
 
-		"@surrealdb/sqon@0.1.6": {
-			"integrity": "sha512-kSCY4Y9R3vvS+LVKUVSkWuk1WqwnEHpnOpolLlzHLl8iFjuvDavwAKV2BlXnKsPnR/A7KQTakDtSO0Y3t7SU8A==",
+		"@surrealdb/sqon@0.2.1": {
+			"integrity": "sha512-uSEgTJJhJsu/K4eCUx4JS01nCf3pLnxMvXXVo6C2OdwH/mJQgY/UkcSljE1IjNwYWFOFdvZfIqof05KjNIBJlQ==",
 			"peerDependencies": {
 				"tslib": {
 					"specifier": "^2.6.3",
@@ -1246,8 +1246,8 @@ snapshots:
 			"engines": {"node": ">=6"},
 		},
 
-		"effect@4.0.6": {
-			"integrity": "sha512-Kps9gbZO6W549M1xN0fTxz3nzntcoocHnsRBAhOlzaf9H/5xNiv5wxXkGkkD4w/IBjAJMsY/8uc6MouE9wZymg==",
+		"effect@4.1.5": {
+			"integrity": "sha512-kCwW8C1ePjd005rQR5B6LHu5g2UJ4EGsdW959RkdBOHb/MDouxUfEtA3TdpyG1xAoOxUwhj4GW1IVRsMAUxJnw==",
 		},
 
 		"es-module-lexer@1.7.0": {
@@ -1608,8 +1608,8 @@ snapshots:
 			},
 		},
 
-		"surrealdb@2.1.1": {
-			"integrity": "sha512-mtJLUfbl2RWCanoDisnCZBQYLMWdH6Cqq7Bf9xN0BtU691WahJxoJkjhkw4B23ipA8z0BUgImBj9XhBYDX9JdA==",
+		"surrealdb@2.2.2": {
+			"integrity": "sha512-8I3jOkpUpJANxXPmeJ3u6enNqtPFP7O4K6LsSqpRfZuR8x0G4Lsx93EqMaqPRZTVCrxPO9L0Sbr2RWieHrf0MA==",
 			"peerDependencies": {
 				"tslib": {
 					"specifier": "^2.6.3",
@@ -1621,7 +1621,7 @@ snapshots:
 				},
 			},
 			"dependencies": {
-				"@surrealdb/sqon": "0.1.6",
+				"@surrealdb/sqon": "0.2.1",
 			},
 		},
 
