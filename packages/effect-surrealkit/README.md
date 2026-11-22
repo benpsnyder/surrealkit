@@ -2609,3 +2609,28 @@ SURREALDB_HOST=ws://127.0.0.1:8000 SURREALDB_USER=root SURREALDB_PASSWORD=root \
 `scripts/roundtrip.mjs` compiles the corpus's portable modules, then runs
 `surrealkit test --exec`; the suite's first check is that the prepared
 database's `SURREALKIT_EXEC_SCHEMA_DIGEST` equals the compiled `semanticDigest`.
+
+### Prebuilt package
+
+A consumer that installs this package from Git with build scripts blocked
+needs `dist/` already built. The fork's `dist/effect-surrealkit-statements`
+branch holds that build at its root, one commit per source commit, and is
+made with `scripts/build-dist.mjs`:
+
+```sh
+node scripts/build-dist.mjs --out /tmp/effect-surrealkit-dist
+```
+
+The script refuses to write anything unless the repository's working tree is
+clean before and after, and `pnpm install --frozen-lockfile`, `lint`,
+`typecheck`, `test` and `build` all pass. It then writes the files
+`package.json` lists and a `package.json` without `scripts`,
+`devDependencies` or `packageManager`, so installing it runs nothing. The
+`version` is `<version>-fork.<sha>`, where `<sha>` is the first seven hex
+digits of the commit built, so the copy cannot pass for the npm release of
+the same version. `gitHead` is that commit in full. The emitter version recorded in generated manifests is not
+changed.
+
+Publishing the directory is a separate, manual step: replace the dist
+branch's tree with it, commit (`build(effect-surrealkit): prebuilt package
+from <sha>`, naming the built commit and the gate that passed), and push.
