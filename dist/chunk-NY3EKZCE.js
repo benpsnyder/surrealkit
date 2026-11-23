@@ -5,7 +5,7 @@ import {
 import {
   assertBindingName,
   make
-} from "./chunk-QRSY4HQJ.js";
+} from "./chunk-Q5N5NWCM.js";
 import {
   codecIssueText
 } from "./chunk-3SWEJO3L.js";
@@ -52,6 +52,22 @@ var StatementUnexpectedThrow = class extends Data.TaggedError(
   }
 };
 var StatementConflict = class extends Data.TaggedError("StatementConflict") {
+  toJSON() {
+    return requestDisplay(this);
+  }
+};
+var StatementIndexConflict = class extends Data.TaggedError("StatementIndexConflict") {
+  get message() {
+    return `\`${this.statement}\` would duplicate a value of the unique index \`${this.index}\``;
+  }
+  toJSON() {
+    const { _tag, statement, index, message } = this;
+    return { _tag, statement, index, message };
+  }
+};
+var StatementRecordExists = class extends Data.TaggedError(
+  "StatementRecordExists"
+) {
   toJSON() {
     return requestDisplay(this);
   }
@@ -478,15 +494,61 @@ var requestErrorText = (error) => {
   }
   return "SurrealDB request failed";
 };
-var classify = (name2, declaredBy, cause) => {
+var declaredBy = (statements, reason) => {
+  const declaring = statements.filter(
+    (statement) => statement.throws.includes(reason)
+  );
+  const names = [...new Set(declaring.map((statement) => statement.name))];
+  if (names.length > 1) {
+    return {
+      statement: `one of ${names.map((name2) => `\`${name2}\``).join(", ")}`
+    };
+  }
+  const [first] = declaring;
+  if (first === void 0) return void 0;
+  const site = first.throwSites?.[reason];
+  return site === void 0 ? { statement: first.name } : { statement: first.name, source: site.source, lines: site.lines };
+};
+var duplicateMessage = /^Database index `[\s\S]+` already contains [\s\S]+, with record `[\s\S]+`$/u;
+var conflictingIndex = (error, declared) => {
+  if (error.kind !== "Internal" || error.details !== void 0) return;
+  const { message } = error;
+  if (!duplicateMessage.test(message)) return;
+  let found;
+  for (const index of declared) {
+    if (message.startsWith(
+      `Database index \`${index}\` already contains `
+    ) && (found === void 0 || index.length > found.length)) {
+      found = index;
+    }
+  }
+  return found;
+};
+var isRecordExists = (error) => {
+  if (error.kind !== "AlreadyExists") return false;
+  const { details } = error;
+  return typeof details === "object" && details?.kind === "Record";
+};
+var indexDeclarer = (statements, index) => {
+  const names = [
+    ...new Set(
+      statements.filter((statement) => statement.uniqueIndexes?.includes(index)).map((statement) => statement.name)
+    )
+  ];
+  return names.length === 1 ? names[0] : `one of ${names.map((name2) => `\`${name2}\``).join(", ")}`;
+};
+var classify = (name2, statements, cause) => {
+  const declared = new Set(
+    statements.flatMap((statement) => statement.uniqueIndexes ?? [])
+  );
   let unexpected;
   for (let error = cause; error instanceof Error; error = error.cause) {
     const { isTransactionConflict, kind } = error;
     if (kind === "Thrown") {
       const reason = error.message.startsWith(thrownPrefix) ? error.message.slice(thrownPrefix.length) : error.message;
-      const declarer2 = declaredBy(reason);
-      if (declarer2 !== void 0) {
-        return new StatementThrown({ ...declarer2, reason });
+      const declarer = declaredBy(statements, reason);
+      if (declarer !== void 0) {
+        return new StatementThrown({ ...declarer, reason });
       }
       unexpected ??= reason;
     }
@@ -494,6 +556,21 @@ var classify = (name2, declaredBy, cause) => {
       return new StatementConflict({
         statement: name2,
         message: "Transaction conflict",
+        cause
+      });
+    }
+    if (isRecordExists(error)) {
+      return new StatementRecordExists({
+        statement: name2,
+        message: `\`${name2}\` tried to create a record whose id already exists`,
+        cause
+      });
+    }
+    const index = conflictingIndex(error, declared);
+    if (index !== void 0) {
+      return new StatementIndexConflict({
+        statement: indexDeclarer(statements, index),
+        index,
         cause
       });
     }
@@ -510,21 +587,6 @@ var classify = (name2, declaredBy, cause) => {
     message: requestErrorText(cause),
     cause
   });
-};
-var declarer = (statements, reason) => {
-  const declaring = statements.filter(
-    (statement) => statement.throws.includes(reason)
-  );
-  const names = [...new Set(declaring.map((statement) => statement.name))];
-  if (names.length > 1) {
-    return {
-      statement: `one of ${names.map((name2) => `\`${name2}\``).join(", ")}`
-    };
-  }
-  const [first] = declaring;
-  if (first === void 0) return void 0;
-  const site = first.throwSites?.[reason];
-  return site === void 0 ? { statement: first.name } : { statement: first.name, source: site.source, lines: site.lines };
 };
 
 // src/client/internal/decode.ts
@@ -983,7 +1045,7 @@ var commitUnknown = (cause) => new TransactionOutcomeUnknown({
   cause
 });
 var commitError = (cause) => {
-  const classified = classify(name, () => void 0, cause);
+  const classified = classify(name, [], cause);
   if (classified instanceof StatementConflict) return classified;
   if (cause instanceof ServerError || cause instanceof ConnectionUnavailableError || cause instanceof InvalidSessionError || cause instanceof MissingNamespaceDatabaseError || cause instanceof UnsupportedFeatureError || cause instanceof UnavailableFeatureError)
     return requestError(cause);
@@ -1072,12 +1134,7 @@ var execute = (send, requestName, statements, options) => recording(
     );
     const failureOf2 = (cause) => cause instanceof StatementScopeError ? cause : classify(
       requestName,
-      (reason) => declarer(
-        statements.map(
-          ({ statement }) => statement
-        ),
-        reason
-      ),
+      statements.map(({ statement }) => statement),
       cause
     );
     const answers = yield* recorder.wait(
@@ -1409,11 +1466,7 @@ var failureOf = (statement, atomic, cause) => {
   if (cause instanceof StatementScopeError || cause instanceof StatementConflict || cause instanceof TransactionOutcomeUnknown)
     return cause;
   if (!atomic || cause instanceof Error) {
-    const classified = classify(
-      statement.name,
-      (reason) => declarer([statement], reason),
-      cause
-    );
+    const classified = classify(statement.name, [statement], cause);
     if (!atomic || !(classified instanceof StatementRequestError) || definiteRejection(cause))
       return classified;
   }
@@ -1856,13 +1909,7 @@ var decodePart = ({ statement, slots: expected }, answers, wrapped) => {
   const failed = firstFailure(answers);
   if (failed !== void 0) {
     return Effect11.succeed(
-      Result.fail(
-        classify(
-          statement.name,
-          (reason) => declarer([statement], reason),
-          failed.error
-        )
-      )
+      Result.fail(classify(statement.name, [statement], failed.error))
     );
   }
   const writes = changesOf([statement]);
@@ -2026,11 +2073,7 @@ var makeStream = (transport) => (statement, ...args) => {
     feature: "stream",
     message: "the connection does not support streaming queries",
     cause
-  }) : classify(
-    name2,
-    (reason) => declarer([statement], reason),
-    cause
-  );
+  }) : classify(name2, [statement], cause);
   return Stream5.unwrap(
     Effect12.gen(function* () {
       const recorder = yield* recordingScoped("stream", name2);
@@ -2289,7 +2332,7 @@ var makeRun = (transport) => (statement, ...args) => {
               try: (signal) => transport.collect(request, signal),
               catch: (cause) => classify(
                 statement.name,
-                (reason) => declarer([statement], reason),
+                [statement],
                 cause
               )
             })
@@ -2369,11 +2412,7 @@ var makeTransaction = (transport) => (given, options) => {
           recorder.wait(
             Effect13.tryPromise({
               try: (signal) => transport.collect(request, signal),
-              catch: (cause) => classify(
-                name2,
-                (reason) => declarer(descriptors, reason),
-                cause
-              )
+              catch: (cause) => classify(name2, descriptors, cause)
             })
           ),
           options
@@ -2455,6 +2494,8 @@ export {
   StatementThrown,
   StatementUnexpectedThrow,
   StatementConflict,
+  StatementIndexConflict,
+  StatementRecordExists,
   StatementDecodeError,
   StatementEmptyResult,
   StatementWriteOutcomeError,
@@ -2475,4 +2516,4 @@ export {
   withTransaction,
   stream
 };
-//# sourceMappingURL=chunk-MUR2DZX4.js.map
+//# sourceMappingURL=chunk-NY3EKZCE.js.map

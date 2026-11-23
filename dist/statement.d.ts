@@ -1,12 +1,12 @@
 import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
-import { F as FloatOrDecimalOf } from './arithmetic-Dgz4kWW5.js';
-export { A as ArithmeticCodec, N as Numeric, a as NumericOperand, b as add, d as div, m as mul, s as sub } from './arithmetic-Dgz4kWW5.js';
+import { F as FloatOrDecimalOf } from './arithmetic-GGrT04Ra.js';
+export { A as ArithmeticCodec, N as Numeric, a as NumericOperand, b as add, d as div, m as mul, s as sub } from './arithmetic-GGrT04Ra.js';
 import { Schema } from 'effect';
-import { P as Params, C as Codec, S as Statement, c as Simplify, E as Expr, A as AnyStatement, N as NoParams, O as OrNone, R as Result, a as Primitive, b as ParamsOfAll, L as LiteralCodec, d as OperandEncoded, e as Comparable, f as CodecOf, g as ParamsOf, h as Path, I as ItemOf, i as OperandParams, j as Operand } from './expr-Bt9oR1pC.js';
-export { k as CallArguments, l as CastKind, m as CheckedInput, n as Collection, o as ElementOf, p as ExprTypeId, q as Input, r as PureFunction, s as Reader, t as StatementTypeId, T as ThrowSite, u as Thrown, v as and, w as at, x as call, y as cast, z as codecOf, B as contains, D as eq, F as gt, G as gte, H as inside, J as isExpr, K as isNone, M as isNotNone, Q as isPath, U as isStatement, V as literal, W as lt, X as lte, Y as make, Z as ne, _ as not, $ as or, a0 as param, a1 as paramsOf, a2 as parent, a3 as sqlOf, a4 as unsafeExpr } from './expr-Bt9oR1pC.js';
-import { R as RowCodecIn, F as FieldsOf$1, C as Condition, P as ProjectedCodec, a as PureTable, S as StoredRow, b as RowExprs, c as CheckedProjection, d as RowCodec, I as IdOf, e as RowOf, U as Unwrapped$2, f as IsOptional$2, N as NestedFields } from './live-n0zkmyK9.js';
-export { g as FieldExpr, h as Fields, L as Live, i as LiveStatement, j as LiveStatementTypeId, O as OpenStructCodec, k as ProjectedFields, l as Projection, m as ReadAs, n as ReadableStore, o as StructCodec, V as VisibleStore, p as VisibleTable, W as WithVisible, q as live, r as readAs, s as rowOf } from './live-n0zkmyK9.js';
+import { P as Params, C as Codec, S as Statement, c as Simplify, E as Expr, A as AnyStatement, N as NoParams, O as OrNone, R as Result, a as Primitive, b as ParamsOfAll, L as LiteralCodec, d as OperandEncoded, e as Comparable, f as CodecOf, g as ParamsOf, h as Path, I as ItemOf, i as OperandParams, j as Operand } from './expr-CPMgbj5K.js';
+export { k as CallArguments, l as CastKind, m as CheckedInput, n as Collection, o as ElementOf, p as ExprTypeId, q as Input, r as PureFunction, s as Reader, t as StatementTypeId, T as ThrowSite, u as Thrown, U as UniqueIndexes, v as and, w as at, x as call, y as cast, z as codecOf, B as contains, D as eq, F as gt, G as gte, H as inside, J as isExpr, K as isNone, M as isNotNone, Q as isPath, V as isStatement, W as literal, X as lt, Y as lte, Z as make, _ as ne, $ as not, a0 as or, a1 as param, a2 as paramsOf, a3 as parent, a4 as sqlOf, a5 as unsafeExpr } from './expr-CPMgbj5K.js';
+import { R as RowCodecIn, F as FieldsOf$1, C as Condition, P as ProjectedCodec, a as PureTable, S as StoredRow, b as RowExprs, c as CheckedProjection, d as RowCodec, I as IdOf, e as RowOf, U as Unwrapped$2, f as IsOptional$2, N as NestedFields } from './live-DwTMzZp0.js';
+export { g as FieldExpr, h as Fields, L as Live, i as LiveStatement, j as LiveStatementTypeId, O as OpenStructCodec, k as ProjectedFields, l as Projection, m as ReadAs, n as ReadableStore, o as StructCodec, V as VisibleStore, p as VisibleTable, W as WithVisible, q as live, r as readAs, s as rowOf } from './live-DwTMzZp0.js';
 import { S as SurrealValue, i as SurrealString, f as Int, I as Int64, F as Float, l as SurrealNumber, m as Uuid, b as Decimal$1 } from './value-Dzlmtd6Q.js';
 import { T as Text, d as TextHoleScopes, c as TextHoleScope } from './text-L6LzniE5.js';
 import { Decimal, RecordId, DateTime as DateTime$1 } from 'surrealdb';
@@ -146,9 +146,9 @@ type EngineName = 'auth' | 'access' | 'session' | 'token' | 'this' | 'self' | 'p
 type LocalName<N extends string, P, L> = N extends keyof L ? `local \`$${N}\` is already defined in this block` : N extends keyof P ? `\`$${N}\` is a binding of this block, and a local of that name would shadow it` : N extends EngineName ? `\`$${N}\` is set by SurrealDB, so a block cannot define it` : N;
 /** What a local's value is: an expression or a built statement. */
 type LetValue = Expr | AnyStatement;
-type ValueCodec<V> = V extends Statement<Params, infer R, string> ? R : V extends Expr<infer S, Params> ? S : never;
-type ValueParams<V> = V extends Statement<infer P, Codec, string> ? P : V extends Expr<Codec, infer P> ? P : never;
-type ValueThrows<V> = V extends Statement<Params, Codec, infer T> ? T : never;
+type ValueCodec<V> = V extends Statement<Params, infer R, string, string> ? R : V extends Expr<infer S, Params> ? S : never;
+type ValueParams<V> = V extends Statement<infer P, Codec, string, string> ? P : V extends Expr<Codec, infer P> ? P : never;
+type ValueThrows<V> = V extends Statement<Params, Codec, infer T, string> ? T : never;
 /**
  * What a block or branch can return: an expression, or an object of
  * expressions and primitives. A constant on its own is a `literal`, whose
@@ -187,7 +187,7 @@ interface Ended<P extends Params, Throws extends string, R> {
      */
     readonly build: (name?: string, options?: {
         readonly writes?: boolean;
-    }) => Statement<Simplify<P>, BlockResult<R>, Throws>;
+    }) => Statement<Simplify<P>, BlockResult<R>, Throws, never>;
 }
 /**
  * An `IF … ELSE IF …` under construction. Without `else`, a block whose
@@ -223,7 +223,7 @@ interface Block<P extends Params, L extends Locals, Throws extends string> exten
      */
     readonly throwIfNone: <const N extends keyof L & string, const M extends string>(name: N, message: M) => Block<P, Narrowed<L, N>, Throws | M>;
     /** A statement run for its effect, whose result is NONE. */
-    readonly do: <S extends AnyStatement>(step: ($: Scope<L>) => ForEffect<S>) => Block<P & S['params'], L, Throws | (S extends Statement<Params, Codec, infer T> ? T : never)>;
+    readonly do: <S extends AnyStatement>(step: ($: Scope<L>) => ForEffect<S>) => Block<P & S['params'], L, Throws | (S extends Statement<Params, Codec, infer T, string> ? T : never)>;
     /**
      * Ends the block or branch with a value: an expression, or an object of
      * expressions and primitives (each inlined as its `literal`), which
@@ -282,6 +282,18 @@ type Shape = 'one' | 'maybe' | 'many';
 type WriteResult<Row extends Codec, S extends Shape> = S extends 'one' ? Row : S extends 'maybe' ? Schema.UndefinedOr<Row> : Schema.$Array<Row>;
 /** The result of a write with `RETURN NONE`. */
 type NoResult<S extends Shape> = S extends 'many' ? Schema.Tuple<readonly []> : Schema.Undefined;
+/**
+ * The names of the unique indexes of `T`: the indexes a write to it can
+ * duplicate a value of, which its statements declare. An index whose `type`
+ * is not a literal (a descriptor not generated as one) counts as unique.
+ */
+type UniqueIndexesOf<T extends PureTable> = T extends {
+    readonly indexes?: infer I;
+} ? {
+    readonly [K in keyof NonNullable<I>]: 'unique' extends (NonNullable<I>[K] extends {
+        readonly type: infer Type;
+    } ? Type : never) ? K : never;
+}[keyof NonNullable<I>] & string : never;
 /** The schema a table declares for an operation, or `never` without one. */
 type OperationOf<T extends PureTable, O extends 'create' | 'merge' | 'content'> = T extends {
     readonly [K in O]: infer C extends Codec;
@@ -417,8 +429,11 @@ interface Create<T extends PureTable, P extends Params, R extends Codec> {
     };
     /** `RETURN VALUE`: one expression of the created record. */
     readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Create<T, P & P2, RowCodec<S>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    /**
+     * The finished statement. It declares the table's unique indexes, so a
+     * duplicate on one fails as `StatementIndexConflict`.
+     */
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, UniqueIndexesOf<T>>;
 }
 /**
  * `CREATE ONLY table`, or `CREATE ONLY $id` with a record id expression of
@@ -442,8 +457,11 @@ interface Update<T extends PureTable, P extends Params, R extends Codec, S exten
     };
     /** `RETURN VALUE`: one expression of each changed record. */
     readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Update<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    /**
+     * The finished statement. It declares the table's unique indexes, so a
+     * duplicate on one fails as `StatementIndexConflict`.
+     */
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, UniqueIndexesOf<T>>;
 }
 /** An `UPDATE` that still needs its data. */
 interface UpdateTarget<T extends PureTable, P extends Params, S extends Shape> {
@@ -488,8 +506,11 @@ interface Upsert<T extends PureTable, P extends Params, R extends Codec, S exten
     };
     /** `RETURN VALUE`: one expression of each record. */
     readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Upsert<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    /**
+     * The finished statement. It declares the table's unique indexes, so a
+     * duplicate on one fails as `StatementIndexConflict`.
+     */
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, UniqueIndexesOf<T>>;
 }
 /** An `UPSERT` that still needs its data. */
 interface UpsertTarget<T extends PureTable, P extends Params, S extends 'one' | 'many'> {
@@ -536,7 +557,7 @@ interface Delete<T extends PureTable, P extends Params, R extends Codec, S exten
     /** `RETURN VALUE`: one expression of each deleted record as it was. */
     readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Delete<T, P & P2, WriteResult<RowCodec<V>, S>, S>;
     /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, never>;
 }
 /**
  * `DELETE table … WHERE`, or `DELETE ONLY $id` with a record id expression.
@@ -561,8 +582,11 @@ interface Relate<T extends PureTable, P extends Params, R extends Codec> {
     };
     /** `RETURN VALUE`: one expression of the new edge. */
     readonly returningValue: <S extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<S, P2>) => Relate<T, P & P2, RowCodec<S>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    /**
+     * The finished statement. It declares the table's unique indexes, so a
+     * duplicate on one fails as `StatementIndexConflict`.
+     */
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, UniqueIndexesOf<T>>;
 }
 /**
  * `RELATE ONLY $from->table->$to`: one edge between two records. Each
@@ -624,8 +648,11 @@ interface Insert<T extends PureTable, P extends Params, R extends Codec> {
     };
     /** `RETURN VALUE`: one expression of each record. */
     readonly returningValue: <V extends Codec, P2 extends Params>(pick: (row: RowExprs<T>) => Expr<V, P2>) => Insert<T, P & P2, WriteResult<RowCodec<V>, 'many'>>;
-    /** The finished statement. */
-    readonly build: (name?: string) => Statement<Simplify<P>, R>;
+    /**
+     * The finished statement. It declares the table's unique indexes, so a
+     * duplicate on one fails as `StatementIndexConflict`.
+     */
+    readonly build: (name?: string) => Statement<Simplify<P>, R, never, UniqueIndexesOf<T>>;
 }
 /**
  * `INSERT INTO table $data`: one row, or an array of rows, each the table's
@@ -654,7 +681,7 @@ type UpdateRow<T extends PureTable> = {
 type FitsUpdateRows<T extends PureTable, D extends Codec, V> = D['Encoded'] extends ReadonlyArray<unknown> ? FitsRows<UpdateRow<T>, D, V, T['name'], 'UPDATE EACH'> : 'UPDATE EACH needs a list of rows';
 type Missing = 'error' | 'ignore';
 interface UpdateEach<_T extends PureTable, P extends Params, M extends Missing = 'error'> {
-    readonly build: (name?: string) => Statement<Simplify<P>, NoResult<'many'>, M extends 'ignore' ? never : 'Record not found'>;
+    readonly build: (name?: string) => Statement<Simplify<P>, NoResult<'many'>, M extends 'ignore' ? never : 'Record not found', never>;
 }
 /** Merges each row's fields into its record, throwing on a missing record by default. */
 declare function updateEach<T extends PureTable, D extends Codec, P extends Params>(table: T, rows: FitsUpdateRows<T, D, Expr<D, P>>, options: {
@@ -990,7 +1017,7 @@ type Contract<Parts extends ReadonlyArray<Part>, P> = number extends Parts['leng
  * });
  */
 declare const sequence: <const Parts extends ReadonlyArray<Part>>(...parts: Parts) => {
-    define: <const P extends Params, R extends Codec>(contract: {
+    define: <const P extends Params, R extends Codec, const Unique extends string = never>(contract: {
         readonly name?: string;
         /**
          * What the sequence writes, when its parts leave it unknown: `false`
@@ -1001,7 +1028,14 @@ declare const sequence: <const Parts extends ReadonlyArray<Part>>(...parts: Part
         readonly writes?: boolean;
         readonly params: Contract<Parts, P>;
         readonly result: R;
-    }) => Statement<P, R, ThrownBy<Parts>>;
+        /**
+         * The unique indexes a write of the parts can duplicate a value of,
+         * by name: a duplicate on one of them fails with
+         * `StatementIndexConflict`. The analyzer cannot tell them from the
+         * text, so they are declared. Default none.
+         */
+        readonly uniqueIndexes?: ReadonlyArray<Unique>;
+    }) => Statement<P, R, ThrownBy<Parts>, Unique>;
 };
 
 declare const TextNodeTypeId = "~effect-surrealkit/TextNode";
@@ -1131,7 +1165,7 @@ interface Family<A extends Axes, N, P extends Params, R extends Codec> {
      * of them that is required, and the selected variant sends only what it
      * reads.
      */
-    readonly select: <const K extends KeyOf<A>>(key: CheckedVariantKey<A, K>) => Statement<ParamsAt<P, FreeOf<N, K>>, R, ThrowsOf<N, K> & string>;
+    readonly select: <const K extends KeyOf<A>>(key: CheckedVariantKey<A, K>) => Statement<ParamsAt<P, FreeOf<N, K>>, R, ThrowsOf<N, K> & string, never>;
     /**
      * Every variant, built, with its key: for a build step, tests and
      * pinning. Each entry is a pinnable statement: `name` is the family's
@@ -1143,7 +1177,7 @@ interface Family<A extends Axes, N, P extends Params, R extends Codec> {
         readonly key: KeyOf<A>;
         readonly name: string;
         readonly sql: string;
-        readonly statement: Statement<Params, R, ThrowsOf<N, KeyOf<A>> & string>;
+        readonly statement: Statement<Params, R, ThrowsOf<N, KeyOf<A>> & string, never>;
     }>;
 }
 /**
@@ -1796,7 +1830,7 @@ interface GroupedSelect<T extends PureTable, P extends Params, O, All extends bo
     /** The finished statement. */
     readonly build: (name?: string, options?: {
         readonly writes?: boolean;
-    }) => Statement<Simplify<P>, GroupResult<ProjectedCodec<O>, All>>;
+    }) => Statement<Simplify<P>, GroupResult<ProjectedCodec<O>, All>, never, never>;
 }
 /** A `SELECT … GROUP BY` whose keys are set; add aggregates, or build. */
 interface Grouped<T extends PureTable, P extends Params, K> extends GroupedSelect<T, P, K, false> {
@@ -2096,7 +2130,7 @@ interface Split<T extends PureTable, P extends Params, Row extends Codec, K exte
     /** The finished statement. */
     readonly build: (name?: string, options?: {
         readonly writes?: boolean;
-    }) => Statement<Simplify<P>, Schema.$Array<Row>>;
+    }) => Statement<Simplify<P>, Schema.$Array<Row>, never, never>;
 }
 /** What a `SELECT` returns: every row, or with `ONLY` one row or NONE. */
 type SelectResult<Row extends Codec, Only extends boolean> = Only extends true ? Schema.UndefinedOr<Row> : Schema.$Array<Row>;
@@ -2186,7 +2220,7 @@ interface Select<T extends PureTable, P extends Params, Row extends Codec, Only 
      */
     readonly build: (name?: string, options?: {
         readonly writes?: boolean;
-    }) => Statement<Simplify<P>, SelectResult<Row, Only>>;
+    }) => Statement<Simplify<P>, SelectResult<Row, Only>, never, never>;
 }
 /** Why a method that changes what a select returns cannot follow `fetch`. */
 type AfterFetch<M extends string> = `call \`${M}\` before \`fetch\`: FETCH names fields of what the select returns`;
@@ -2228,7 +2262,7 @@ interface FetchedSelect<T extends PureTable, P extends Params, Row extends Codec
     /** The finished statement, as {@link Select.build}. */
     readonly build: (name?: string, options?: {
         readonly writes?: boolean;
-    }) => Statement<Simplify<P>, SelectResult<Row, Only>>;
+    }) => Statement<Simplify<P>, SelectResult<Row, Only>, never, never>;
 }
 /**
  * A `SELECT` of one record by id (or of an id range), before any other
@@ -2620,6 +2654,6 @@ declare const linear: <const Ls extends Lists, const W extends ReadonlyArray<num
  */
 declare const evaluate: <S extends Codec, P extends Params>(expr: Expr<S, P>, name?: string, options?: {
     readonly writes?: boolean;
-}) => Statement<Simplify<P>, S>;
+}) => Statement<Simplify<P>, S, never, never>;
 
-export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type FitsUpdateRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, ProjectedCodec, PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type RejectsNone, type RejectsNoneOf, type Relate, type RelationTable, Result, type Returned, RowCodec, RowCodecIn, RowExprs, RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, StoredRow, type StringKeyed, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueValues, type Update, type UpdateEach, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, recordId, recurse, relate, renameNames, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, updateEach, upsert, variance };
+export { type AfterFetch, AnyStatement, type Arm, type ArrayFields, type Axes, type AxisValue, BindingUses, type Binds, type BindsOf, type Block, type BlockResult, BlockTypeId, type Branches, type CheckedAggregates, type CheckedAssignments, type CheckedAxes, type CheckedCount, type CheckedFetch, type CheckedFills, type CheckedKey, type CheckedKeys, type CheckedLists, type CheckedOmit, type CheckedOptions, type CheckedRange, type CheckedRef, type CheckedShape, type CheckedVariantKey, type CheckedVector, type CheckedWeights, type Choice, type ChoiceOptions, Codec, CodecOf, type CollectOptions, Comparable, type Composite, type CompositeFills, Condition, type Contract, type Count, type Create, type DefinesOf, type Delete, type Depth, type DestructuredOf, Diff, type DiffCodec, type Direction, type Distance, type DistinctCodec, type Empty, type Ended, type Endpoint, type Exactly, Expr, type ExtremeCodec, type Family, type FamilyContract, type FetchProblem, type FetchTarget, type Fetched, type FetchedSelect, type FieldCodec, FieldsOf$1 as FieldsOf, type Fits, type FitsBoth, type FitsRows, type FitsUpdateRows, type Fitting, type Followable, type FollowedOf, type ForEffect, type FreeOf, type FulltextField, type FusedCodec, type FusedRow, type GraphEdge, type GraphStore, type GroupAll, type GroupResult, type GroupRow, type GroupRowOf, type Grouped, type GroupedSelect, type Highlighted, IdOf, type IdRange, IdRangeTypeId, type Insert, type InsertRelationRow, type InsertRow, ItemOf, type KeyOf, type KeyParams, type KeyPart, type KeyParts, type KindStored, type Knn, type KnnOptions, KnnTypeId, type LetValue, type Lift, type Lifted, type LinkProblem, type LinkTables, type Linked, LiteralCodec, type Local, type LocalField, type LocalName, type Locals, type Marked, MarkedAny, MarkedList, MarkedOptionalText, MarkedText, type Match, type MatchRef, MatchTypeId, type MedianCodec, type Narrowed, type NoLocals, NoParams, type NoResult, type Node, type ObjectCodec, type ObjectFields, Offsets, type OmittedRow, Operand, type OperationOf, OrNone, type OrderAlias, Params, type ParamsAt, ParamsOf, ParamsOfAll, type Part, PatchOperation, Path, Primitive, ProjectedCodec, PureTable, type QueryVector, type RangeBounds, type RangeParams, type RankedList, type ReachedRow, type ReachedSubject, type ReachedTable, type RecordKeyOf, type RecordSelect, type RecursionResult, type RecursionStart, type RecursionStep, type Referenced, type RejectsNone, type RejectsNoneOf, type Relate, type RelationTable, Result, type Returned, RowCodec, RowCodecIn, RowExprs, RowOf, type RowValue, RowValueTypeId, type RowsOf, type Scope, type SearchTable, type Select, type SelectResult, type SelectValueRow, type Shape, type ShortestTarget, type SomeOf, type Split, type SplitCodec, type SplitField, type SplitRow, type SplitTable, type SpreadCodec, Statement, type Step, type StepCodec, type StepEnds, type StepFrom, type StepOptions, type StepProblem, type StepStarts, StoredRow, type StringKeyed, type SumCodec, type TableIn, type Tables, type TargetFields, type TargetRow, type TargetSelect, type Terms, type TextNode, TextNodeTypeId, type ThrownBy, type ThrowsOf, type TimeCodec, type Traversal, TraversalTypeId, type Unbound, type UniqueIndex, type UniqueIndexesOf, type UniqueValues, type Update, type UpdateEach, type UpdateTarget, type Upsert, type UpsertTarget, type VectorCodec, type VectorField, type WriteResult, arrayDistinct, arrayGroup, block, both, choose, collect, compose, count, create, deleteFrom, destructure, edges, empty, evaluate, family, follow, highlight, idRange, incoming, insert, insertRelation, isIdRange, isTraversal, knn, knnDistance, linear, match, max, mean, median, min, object, offsets, outgoing, part, recordId, recurse, relate, renameNames, rows, rrf, score, select, selectFrom, sequence, shortest, stddev, sum, timeMax, timeMin, update, updateEach, upsert, variance };

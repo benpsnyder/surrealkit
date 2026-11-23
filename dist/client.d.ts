@@ -1,10 +1,10 @@
-export { B as Bound, a as BoundStatements, b as BulkOptions, c as BulkProgress, d as BulkSummary, e as BulkWriteError, C as Client, I as InputOf, L as ListBindingsOf, f as LiveError, g as LiveEvent, h as LiveQueryClosed, P as PipelineOptions, i as PipelineResults, Q as Queryable, R as Results, j as RunArgs, k as RunOptions, S as StatementConflict, l as StatementDecodeError, m as StatementEmptyResult, n as StatementEncodeError, o as StatementError, p as StatementRequestError, q as StatementScopeError, r as StatementThrown, s as StatementUnexpectedThrow, t as StatementUnsupported, u as StatementWriteOutcomeError, v as SurrealClient, T as ThrownByAny, w as TransactionClient, x as TransactionError, y as TransactionOptions, z as TransactionOutcomeUnknown, A as bind, D as layer, E as make, F as pipeline, G as run, H as stream, J as transaction, K as withTransaction } from './bulk-CRnalAeb.js';
+export { B as Bound, a as BoundStatements, b as BulkOptions, c as BulkProgress, d as BulkSummary, e as BulkWriteError, C as Client, I as InputOf, L as ListBindingsOf, f as LiveError, g as LiveEvent, h as LiveQueryClosed, P as PipelineOptions, i as PipelineResults, Q as Queryable, R as Results, j as RunArgs, k as RunOptions, S as StatementConflict, l as StatementDecodeError, m as StatementEmptyResult, n as StatementEncodeError, o as StatementError, p as StatementIndexConflict, q as StatementRecordExists, r as StatementRequestError, s as StatementScopeError, t as StatementThrown, u as StatementUnexpectedThrow, v as StatementUnsupported, w as StatementWriteOutcomeError, x as SurrealClient, T as ThrownByAny, y as TransactionClient, z as TransactionError, A as TransactionOptions, D as TransactionOutcomeUnknown, U as UniqueIndexesOfAny, E as bind, F as layer, G as make, H as pipeline, J as run, K as stream, M as transaction, N as withTransaction } from './bulk-C5a4VYnE.js';
 import { Metric, Duration, Effect } from 'effect';
 import 'surrealdb';
-import './expr-Bt9oR1pC.js';
+import './expr-CPMgbj5K.js';
 import './table-iF6L7xrW.js';
 import './uses-BXJXI3if.js';
-import './live-n0zkmyK9.js';
+import './live-DwTMzZp0.js';
 import './row-CLBe1uWx.js';
 import 'effect/Cause';
 import 'effect/Types';

@@ -146,6 +146,19 @@ var assertStatement = (statement) => {
   for (const name of Object.keys(statement.params)) assertBindingName(name);
   for (const name of statement.defines) assertIdentifier(name);
 };
+var assertUniqueIndexes = (statement) => {
+  const declared = statement.uniqueIndexes ?? [];
+  if (declared.some((index) => index.length === 0)) {
+    throw new RangeError(
+      `statement \`${statement.name}\` declares a unique index with no name`
+    );
+  }
+  if (declared.length > 0 && statement.writes === false) {
+    throw new RangeError(
+      `statement \`${statement.name}\` is declared not to write, so it cannot duplicate a value of a unique index; remove \`uniqueIndexes\` or declare \`writes\``
+    );
+  }
+};
 var wordChar = /[A-Za-z0-9_]/u;
 var skipComment = (sql, at) => {
   const two = sql.slice(at, at + 2);
@@ -228,6 +241,7 @@ var scanTopLevel = (sql) => {
   return { keywords, lets: names };
 };
 var make = (options) => {
+  const uniqueIndexes = [...new Set(options.uniqueIndexes ?? [])].sort();
   const statement = {
     [StatementTypeId]: StatementTypeId,
     name: options.name ?? "statement",
@@ -239,6 +253,7 @@ var make = (options) => {
     slots: options.slots ?? 1,
     valueSlot: options.valueSlot ?? options.slots ?? 1,
     throws: options.throws ?? [],
+    ...uniqueIndexes.length > 0 && { uniqueIndexes },
     defines: options.defines ?? [],
     transactional: options.transactional ?? false,
     ...options.writes !== void 0 && { writes: options.writes },
@@ -257,6 +272,7 @@ var make = (options) => {
     ...options.uses !== void 0 && { uses: options.uses }
   };
   assertStatement(statement);
+  assertUniqueIndexes(statement);
   assertResolved(options.params, `statement \`${statement.name}\``);
   if (options.defines === void 0) {
     const { lets } = scanTopLevel(statement.sql);
@@ -284,4 +300,4 @@ export {
   scanTopLevel,
   make
 };
-//# sourceMappingURL=chunk-QRSY4HQJ.js.map
+//# sourceMappingURL=chunk-Q5N5NWCM.js.map

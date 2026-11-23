@@ -66,6 +66,11 @@ declare const StatementTypeId = "~effect-surrealkit/Statement";
  *   derives it; `make` takes it as declared).
  * - `throws`: the `THROW` messages the text can raise, which a client
  *   surfaces as a typed error rather than a request failure.
+ * - `uniqueIndexes`: the unique indexes a write of the text can duplicate a
+ *   value of, by name (absent when none), which a client surfaces as a typed
+ *   `StatementIndexConflict` rather than a request failure. Write builders
+ *   take them from the table's `indexes`; `make` and `sequence` take them as
+ *   declared.
  * - `defines`: the names the text `LET`s at the top level. Statements in one
  *   transaction share one variable scope, so a client refuses to bind a name
  *   another statement of the same transaction defines.
@@ -96,7 +101,7 @@ declare const StatementTypeId = "~effect-surrealkit/Statement";
  *   `sequence` sets them, the union over its parts; builders leave them
  *   out; `make` takes them as declared.
  */
-interface Statement<P extends Params = Params, R extends Codec = Codec, Throws extends string = never> {
+interface Statement<P extends Params = Params, R extends Codec = Codec, Throws extends string = never, Unique extends string = string> {
     readonly [StatementTypeId]: typeof StatementTypeId;
     readonly name: string;
     readonly sql: string;
@@ -105,6 +110,7 @@ interface Statement<P extends Params = Params, R extends Codec = Codec, Throws e
     readonly slots: number;
     readonly valueSlot: number;
     readonly throws: ReadonlyArray<Throws>;
+    readonly uniqueIndexes?: ReadonlyArray<Unique>;
     readonly defines: ReadonlyArray<string>;
     readonly transactional: boolean;
     readonly writes?: boolean;
@@ -132,12 +138,14 @@ interface ThrowSite {
     readonly source: string;
     readonly lines: ReadonlyArray<number>;
 }
-/** Any statement, whatever it binds, returns and throws. */
-type AnyStatement = Statement<Params, Codec, string>;
+/** Any statement, whatever it binds, returns, throws and can duplicate. */
+type AnyStatement = Statement<Params, Codec, string, string>;
 /** The decoded result of a statement. */
-type Result<S> = S extends Statement<Params, infer R, string> ? R['Type'] : never;
+type Result<S> = S extends Statement<Params, infer R, string, string> ? R['Type'] : never;
 /** The messages a statement declares it can `THROW`. */
-type Thrown<S> = S extends Statement<Params, Codec, infer T> ? T : never;
+type Thrown<S> = S extends Statement<Params, Codec, infer T, string> ? T : never;
+/** The unique indexes a statement declares it can duplicate a value of. */
+type UniqueIndexes<S> = S extends Statement<Params, Codec, string, infer U> ? U : never;
 declare const isStatement: (value: unknown) => value is AnyStatement;
 /**
  * Declares a statement from its parts. The text is stored with exactly one
@@ -150,7 +158,7 @@ declare const isStatement: (value: unknown) => value is AnyStatement;
  * must declare `defines`, since a transaction relies on it to refuse a
  * binding that the `LET` would shadow.
  */
-declare const make: <const P extends Params, R extends Codec, const Throws extends string = never>(options: {
+declare const make: <const P extends Params, R extends Codec, const Throws extends string = never, const Unique extends string = never>(options: {
     readonly name?: string;
     readonly sql: string;
     readonly params: P;
@@ -159,6 +167,12 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     /** The 1-based result `result` decodes, in `1..slots`. Default `slots`. */
     readonly valueSlot?: number;
     readonly throws?: ReadonlyArray<Throws>;
+    /**
+     * The unique indexes a write of the text can duplicate a value of, by
+     * name. A duplicate on one of them fails with `StatementIndexConflict`,
+     * on any other with `StatementRequestError`. Default none.
+     */
+    readonly uniqueIndexes?: ReadonlyArray<Unique>;
     /** The names the text `LET`s at the top level. Default none. */
     readonly defines?: ReadonlyArray<string>;
     /** The text writes its own `BEGIN`, `COMMIT` or `CANCEL`. Default false. */
@@ -185,7 +199,7 @@ declare const make: <const P extends Params, R extends Codec, const Throws exten
     readonly openTargets?: boolean;
     /** What each binding is used as, where known. Default unknown. */
     readonly uses?: BindingUses;
-}) => Statement<P, R, Throws>;
+}) => Statement<P, R, Throws, Unique>;
 
 /**
  * Expressions: SurrealQL fragments as plain values.
@@ -488,4 +502,4 @@ type CheckedArguments<F extends PureFunction, A extends ReadonlyArray<unknown>> 
  */
 declare const call: <F extends PureFunction, const A extends ReadonlyArray<unknown>>(fn: CallTarget<F, A>, ...args: CheckedArguments<F, A>) => Expr<F["returns"], ParamsOfAll<A[number]>>;
 
-export { or as $, type AnyStatement as A, contains as B, type Codec as C, eq as D, type Expr as E, gt as F, gte as G, inside as H, type ItemOf as I, isExpr as J, isNone as K, type LiteralCodec as L, isNotNone as M, type NoParams as N, type OrNone as O, type Params as P, isPath as Q, type Result as R, type Statement as S, type ThrowSite as T, isStatement as U, literal as V, lt as W, lte as X, make as Y, ne as Z, not as _, type Primitive as a, param as a0, paramsOf as a1, parent as a2, sqlOf as a3, unsafeExpr as a4, type ParamsOfAll as b, type Simplify as c, type OperandEncoded as d, type Comparable as e, type CodecOf as f, type ParamsOf as g, type Path as h, type OperandParams as i, type Operand as j, type CallArguments as k, type CastKind as l, type CheckedInput as m, type Collection as n, type ElementOf as o, ExprTypeId as p, type Input as q, type PureFunction as r, type Reader as s, StatementTypeId as t, type Thrown as u, and as v, at as w, call as x, cast as y, codecOf as z };
+export { not as $, type AnyStatement as A, contains as B, type Codec as C, eq as D, type Expr as E, gt as F, gte as G, inside as H, type ItemOf as I, isExpr as J, isNone as K, type LiteralCodec as L, isNotNone as M, type NoParams as N, type OrNone as O, type Params as P, isPath as Q, type Result as R, type Statement as S, type ThrowSite as T, type UniqueIndexes as U, isStatement as V, literal as W, lt as X, lte as Y, make as Z, ne as _, type Primitive as a, or as a0, param as a1, paramsOf as a2, parent as a3, sqlOf as a4, unsafeExpr as a5, type ParamsOfAll as b, type Simplify as c, type OperandEncoded as d, type Comparable as e, type CodecOf as f, type ParamsOf as g, type Path as h, type OperandParams as i, type Operand as j, type CallArguments as k, type CastKind as l, type CheckedInput as m, type Collection as n, type ElementOf as o, ExprTypeId as p, type Input as q, type PureFunction as r, type Reader as s, StatementTypeId as t, type Thrown as u, and as v, at as w, call as x, cast as y, codecOf as z };

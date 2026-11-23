@@ -1,10 +1,10 @@
 import { Effect, Context, Layer, Scope } from 'effect';
+import { o as StatementError, x as SurrealClient, C as Client, v as StatementUnsupported, Q as Queryable } from './bulk-C5a4VYnE.js';
 import { Surreal, SurrealSession } from 'surrealdb';
-import { C as Client, v as SurrealClient, o as StatementError, t as StatementUnsupported, Q as Queryable } from './bulk-CRnalAeb.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { P as Params, C as Codec, S as Statement, q as Input } from './expr-Bt9oR1pC.js';
-import './live-n0zkmyK9.js';
+import { P as Params, C as Codec, S as Statement, q as Input } from './expr-CPMgbj5K.js';
+import './live-DwTMzZp0.js';
 import './row-CLBe1uWx.js';
 import './table-iF6L7xrW.js';
 import './uses-BXJXI3if.js';
@@ -17,6 +17,31 @@ interface LiveHandle {
     }>;
     readonly kill: () => PromiseLike<void>;
 }
+
+/**
+ * Whether the client still reads an engine's constraint errors: a check to
+ * run against a new SurrealDB version before relying on
+ * `StatementIndexConflict` and `StatementRecordExists` with it.
+ */
+
+/**
+ * Whether the client still classifies the engine's constraint errors: it
+ * defines the table `effect_surrealkit_constraint_check` with a unique
+ * index in the client's database, writes a duplicate value and an id that
+ * exists, and removes the table. `indexConflict` and `recordExists` are
+ * true when they fail as `StatementIndexConflict` and
+ * `StatementRecordExists`; `got` holds what each failed with otherwise
+ * (`StatementRequestError` on an engine whose message the client does not
+ * read). Run it against a disposable database, such as `memoryLayer`.
+ */
+declare const checkConstraintErrors: Effect.Effect<{
+    readonly indexConflict: boolean;
+    readonly recordExists: boolean;
+    readonly got: {
+        readonly duplicate: string;
+        readonly existing: string;
+    };
+}, StatementError<never, string>, SurrealClient>;
 
 declare const TestingError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "TestingError";
@@ -227,18 +252,18 @@ declare const schemaDrift: (store: DeclaredStore) => Effect.Effect<ReadonlyArray
  */
 declare const indexesOf: (plan: unknown) => ReadonlyArray<string>;
 /** The plan of `statement` for `input`, and the indexes it reads. */
-declare const explain: <P extends Params, R extends Codec, T extends string>(statement: Statement<P, R, T>, input: Input<P>) => Effect.Effect<{
+declare const explain: <P extends Params, R extends Codec, T extends string, U extends string = never>(statement: Statement<P, R, T, U>, input: Input<P>) => Effect.Effect<{
     readonly plan: unknown;
     readonly indexes: ReadonlyArray<string>;
-}, StatementError<T>, SurrealClient>;
+}, StatementError<T, U>, SurrealClient>;
 /**
  * Succeeds when the engine plans `statement` with `input` through the index
  * `index`; fails with an {@link IndexExpectationError} naming the indexes
  * it does read. The statement must be one `SELECT`.
  */
-declare const expectIndex: <P extends Params, R extends Codec, T extends string>(statement: Statement<P, R, T>, input: Input<P>, index: string) => Effect.Effect<void, IndexExpectationError | StatementError<T>, SurrealClient>;
+declare const expectIndex: <P extends Params, R extends Codec, T extends string, U extends string = never>(statement: Statement<P, R, T, U>, input: Input<P>, index: string) => Effect.Effect<void, IndexExpectationError | StatementError<T, U>, SurrealClient>;
 /** Succeeds when the engine's plan of `statement` does not read `index`. */
-declare const expectNoIndex: <P extends Params, R extends Codec, T extends string>(statement: Statement<P, R, T>, input: Input<P>, index: string) => Effect.Effect<void, IndexExpectationError | StatementError<T>, SurrealClient>;
+declare const expectNoIndex: <P extends Params, R extends Codec, T extends string, U extends string = never>(statement: Statement<P, R, T, U>, input: Input<P>, index: string) => Effect.Effect<void, IndexExpectationError | StatementError<T, U>, SurrealClient>;
 
 /**
  * A scripted client: canned results per statement name, with no engine.
@@ -266,6 +291,11 @@ type Reply = {
 } | {
     readonly [ReplyTypeId]: 'conflict';
 } | {
+    readonly [ReplyTypeId]: 'duplicate';
+    readonly index: string;
+} | {
+    readonly [ReplyTypeId]: 'exists';
+} | {
     readonly [ReplyTypeId]: 'failure';
     readonly message: string;
 } | {
@@ -281,6 +311,15 @@ declare const result: (value: unknown) => Reply;
 declare const thrown: (message: string) => Reply;
 /** The request conflicts with another transaction. */
 declare const conflict: () => Reply;
+/**
+ * The write would duplicate a value of the unique index `index`, as
+ * SurrealDB 3.3 and 4.0 report it. A statement that declares the index in
+ * `uniqueIndexes` fails with `StatementIndexConflict`; any other with
+ * `StatementRequestError`.
+ */
+declare const indexConflict: (index: string) => Reply;
+/** The write creates a record whose id already exists. */
+declare const recordExists: () => Reply;
 /** The request fails, as a SurrealQL or transport error would. */
 declare const failure: (message: string) => Reply;
 /** The events a scripted live query delivers, in order. */
@@ -338,4 +377,4 @@ declare const conflictingSession: <S extends Queryable>(session: S, options: {
     };
 };
 
-export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordUser, result, schemaDrift, thrown, unsupported };
+export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, checkConstraintErrors, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexConflict, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordExists, recordUser, result, schemaDrift, thrown, unsupported };

@@ -5,7 +5,7 @@ import {
   holdsDecimal,
   mul,
   sub
-} from "./chunk-NG37QA4Y.js";
+} from "./chunk-WPLSISVA.js";
 import {
   SurrealValue
 } from "./chunk-LHVQILTS.js";
@@ -48,7 +48,7 @@ import {
   unwrap,
   unwrapField,
   viewOf
-} from "./chunk-LWAKMPZO.js";
+} from "./chunk-6FB7AHXS.js";
 import {
   NoneAsAbsent
 } from "./chunk-ZMDEVTBR.js";
@@ -92,7 +92,7 @@ import {
   settle,
   sqlOf,
   unsafeExpr
-} from "./chunk-DVT5GPYS.js";
+} from "./chunk-OEDUBSSU.js";
 import {
   Decimal,
   Float,
@@ -112,7 +112,7 @@ import {
   isStatement,
   make,
   withRefs
-} from "./chunk-QRSY4HQJ.js";
+} from "./chunk-Q5N5NWCM.js";
 import "./chunk-3SWEJO3L.js";
 import {
   DEFAULT_HOLE_DELIMITERS,
@@ -2365,7 +2365,10 @@ var sequence = (...parts) => ({
           )
         )
       ],
-      ...throwSites !== void 0 && { throwSites }
+      ...throwSites !== void 0 && { throwSites },
+      ...contract.uniqueIndexes !== void 0 && {
+        uniqueIndexes: contract.uniqueIndexes
+      }
     });
   }
 });
@@ -2765,6 +2768,7 @@ var evaluate = (expr, name = "evaluate", options) => {
 // src/statement/write.ts
 import { Schema as Schema7, SchemaTransformation as SchemaTransformation2 } from "effect";
 import { escapeIdent as escapeIdent5 } from "surrealdb";
+var uniqueIndexesOf = (table) => Object.entries(table.indexes ?? {}).filter(([, index]) => index.type === "unique").map(([name]) => name).sort();
 var PatchOperation = Schema7.Union([
   Schema7.Struct({
     op: Schema7.Literal("add"),
@@ -2858,7 +2862,9 @@ var finish2 = (state, name) => {
     params: state.params,
     result: resultOf2(state),
     writes: true,
-    nonEmpty: nonEmpty(state)
+    nonEmpty: nonEmpty(state),
+    // A DELETE removes values and cannot duplicate one.
+    uniqueIndexes: state.verb === "DELETE" ? [] : uniqueIndexesOf(state.table)
   });
 };
 var start = (verb, table, options) => {

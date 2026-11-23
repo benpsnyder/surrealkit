@@ -18,7 +18,7 @@ import {
   orNone,
   paramsOf,
   sqlOf
-} from "./chunk-DVT5GPYS.js";
+} from "./chunk-OEDUBSSU.js";
 import {
   isPlainObject,
   runtimeCode,
@@ -27,7 +27,7 @@ import {
 import {
   assertResolved,
   withoutRefs
-} from "./chunk-QRSY4HQJ.js";
+} from "./chunk-Q5N5NWCM.js";
 
 // src/statement/row.ts
 import { Schema } from "effect";
@@ -718,4 +718,4 @@ export {
   collect,
   shortest
 };
-//# sourceMappingURL=chunk-LWAKMPZO.js.map
+//# sourceMappingURL=chunk-6FB7AHXS.js.map

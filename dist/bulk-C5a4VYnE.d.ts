@@ -1,7 +1,7 @@
 import { Effect, Schedule, Result, Schema, Stream, Scope, Context, Layer } from 'effect';
 import { SurrealSession } from 'surrealdb';
-import { P as Params, C as Codec, q as Input, S as Statement, o as ElementOf, m as CheckedInput } from './expr-Bt9oR1pC.js';
-import { i as LiveStatement } from './live-n0zkmyK9.js';
+import { P as Params, C as Codec, q as Input, S as Statement, o as ElementOf, m as CheckedInput } from './expr-CPMgbj5K.js';
+import { i as LiveStatement } from './live-DwTMzZp0.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 
@@ -99,6 +99,50 @@ declare class StatementConflict extends StatementConflict_base<{
 }> {
     toJSON(): unknown;
 }
+declare const StatementIndexConflict_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
+    readonly _tag: "StatementIndexConflict";
+} & Readonly<A>;
+/**
+ * A write would duplicate a value of a unique index the statement declares
+ * (`uniqueIndexes`; a write builder declares its table's). Nothing was
+ * written by the statement that failed. SurrealDB reports the index by name
+ * only, so a write that calls a function writing to another table with an
+ * index of the same name reports that index under this name.
+ *
+ * The message names the statement and the index. The duplicated value and
+ * the record that holds it are only in the engine's error, `cause`.
+ *
+ * `UPSERT`, `INSERT IGNORE` and `INSERT … ON DUPLICATE KEY UPDATE` are
+ * SurrealDB's own ways to write a row whose value may be taken; this error
+ * is for a write that expects the value to be free.
+ */
+declare class StatementIndexConflict<Index extends string = string> extends StatementIndexConflict_base<{
+    /** The statement that declares the index; in a transaction, `one of …` when several do. */
+    readonly statement: string;
+    readonly index: string;
+    readonly cause: unknown;
+}> {
+    readonly index: Index;
+    get message(): string;
+    toJSON(): unknown;
+}
+declare const StatementRecordExists_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
+    readonly _tag: "StatementRecordExists";
+} & Readonly<A>;
+/**
+ * A write tried to create a record whose id already exists (`CREATE` or
+ * `INSERT` of an id that is taken). The id is only in the engine's error,
+ * `cause`. `UPSERT`, `INSERT IGNORE` and `INSERT … ON DUPLICATE KEY UPDATE`
+ * write such a record without this error.
+ */
+declare class StatementRecordExists extends StatementRecordExists_base<{
+    /** The statement, or the transaction, that was sent. */
+    readonly statement: string;
+    readonly message: string;
+    readonly cause: unknown;
+}> {
+    toJSON(): unknown;
+}
 declare const StatementDecodeError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "StatementDecodeError";
 } & Readonly<A>;
@@ -156,8 +200,12 @@ declare class StatementWriteOutcomeError extends StatementWriteOutcomeError_base
 }> {
     get message(): string;
 }
-/** Every error of running a statement that can `THROW` the messages `T`. */
-type StatementError<Throws extends string = never> = StatementEncodeError | StatementScopeError | StatementRequestError | StatementUnexpectedThrow | StatementConflict | StatementDecodeError | StatementEmptyResult | StatementWriteOutcomeError | ([Throws] extends [never] ? never : StatementThrown<Throws>);
+/**
+ * Every error of running a statement that can `THROW` the messages `Throws`
+ * and duplicate a value of the unique indexes `Unique`. As for
+ * `Statement`, leaving `Unique` out means any index.
+ */
+type StatementError<Throws extends string = never, Unique extends string = string> = StatementEncodeError | StatementScopeError | StatementRequestError | StatementUnexpectedThrow | StatementConflict | StatementRecordExists | StatementDecodeError | StatementEmptyResult | StatementWriteOutcomeError | ([Throws] extends [never] ? never : StatementThrown<Throws>) | ([Unique] extends [never] ? never : StatementIndexConflict<Unique>);
 declare const StatementUnsupported_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
     readonly _tag: "StatementUnsupported";
 } & Readonly<A>;
@@ -184,13 +232,13 @@ declare const BulkWriteError_base: new <A extends Record<string, any> = {}>(args
     readonly _tag: "BulkWriteError";
 } & Readonly<A>;
 /** A non-atomic bulk write failed after committing any preceding chunks. */
-declare class BulkWriteError<Throws extends string = never> extends BulkWriteError_base<{
+declare class BulkWriteError<Throws extends string = never, Unique extends string = string> extends BulkWriteError_base<{
     readonly statement: string;
     /** Zero-based index of the failed chunk. */
     readonly chunk: number;
     readonly chunksCommitted: number;
     readonly rowsCommitted: number;
-    readonly cause: StatementError<Throws>;
+    readonly cause: StatementError<Throws, Unique>;
 }> {
 }
 declare const LiveQueryClosed_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
@@ -210,9 +258,9 @@ interface TransactionOptions {
 }
 type TransactionRunOptions = Omit<RunOptions, 'retry'>;
 interface TransactionClient {
-    readonly run: <P extends Params, R extends Codec, T extends string, I = Input<P>>(statement: Statement<P, R, T>, ...args: RunArgsWithOptions<P, I, TransactionRunOptions>) => Effect.Effect<R['Type'], StatementError<T>>;
-    readonly transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: TransactionRunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>>>;
-    readonly bulk: <P extends Params, R extends Codec, T extends string, K extends ListBindingsOf<P>, E = never, C = never>(statement: Statement<P, R, T>, input: BulkInput<P, K, E, C>, options: Omit<BulkOptions<K, ElementOf<P[K]['Type']>, E, C>, 'retry' | 'atomic'>) => Effect.Effect<BulkSummary<R['Type']>, StatementError<T> | BulkWriteError<T> | StatementUnsupported | E, C>;
+    readonly run: <P extends Params, R extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, R, T, U>, ...args: RunArgsWithOptions<P, I, TransactionRunOptions>) => Effect.Effect<R['Type'], StatementError<T, U>>;
+    readonly transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: TransactionRunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>, UniqueIndexesOfAny<S>>>;
+    readonly bulk: <P extends Params, R extends Codec, T extends string, K extends ListBindingsOf<P>, E = never, C = never, U extends string = never>(statement: Statement<P, R, T, U>, input: BulkInput<P, K, E, C>, options: Omit<BulkOptions<K, ElementOf<P[K]['Type']>, E, C>, 'retry' | 'atomic'>) => Effect.Effect<BulkSummary<R['Type']>, StatementError<T, U> | BulkWriteError<T, U> | StatementUnsupported | E, C>;
 }
 type TransactionError = StatementConflict | StatementRequestError | StatementScopeError | StatementUnsupported | TransactionOutcomeUnknown;
 
@@ -231,7 +279,7 @@ interface PipelineOptions {
 }
 /** One result for each bound statement, in request order. */
 type PipelineResults<S extends ReadonlyArray<unknown>> = {
-    readonly [I in keyof S]: S[I] extends Bound<infer R, infer T> ? Result.Result<R['Type'], StatementError<T>> : never;
+    readonly [I in keyof S]: S[I] extends Bound<infer R, infer T, infer U> ? Result.Result<R['Type'], StatementError<T, U>> : never;
 };
 
 /**
@@ -283,13 +331,13 @@ declare const BoundTypeId: unique symbol;
  * A statement together with the values of its bindings, made by
  * {@link bind}, which checks the input against the statement's bindings.
  */
-interface Bound<R extends Codec = Codec, Throws extends string = string> {
+interface Bound<R extends Codec = Codec, Throws extends string = string, Unique extends string = string> {
     readonly [BoundTypeId]: 'made by bind';
-    readonly statement: Statement<Params, R, Throws>;
+    readonly statement: Statement<Params, R, Throws, Unique>;
     readonly input: Readonly<Record<string, unknown>>;
 }
 /** Pairs a statement with its input, to run it inside {@link Client.transaction}. */
-declare const bind: <P extends Params, R extends Codec, Throws extends string, I = Input<P>>(statement: Statement<P, R, Throws>, ...input: InputOf<P, I>) => Bound<R, Throws>;
+declare const bind: <P extends Params, R extends Codec, Throws extends string, Unique extends string = never, I = Input<P>>(statement: Statement<P, R, Throws, Unique>, ...input: InputOf<P, I>) => Bound<R, Throws, Unique>;
 /**
  * The statements sent together as the caller wrote them, `S`: each one
  * not made by {@link bind} is typed as a message saying so.
@@ -301,10 +349,12 @@ type BoundStatements<S extends ReadonlyArray<unknown>> = {
 };
 /** The decoded results of the statements of a transaction, in order. */
 type Results<S extends ReadonlyArray<unknown>> = {
-    readonly [I in keyof S]: S[I] extends Bound<infer R, string> ? R['Type'] : never;
+    readonly [I in keyof S]: S[I] extends Bound<infer R, string, string> ? R['Type'] : never;
 };
 /** The messages any statement of a transaction can `THROW`. */
-type ThrownByAny<S extends ReadonlyArray<unknown>> = S[number] extends Bound<Codec, infer T> ? T : never;
+type ThrownByAny<S extends ReadonlyArray<unknown>> = S[number] extends Bound<Codec, infer T, string> ? T : never;
+/** The unique indexes any statement of a transaction can duplicate a value of. */
+type UniqueIndexesOfAny<S extends ReadonlyArray<unknown>> = S[number] extends Bound<Codec, string, infer U> ? U : never;
 interface Client {
     /**
      * Runs one statement and decodes its result.
@@ -313,7 +363,7 @@ interface Client {
      * (`BEGIN … COMMIT`), each of its SurrealQL statements commits on its
      * own; use {@link Client.transaction} for all-or-nothing.
      */
-    readonly run: <P extends Params, R extends Codec, Throws extends string, I = Input<P>>(statement: Statement<P, R, Throws>, ...args: RunArgs<P, I>) => Effect.Effect<R['Type'], StatementError<Throws>>;
+    readonly run: <P extends Params, R extends Codec, Throws extends string, Unique extends string = never, I = Input<P>>(statement: Statement<P, R, Throws, Unique>, ...args: RunArgs<P, I>) => Effect.Effect<R['Type'], StatementError<Throws, Unique>>;
     /**
      * Runs several statements as one atomic request and decodes each result:
      * all of them take effect, or none does.
@@ -325,15 +375,15 @@ interface Client {
      * transaction there. A declared `THROW` names the statement that
      * declares it.
      */
-    readonly transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: RunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>>>;
+    readonly transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: RunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>, UniqueIndexesOfAny<S>>>;
     /** Sends a list together and returns one outcome per statement. */
     readonly pipeline: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: PipelineOptions) => Effect.Effect<PipelineResults<S>, StatementEncodeError | StatementScopeError | StatementRequestError>;
     /** Opens a transaction for the body and commits when the body succeeds. */
     readonly withTransaction: <A, E, R>(body: (tx: TransactionClient) => Effect.Effect<A, E, R>, options?: TransactionOptions) => Effect.Effect<A, E | TransactionError, R>;
     /** Runs a statement over chunks of one list binding. */
-    readonly bulk: <P extends Params, R extends Codec, T extends string, K extends ListBindingsOf<P>, E = never, C = never>(statement: Statement<P, R, T>, input: BulkInput<P, K, E, C>, options: BulkOptions<K, ElementOf<P[K]['Type']>, E, C>) => Effect.Effect<BulkSummary<R['Type']>, StatementError<T> | BulkWriteError<T> | StatementUnsupported | TransactionOutcomeUnknown | E, C>;
+    readonly bulk: <P extends Params, R extends Codec, T extends string, K extends ListBindingsOf<P>, E = never, C = never, U extends string = never>(statement: Statement<P, R, T, U>, input: BulkInput<P, K, E, C>, options: BulkOptions<K, ElementOf<P[K]['Type']>, E, C>) => Effect.Effect<BulkSummary<R['Type']>, StatementError<T, U> | BulkWriteError<T, U> | StatementUnsupported | TransactionOutcomeUnknown | E, C>;
     /** Decodes an array result one row at a time. */
-    readonly stream: <P extends Params, Row extends Codec, T extends string, I = Input<P>>(statement: Statement<P, Schema.$Array<Row>, T>, ...input: InputOf<P, I>) => Stream.Stream<Row['Type'], StatementError<T> | StatementUnsupported>;
+    readonly stream: <P extends Params, Row extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, Schema.$Array<Row>, T, U>, ...input: InputOf<P, I>) => Stream.Stream<Row['Type'], StatementError<T, U> | StatementUnsupported>;
     /** Acquires a live query in the current scope. */
     readonly liveScoped: <P extends Params, Row extends Codec, Id extends Codec, I = Input<P>>(statement: LiveStatement<P, Row, Id>, ...input: InputOf<P, I>) => Effect.Effect<Stream.Stream<LiveEvent<Row['Type'], Id['Type']>, LiveError>, LiveError, Scope.Scope>;
     /** Streams changes for the lifetime of the subscription. */
@@ -355,15 +405,15 @@ declare const make: (db: Queryable) => Client;
 /** Provides {@link SurrealClient} from an SDK connection or session. */
 declare const layer: (db: Queryable) => Layer.Layer<SurrealClient>;
 /** Runs a statement through the {@link SurrealClient} in context. */
-declare const run: <P extends Params, R extends Codec, Throws extends string, I = Input<P>>(statement: Statement<P, R, Throws>, ...args: RunArgs<P, I>) => Effect.Effect<R["Type"], StatementError<Throws>, SurrealClient>;
+declare const run: <P extends Params, R extends Codec, Throws extends string, Unique extends string = never, I = Input<P>>(statement: Statement<P, R, Throws, Unique>, ...args: RunArgs<P, I>) => Effect.Effect<R["Type"], StatementError<Throws, Unique>, SurrealClient>;
 /** Runs statements atomically through the {@link SurrealClient} in context. */
-declare const transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: RunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>>, SurrealClient>;
+declare const transaction: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: RunOptions) => Effect.Effect<Results<S>, StatementError<ThrownByAny<S>, UniqueIndexesOfAny<S>>, SurrealClient>;
 /** Sends a pipeline through the client in context. */
 declare const pipeline: <const S extends ReadonlyArray<unknown>>(statements: BoundStatements<S>, options?: PipelineOptions) => Effect.Effect<PipelineResults<S>, StatementEncodeError | StatementScopeError | StatementRequestError, SurrealClient>;
 /** Runs an effect with a transaction-bound client in context. */
 declare const withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: TransactionOptions) => Effect.Effect<A, E | TransactionError, R | SurrealClient>;
 /** Streams rows through the client in context. */
-declare const stream: <P extends Params, Row extends Codec, T extends string, I = Input<P>>(statement: Statement<P, Schema.$Array<Row>, T>, ...input: InputOf<P, I>) => Stream.Stream<Row["Type"], StatementError<T> | StatementUnsupported, SurrealClient>;
+declare const stream: <P extends Params, Row extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, Schema.$Array<Row>, T, U>, ...input: InputOf<P, I>) => Stream.Stream<Row["Type"], StatementError<T, U> | StatementUnsupported, SurrealClient>;
 
 /** The names of the bindings whose decoded values are lists. */
 type ListBindingsOf<P extends Params> = {
@@ -405,4 +455,4 @@ interface BulkSummary<A> {
     readonly results: ReadonlyArray<A>;
 }
 
-export { bind as A, type Bound as B, type Client as C, layer as D, make as E, pipeline as F, run as G, stream as H, type InputOf as I, transaction as J, withTransaction as K, type ListBindingsOf as L, type PipelineOptions as P, type Queryable as Q, type Results as R, StatementConflict as S, type ThrownByAny as T, type BoundStatements as a, type BulkOptions as b, type BulkProgress as c, type BulkSummary as d, BulkWriteError as e, type LiveError as f, type LiveEvent as g, LiveQueryClosed as h, type PipelineResults as i, type RunArgs as j, type RunOptions as k, StatementDecodeError as l, StatementEmptyResult as m, StatementEncodeError as n, type StatementError as o, StatementRequestError as p, StatementScopeError as q, StatementThrown as r, StatementUnexpectedThrow as s, StatementUnsupported as t, StatementWriteOutcomeError as u, SurrealClient as v, type TransactionClient as w, type TransactionError as x, type TransactionOptions as y, TransactionOutcomeUnknown as z };
+export { type TransactionOptions as A, type Bound as B, type Client as C, TransactionOutcomeUnknown as D, bind as E, layer as F, make as G, pipeline as H, type InputOf as I, run as J, stream as K, type ListBindingsOf as L, transaction as M, withTransaction as N, type PipelineOptions as P, type Queryable as Q, type Results as R, StatementConflict as S, type ThrownByAny as T, type UniqueIndexesOfAny as U, type BoundStatements as a, type BulkOptions as b, type BulkProgress as c, type BulkSummary as d, BulkWriteError as e, type LiveError as f, type LiveEvent as g, LiveQueryClosed as h, type PipelineResults as i, type RunArgs as j, type RunOptions as k, StatementDecodeError as l, StatementEmptyResult as m, StatementEncodeError as n, type StatementError as o, StatementIndexConflict as p, StatementRecordExists as q, StatementRequestError as r, StatementScopeError as s, StatementThrown as t, StatementUnexpectedThrow as u, StatementUnsupported as v, StatementWriteOutcomeError as w, SurrealClient as x, type TransactionClient as y, type TransactionError as z };
