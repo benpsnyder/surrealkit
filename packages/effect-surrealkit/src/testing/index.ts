@@ -8,6 +8,8 @@
  * Nothing else in the package imports this module, so the main entry points
  * stay host-neutral and installable without `@surrealdb/node`.
  */
+
+export { checkConstraintErrors } from './constraints.js';
 export {
 	type Connection,
 	type Database,
@@ -38,7 +40,9 @@ export {
 	failure,
 	fake,
 	fakeLayer,
+	indexConflict,
 	type Reply,
+	recordExists,
 	result,
 	type Script,
 	thrown,

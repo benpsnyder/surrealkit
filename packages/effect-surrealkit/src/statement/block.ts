@@ -539,20 +539,21 @@ export type LocalName<N extends string, P, L> = N extends keyof L
 export type LetValue = Expr | AnyStatement;
 
 type ValueCodec<V> =
-	V extends Statement<Params, infer R, string>
+	V extends Statement<Params, infer R, string, string>
 		? R
 		: V extends Expr<infer S, Params>
 			? S
 			: never;
 
 type ValueParams<V> =
-	V extends Statement<infer P, Codec, string>
+	V extends Statement<infer P, Codec, string, string>
 		? P
 		: V extends Expr<Codec, infer P>
 			? P
 			: never;
 
-type ValueThrows<V> = V extends Statement<Params, Codec, infer T> ? T : never;
+type ValueThrows<V> =
+	V extends Statement<Params, Codec, infer T, string> ? T : never;
 
 /**
  * What a block or branch can return: an expression, or an object of
@@ -601,7 +602,7 @@ export interface Ended<P extends Params, Throws extends string, R> {
 	readonly build: (
 		name?: string,
 		options?: { readonly writes?: boolean },
-	) => Statement<Simplify<P>, BlockResult<R>, Throws>;
+	) => Statement<Simplify<P>, BlockResult<R>, Throws, never>;
 }
 
 /**
@@ -681,7 +682,8 @@ export interface Block<
 	) => Block<
 		P & S['params'],
 		L,
-		Throws | (S extends Statement<Params, Codec, infer T> ? T : never)
+		| Throws
+		| (S extends Statement<Params, Codec, infer T, string> ? T : never)
 	>;
 
 	/**
