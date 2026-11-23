@@ -457,7 +457,7 @@ that is not an address, `math.median([])`, `vector.sum([])`). After changing
 the table, run:
 
 ```sh
-npm run generate:functions   # node scripts/generate-functions.mjs
+pnpm run generate:functions  # node scripts/generate-functions.mjs
 ```
 
 It writes `src/functions/generated/` (a file per family, `codecs.ts` and
@@ -2084,9 +2084,9 @@ client process. Stream timing includes consuming all 20,000 rows.
 The streamed read had higher peak process RSS in this workload.
 
 ```sh
-npm run build
-npm run --silent bench
-SURREAL_BIN=/path/to/surreal npm run --silent bench > benchmark.json
+pnpm run build
+pnpm run --silent bench
+SURREAL_BIN=/path/to/surreal pnpm run --silent bench > benchmark.json
 ```
 
 The binary adds a WebSocket run. The JSON includes all five samples for
@@ -2548,16 +2548,19 @@ these is a silent corruption or a hang without the check:
 
 ## Development
 
+The package is developed with pnpm (the version is the `packageManager` field)
+and commits its own `pnpm-lock.yaml`; the repository has no root workspace.
+
 ```sh
-bun install
-bun run lint
-bun run typecheck
-bun run test
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run typecheck
+pnpm run test
 ```
 
 The property suites round-trip every codec through the SDK's CBOR codec in
 process (`Arbitrary.schema` + `Arbitrary.checkEffect`). Golden output lives in
-`test/golden/` (regenerate with `UPDATE_GOLDEN=1 bun run test`): the contract's
+`test/golden/` (regenerate with `UPDATE_GOLDEN=1 pnpm run test`): the contract's
 `example.v2.json`, the same with the `bigint`/`effect-datetime`/`patch`
 options, the whole corpus, the integer-keyed corpus tables in the `bigint` profile (the
 whole corpus in that profile is checked line by line against the `corpus`
@@ -2581,15 +2584,15 @@ for 30 eight-member pipelines and 30 bulk calls. `test/requests.test.ts`
 counts transport calls for each execution method.
 
 The engine, statement, field-presence and conformance suites need a real
-engine. A plain `bun run test` runs them on the in-process, in-memory engine of
+engine. A plain `pnpm run test` runs them on the in-process, in-memory engine of
 `@surrealdb/node` (SurrealDB 4.0.1; a dev dependency). Set one of these to run
 them against a server instead, which is also the only way to run the JSON
 round trips over HTTP `/sql`; the embedded engine has no HTTP endpoint, so
 those are skipped (with a notice) without a server:
 
 ```sh
-SURREAL_BIN=/usr/local/bin/surreal bun run test          # starts `surreal start … memory`
-SURREAL_URL=ws://127.0.0.1:8000/rpc bun run test         # a throwaway container, root/root
+SURREAL_BIN=/usr/local/bin/surreal pnpm run test         # starts `surreal start … memory`
+SURREAL_URL=ws://127.0.0.1:8000/rpc pnpm run test        # a throwaway container, root/root
 ```
 
 `test/conformance.test.ts` pins engine and SDK behaviour the documentation
@@ -2609,11 +2612,36 @@ generated schemas and `Arbitrary.checkEffect` required to report `Passed`. The
 SurrealKit binary is the workspace build (`cargo build`) or `SURREALKIT_BIN`:
 
 ```sh
-SURREAL_BIN=/usr/local/bin/surreal bun run test:roundtrip            # starts its own server
+SURREAL_BIN=/usr/local/bin/surreal pnpm run test:roundtrip           # starts its own server
 SURREALDB_HOST=ws://127.0.0.1:8000 SURREALDB_USER=root SURREALDB_PASSWORD=root \
-  bun run test:roundtrip                                               # a disposable server
+  pnpm run test:roundtrip                                              # a disposable server
 ```
 
 `scripts/roundtrip.mjs` compiles the corpus's portable modules, then runs
 `surrealkit test --exec`; the suite's first check is that the prepared
 database's `SURREALKIT_EXEC_SCHEMA_DIGEST` equals the compiled `semanticDigest`.
+
+### Prebuilt package
+
+A consumer that installs this package from Git with build scripts blocked
+needs `dist/` already built. The fork's `dist/effect-surrealkit-statements`
+branch holds that build at its root, one commit per source commit, and is
+made with `scripts/build-dist.mjs`:
+
+```sh
+node scripts/build-dist.mjs --out /tmp/effect-surrealkit-dist
+```
+
+The script refuses to write anything unless the repository's working tree is
+clean before and after, and `pnpm install --frozen-lockfile`, `lint`,
+`typecheck`, `test` and `build` all pass. It then writes the files
+`package.json` lists and a `package.json` without `scripts`,
+`devDependencies` or `packageManager`, so installing it runs nothing. The
+`version` is `<version>-fork.<sha>`, where `<sha>` is the first seven hex
+digits of the commit built, so the copy cannot pass for the npm release of
+the same version. `gitHead` is that commit in full. The emitter version recorded in generated manifests is not
+changed.
+
+Publishing the directory is a separate, manual step: replace the dist
+branch's tree with it, commit (`build(effect-surrealkit): prebuilt package
+from <sha>`, naming the built commit and the gate that passed), and push.

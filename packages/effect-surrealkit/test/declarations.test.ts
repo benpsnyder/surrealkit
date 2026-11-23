@@ -9,20 +9,21 @@
 import { spawnSync } from 'node:child_process';
 import {
 	cpSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	realpathSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import ts from 'typescript';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PEER_VERSIONS } from '../src/emitter/version.js';
 import { goldenDir } from './documents.js';
 
 const pkg = join(import.meta.dirname, '..');
@@ -30,6 +31,44 @@ const modules = join(pkg, 'node_modules');
 const link = (target: string, path: string) => {
 	mkdirSync(join(path, '..'), { recursive: true });
 	symlinkSync(target, path, 'junction');
+};
+
+interface Installed {
+	readonly name: string;
+	readonly version: string;
+	/** The package's real directory, whatever layout installed it. */
+	readonly dir: string;
+	readonly dependencies: ReadonlyArray<string>;
+}
+
+/**
+ * The package `name` as Node resolves it from `from`: the nearest
+ * `node_modules/<name>` up the tree, through any symlink. This finds a
+ * transitive dependency beside its dependent in pnpm's virtual store as well
+ * as in a hoisted (npm, bun) tree, and reads its version from what is
+ * installed rather than from a pin here.
+ */
+const installed = (name: string, from: string): Installed => {
+	for (let dir = from; ; dir = dirname(dir)) {
+		const candidate = join(dir, 'node_modules', name);
+		if (existsSync(join(candidate, 'package.json'))) {
+			const real = realpathSync(candidate);
+			const manifest = JSON.parse(
+				readFileSync(join(real, 'package.json'), 'utf8'),
+			) as {
+				readonly version: string;
+				readonly dependencies?: Readonly<Record<string, string>>;
+			};
+			return {
+				name,
+				version: manifest.version,
+				dir: real,
+				dependencies: Object.keys(manifest.dependencies ?? {}),
+			};
+		}
+		if (dirname(dir) === dir)
+			throw new Error(`${name} is not installed above ${from}`);
+	}
 };
 
 const statements = `import { Effect, Schema } from 'effect';
@@ -191,44 +230,47 @@ describe('declaration emit in a pnpm consumer', () => {
 		const store = join(root, 'node_modules', '.pnpm');
 		const entry = (name: string, version: string) =>
 			join(store, `${name.replace('/', '+')}@${version}`, 'node_modules');
-		const place = (
-			name: string,
-			version: string,
-			deps: ReadonlyArray<readonly [string, string]>,
-		) => {
-			const dir = join(entry(name, version), name);
-			cpSync(join(modules, name), dir, { recursive: true });
-			for (const [dep, depVersion] of deps)
+		const placed = new Map<string, Installed>();
+		// Copies a package and, recursively, its runtime dependencies into the
+		// virtual store, each linked beside its dependent.
+		const place = (name: string, from: string): Installed => {
+			const found = installed(name, from);
+			const key = `${name}@${found.version}`;
+			const done = placed.get(key);
+			if (done !== undefined) return done;
+			placed.set(key, found);
+			cpSync(found.dir, join(entry(name, found.version), name), {
+				recursive: true,
+			});
+			for (const dep of found.dependencies) {
+				const placedDep = place(dep, found.dir);
 				link(
-					join(entry(dep, depVersion), dep),
-					join(entry(name, version), dep),
+					join(entry(dep, placedDep.version), dep),
+					join(entry(name, found.version), dep),
 				);
+			}
+			return found;
 		};
-		place('uuidv7', '1.2.1', []);
-		place('@surrealdb/cbor', '2.0.0-alpha.4', []);
-		place('@surrealdb/sqon', '0.2.1', [
-			['@surrealdb/cbor', '2.0.0-alpha.4'],
-			['uuidv7', '1.2.1'],
-		]);
-		place('surrealdb', PEER_VERSIONS.surrealdb, [
-			['@surrealdb/sqon', '0.2.1'],
-		]);
+		const surrealdb = place('surrealdb', pkg);
 		// effect is large and has no dependencies: link it in place.
-		link(
-			join(modules, 'effect'),
-			join(entry('effect', PEER_VERSIONS.effect), 'effect'),
-		);
+		const effect = installed('effect', pkg);
+		if (effect.dependencies.length > 0)
+			throw new Error('effect has dependencies now; place it instead');
+		link(effect.dir, join(entry('effect', effect.version), 'effect'));
+		const own = JSON.parse(
+			readFileSync(join(pkg, 'package.json'), 'utf8'),
+		) as { readonly version: string };
 		const self = join(
-			entry('effect-surrealkit', '0.1.0'),
+			entry('effect-surrealkit', own.version),
 			'effect-surrealkit',
 		);
 		mkdirSync(self, { recursive: true });
 		cpSync(join(pkg, 'package.json'), join(self, 'package.json'));
 		cpSync(join(pkg, 'dist'), join(self, 'dist'), { recursive: true });
 		const consumer: Array<readonly [string, string]> = [
-			['effect', PEER_VERSIONS.effect],
-			['surrealdb', PEER_VERSIONS.surrealdb],
-			['effect-surrealkit', '0.1.0'],
+			['effect', effect.version],
+			['surrealdb', surrealdb.version],
+			['effect-surrealkit', own.version],
 		];
 		for (const [name, version] of consumer) {
 			// The peers resolved beside effect-surrealkit, and every direct
@@ -236,7 +278,7 @@ describe('declaration emit in a pnpm consumer', () => {
 			if (name !== 'effect-surrealkit')
 				link(
 					join(entry(name, version), name),
-					join(entry('effect-surrealkit', '0.1.0'), name),
+					join(entry('effect-surrealkit', own.version), name),
 				);
 			link(
 				join(entry(name, version), name),

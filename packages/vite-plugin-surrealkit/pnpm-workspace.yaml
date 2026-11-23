@@ -1,0 +1,11 @@
+# This package has its own lockfile; the repository has no root workspace.
+# pnpm 12.15+: pin the uncompressed tar hash and record the resolution settings,
+# so frozen installs and later commands agree.
+lockfile:
+  format: v13
+  includeResolutionSettings: true
+  integrityTarget: tar
+# esbuild's install script only checks its platform binary; the JS API finds
+# that binary through its optional dependency without it.
+allowBuilds:
+  esbuild: false

@@ -7,7 +7,7 @@
  *   `surreal start --bind 127.0.0.1:<free port> memory` and stop it after.
  * - `SURREAL_TRANSPORT=http`: use HTTP RPC with either server option.
  * - With neither set: the embedded engine of `@surrealdb/node`, in process and
- *   in memory, so the engine suites run on a plain `npm test`.
+ *   in memory, so the engine suites run on a plain `pnpm test`.
  *
  * The suites never touch a shared database: every run uses a fresh
  * namespace. The embedded engine has no HTTP endpoint, so the suites that

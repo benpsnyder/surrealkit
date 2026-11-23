@@ -53,29 +53,35 @@ jobs:
               with:
                   node-version: ${{ matrix.node }}
 
-            # Like vite-plugin-ci.yml: the package commits a bun.lock, not a
-            # package-lock.json; effect and surrealdb are pinned exactly.
+            # The version comes from the package's `packageManager` field.
+            - name: Setup pnpm
+              uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+              with:
+                  package_json_file: packages/effect-surrealkit/package.json
+
+            # The package commits its own pnpm-lock.yaml; effect and surrealdb
+            # are pinned exactly.
             - name: Install dependencies
-              run: npm install
+              run: pnpm install --frozen-lockfile
 
             - name: Lint
-              run: npm run lint
+              run: pnpm run lint
 
             # Includes test/types: the golden generated modules (the whole corpus,
             # both integer profiles) with positive and @ts-expect-error fixtures
             # under strict + exactOptionalPropertyTypes.
             - name: Typecheck
-              run: npm run typecheck
+              run: pnpm run typecheck
 
             # Unit, property (in-process CBOR), golden and CLI suites, and the
             # engine, statement, field-presence and conformance suites on the
             # in-process SurrealDB 4 engine of `@surrealdb/node`. The JSON round
             # trips over HTTP need a server and run in the `engine` job below.
             - name: Test
-              run: npm test
+              run: pnpm test
 
             - name: Build
-              run: npm run build
+              run: pnpm run build
 
             # `prepare` builds the package, so a Git install and a publish both
             # carry dist/; fail if the tarball would not.
@@ -83,23 +89,21 @@ jobs:
               run: |
                   rm -rf dist /tmp/pack
                   mkdir -p /tmp/pack
-                  npm run prepare
-                  # npm 10 runs `prepare` during pack even with --ignore-scripts and prints
-                  # the build to stdout, so inspect the packed tarball, not `pack --json`.
-                  npm pack --ignore-scripts --pack-destination /tmp/pack > /dev/null
+                  pnpm run prepare
+                  pnpm pack --pack-destination /tmp/pack > /dev/null
                   listing="$(tar -tzf /tmp/pack/effect-surrealkit-*.tgz)"
                   for f in dist/index.js dist/emitter.js dist/statement.js dist/functions.js dist/client.js dist/analyze.js dist/testing.js dist/cli.js; do
                       grep -qx "package/$f" <<<"$listing" || { echo "::error::$f is not in the package"; exit 1; }
                   done
-                  # npm 11 refuses even a dry run over a version already on the
-                  # registry, which is the normal state between releases. The tarball
-                  # check above is what this step is for; the dry run only adds
+                  # A dry run over a version already on the registry is refused,
+                  # which is the normal state between releases. The tarball check
+                  # above is what this step is for; the dry run only adds
                   # something for a version that has not been published yet.
                   version="$(node -p 'require("./package.json").version')"
-                  if [ -n "$(npm view "effect-surrealkit@$version" version 2>/dev/null)" ]; then
-                      echo "effect-surrealkit@$version is already published; skipping npm publish --dry-run"
+                  if [ -n "$(pnpm view "effect-surrealkit@$version" version 2>/dev/null)" ]; then
+                      echo "effect-surrealkit@$version is already published; skipping pnpm publish --dry-run"
                   else
-                      npm publish --dry-run
+                      pnpm publish --dry-run --no-git-checks
                   fi
 
     generated-ts:
@@ -128,15 +132,22 @@ jobs:
               with:
                   node-version: 24
 
+            - name: Setup pnpm
+              uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+              with:
+                  package_json_file: packages/effect-surrealkit/package.json
+
             - name: Build effect-surrealkit
               working-directory: packages/effect-surrealkit
               run: |
-                  npm install
-                  npm run build
+                  pnpm install --frozen-lockfile
+                  pnpm run build
 
+            # The example commits no lockfile; effect-surrealkit comes from
+            # ../../packages through its file: dependency.
             - name: Install the example
               working-directory: examples/effect-typegen
-              run: npm install --no-package-lock
+              run: pnpm install --no-lockfile
 
             # compile runs effect-surrealkit through the external-emitter protocol.
             # The committed files must be what the current SurrealKit and emitter
@@ -147,13 +158,13 @@ jobs:
             # generated. So: regenerate, then fail on any other difference (git
             # ignores a hunk only when every changed line in it is one of those
             # lines) and on a file added or removed. A project checks its own
-            # generated files with `npm run check` (`compile --check`), the strict
+            # generated files with `pnpm run check` (`compile --check`), the strict
             # byte comparison against the tools it pins.
             - name: Generated files are current
               working-directory: examples/effect-typegen
               run: |
                   set -euo pipefail
-                  PATH="$GITHUB_WORKSPACE/target/debug:$PATH" npm run generate
+                  PATH="$GITHUB_WORKSPACE/target/debug:$PATH" pnpm run generate
                   git diff --exit-code \
                       -I '^[[:space:]]*"(version|build|commit)": "[^"]*",?$' \
                       -I '^[[:space:]]*(surrealkit|commit|engine): "[^"]*",$' \
@@ -167,7 +178,7 @@ jobs:
 
             - name: Generated files compile
               working-directory: examples/effect-typegen
-              run: npm run typecheck
+              run: pnpm run typecheck
 
     engine:
         name: Disposable-engine round trips (SurrealDB ${{ matrix.surrealdb }})
@@ -212,8 +223,13 @@ jobs:
               with:
                   node-version: 24
 
+            - name: Setup pnpm
+              uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+              with:
+                  package_json_file: packages/effect-surrealkit/package.json
+
             - name: Install dependencies
-              run: npm install
+              run: pnpm install --frozen-lockfile
 
             - name: Wait for SurrealDB
               run: |
@@ -229,13 +245,13 @@ jobs:
             - name: Engine, field-presence, statement and conformance suites
               env:
                   SURREAL_URL: ws://127.0.0.1:8000/rpc
-              run: npm test
+              run: pnpm test
 
             - name: Engine suites over HTTP RPC
               env:
                   SURREAL_URL: http://127.0.0.1:8000/rpc
                   SURREAL_TRANSPORT: http
-              run: npm test
+              run: pnpm test
 
             # create → select → merge → select, relate and call for the generated
             # corpus modules (Arbitrary.schema + Arbitrary.checkEffect, Passed), in a
@@ -247,4 +263,4 @@ jobs:
                   SURREALDB_USER: root
                   SURREALDB_PASSWORD: root
                   SURREALKIT_ROUNDTRIP_RUNS: "200"
-              run: npm run test:roundtrip
+              run: pnpm run test:roundtrip
