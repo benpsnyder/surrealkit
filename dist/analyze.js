@@ -1,13 +1,11 @@
 import {
+  DEFAULT_HOLE_DELIMITERS,
   analyze,
   analyzeSync,
-  analyzeTargets
-} from "./chunk-DHQRAJ4W.js";
-import {
-  DEFAULT_HOLE_DELIMITERS,
+  analyzeTargets,
   holeDelimiters,
   lex
-} from "./chunk-LJSHE6F3.js";
+} from "./chunk-LVYBF6FC.js";
 import {
   AnalyzeError
 } from "./chunk-FBUMKT7I.js";
@@ -28,28 +26,28 @@ var pins = (statements) => {
   const paths = /* @__PURE__ */ new Map();
   const files = [];
   for (const { name, sql } of statements) {
-    const quoted = JSON.stringify(name);
+    const quoted2 = JSON.stringify(name);
     if (name === "") {
       const message = "a statement has no name";
       problems.push({ kind: "unnamed", name, message, text: message });
       continue;
     }
     if (names.has(name)) {
-      const message = `statement ${quoted} is pinned twice`;
+      const message = `statement ${quoted2} is pinned twice`;
       problems.push({ kind: "duplicate", name, message, text: message });
       continue;
     }
     names.add(name);
     const bad = name.split(".").filter((segment) => !SEGMENT.test(segment));
     if (bad.length > 0) {
-      const message = `statement ${quoted} has a name segment that is empty or not letters, digits, _ and -`;
+      const message = `statement ${quoted2} has a name segment that is empty or not letters, digits, _ and -`;
       problems.push({ kind: "segment", name, message, text: message });
       continue;
     }
     const path = `${name.split(".").join("/")}${EXTENSION}`;
     const other = paths.get(path.toLowerCase());
     if (other !== void 0) {
-      const message = `statements ${JSON.stringify(other)} and ${quoted} both pin to ${path}, ignoring case`;
+      const message = `statements ${JSON.stringify(other)} and ${quoted2} both pin to ${path}, ignoring case`;
       problems.push({ kind: "path", name, path, message, text: message });
       continue;
     }
@@ -133,6 +131,14 @@ var simpleKind = (kind) => {
   return SIMPLE.test(inner) ? inner : void 0;
 };
 var acceptsNone = (use, kind) => use.kind === "field" && use.role !== "assign" ? true : use.kind !== "key" && kind !== void 0 && /^option<.*>$/u.test(kind);
+var UNPRINTABLE = new RegExp(
+  `[\\x00-\\x1f\\x7f${String.fromCharCode(8232, 8233)}]`,
+  "gu"
+);
+var quoted = (name) => `\`${name.replace(/[\\`]/gu, "\\$&").replace(
+  UNPRINTABLE,
+  (char) => `\\u{${char.codePointAt(0).toString(16)}}`
+)}\``;
 var resolve = (use, detail) => {
   if (use.kind === "argument") {
     const args = Object.hasOwn(detail.functions, use.function) ? detail.functions[use.function] : void 0;
@@ -157,7 +163,7 @@ var resolve = (use, detail) => {
     return { kind: "kind", text: `record<${use.table}>` };
   return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
     kind: "problem",
-    message: `${use.role === "assign" ? "assigns" : "compares"} \`${use.field}\` of \`${use.table}\`, which declares no such field`
+    message: `${use.role === "assign" ? "assigns" : "compares"} ${quoted(use.field)} of ${quoted(use.table)}, which declares no such field`
   };
 };
 var checkUses = (uses, detail, schemaChanges) => {
@@ -190,6 +196,25 @@ var checkUses = (uses, detail, schemaChanges) => {
   }
   return { problems, binds, rejectsNone };
 };
+var declaresField = (table, field) => field === "*" || field === "id" || Object.hasOwn(table.fields, field) || Object.keys(table.fields).some(
+  (path) => path.startsWith(`${field}.`) || path.startsWith(`${field}[`)
+);
+var checkProjected = (projected, detail, schemaChanges) => schemaChanges ? [] : projected.flatMap(({ table, field, line }) => {
+  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
+  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
+    {
+      line,
+      message: `selects ${quoted(field)} of ${quoted(table)}, which declares no such field`
+    }
+  ];
+});
+var holeStartsStatement = (sql, holes) => {
+  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  return tokens.some((token, i) => {
+    const before = tokens[i - 1];
+    return token.kind === "hole" && (before === void 0 || before.kind === "punct" && (before.value === ";" || before.value === "{"));
+  });
+};
 var changesSchema = (sql, holes) => {
   const tokens = lex(sql, holeDelimiters(holes)).tokens;
   return tokens.some(
@@ -198,7 +223,29 @@ var changesSchema = (sql, holes) => {
     )
   );
 };
-var renderConstant = (scope, name, analysis, binds, rejectsNone) => {
+var docComment = (analysis, title, holes) => {
+  const first = lex(analysis.sql, holeDelimiters(holes)).tokens[0];
+  const body = analysis.sql.slice(first?.start ?? 0);
+  const longest = Math.max(
+    0,
+    ...[...body.matchAll(/`+/gu)].map(([run]) => run.length)
+  );
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  const lines2 = [
+    ...analysis.comment === "" ? [] : [analysis.comment, ""],
+    `${fence}surql`,
+    body,
+    fence,
+    "",
+    title
+  ].join("\n").split(/\r\n|[\n\r\u2028\u2029]/u).map(
+    (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@").trimEnd()
+  );
+  return ["/**", ...lines2.map((line) => ` * ${line}`.trimEnd()), " */"].join(
+    "\n"
+  );
+};
+var renderConstant = (scope, name, analysis, binds, rejectsNone, holes) => {
   const file = `${scope}/${name}.surql`;
   const complete = analysis.kind === "part" && analysis.holes.length === 0;
   const what = complete ? "part" : analysis.holes.length > 0 ? "template" : "fragment";
@@ -225,7 +272,7 @@ var renderConstant = (scope, name, analysis, binds, rejectsNone) => {
     ] : []
   ];
   return [
-    `/** \`${file}\`: a ${what}. */`,
+    docComment(analysis, `\`${file}\`: a ${what}.`, holes),
     `export const ${name} = ${complete ? "$statement.part" : "$analyze.text"}({`,
     ...fields.map((field) => `	${field},`),
     "} as const);"
@@ -330,16 +377,18 @@ var renderStatementModulesSync = (input) => {
     let rejectsNone;
     if (source.declared !== void 0) {
       const detail = source.declared.detail;
-      const checked = detail === void 0 ? void 0 : checkUses(
-        analysis.uses,
-        detail,
-        changesSchema(source.sql, input.holes)
-      );
+      const schemaChanges = detail !== void 0 && changesSchema(source.sql, input.holes);
+      const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail, schemaChanges);
       binds = checked?.binds;
       rejectsNone = checked?.rejectsNone;
       for (const problem2 of [
         ...undeclared(source.sql, source.declared, input.holes),
-        ...checked?.problems ?? []
+        ...checked?.problems ?? [],
+        ...detail === void 0 ? [] : checkProjected(
+          analysis.projected,
+          detail,
+          schemaChanges || holeStartsStatement(source.sql, input.holes)
+        )
       ].sort((a, b) => a.line - b.line))
         problems.push({
           kind: "undeclared",
@@ -376,7 +425,8 @@ var renderStatementModulesSync = (input) => {
         source.name,
         analysis,
         binds,
-        rejectsNone
+        rejectsNone,
+        input.holes
       )
     );
     byScope.set(source.scope, constants);

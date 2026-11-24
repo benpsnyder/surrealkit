@@ -20,8 +20,9 @@ import {
 import "./chunk-3SWEJO3L.js";
 import {
   DEFAULT_HOLE_DELIMITERS,
+  analyzeSync,
   lex
-} from "./chunk-LJSHE6F3.js";
+} from "./chunk-LVYBF6FC.js";
 import {
   AnalyzeError
 } from "./chunk-FBUMKT7I.js";
@@ -114,10 +115,11 @@ var provide = (database) => Layer.succeedContext(
   )
 );
 var layerFrom = (connection, scope) => provide(fromConnection(connection, scope));
+var INSTALL_ENGINE = "npm install --save-dev @surrealdb/node @surrealdb/node-native";
 var nodeEngines = Effect2.tryPromise({
   try: () => import("@surrealdb/node"),
   catch: (cause) => new TestingError({
-    message: `a memory database needs \`@surrealdb/node\` and \`@surrealdb/node-native\` installed: ${messageOf(cause)}`,
+    message: `a memory database needs \`@surrealdb/node\` and \`@surrealdb/node-native\` installed (\`${INSTALL_ENGINE}\`): ${messageOf(cause)}`,
     cause
   })
 });
@@ -882,8 +884,178 @@ var conflictingSession = (session, options) => {
   };
   return { session: forward(session, { query, transaction }), matched };
 };
+
+// src/testing/verify.ts
+import { Data as Data2, Effect as Effect5 } from "effect";
+import { Surreal as Surreal2 } from "surrealdb";
+var StatementVerificationError = class extends Data2.TaggedError(
+  "StatementVerificationError"
+) {
+};
+var DEFAULT_TIMEOUT_SECONDS = 10;
+var engineOptions = (timeoutSeconds) => ({
+  query_timeout: timeoutSeconds,
+  capabilities: {
+    scripting: false,
+    guest_access: false,
+    network_targets: false,
+    functions: { allow: true, deny: ["http"] }
+  }
+});
+var messageOf3 = (cause) => cause instanceof Error ? cause.message : String(cause);
+var problem = (file, text, at) => ({
+  file,
+  ...at !== void 0 && at,
+  text,
+  message: `${file}${at === void 0 ? "" : `:${at.line}:${at.column}`}: ${text}`
+});
+var refusal = (file, cause) => {
+  const message = messageOf3(cause);
+  const first = message.split("\n", 1)[0]?.trim() ?? "";
+  if (!message.startsWith("Parse error"))
+    return problem(file, `the engine did not run the text: ${first}`);
+  const at = /-->\s*\[(\d+):(\d+)\]/u.exec(message);
+  return problem(
+    file,
+    first,
+    at === null ? void 0 : { line: Number(at[1]), column: Number(at[2]) }
+  );
+};
+var startEngine = (timeoutSeconds) => Effect5.gen(function* () {
+  const { createNodeEngines } = yield* nodeEngines;
+  const surreal = yield* Effect5.acquireRelease(
+    Effect5.tryPromise({
+      try: async () => {
+        const surreal2 = new Surreal2({
+          engines: createNodeEngines(
+            engineOptions(timeoutSeconds)
+          )
+        });
+        try {
+          await surreal2.connect("mem://", {
+            namespace: "verify",
+            database: "verify"
+          });
+          return surreal2;
+        } catch (cause) {
+          await surreal2.close();
+          throw cause;
+        }
+      },
+      catch: (cause) => new TestingError({
+        message: `the in-memory engine did not start: ${messageOf3(cause)}`,
+        cause
+      })
+    }),
+    (surreal2) => Effect5.promise(() => surreal2.close())
+  );
+  const version = yield* Effect5.tryPromise({
+    try: () => surreal.version(),
+    catch: (cause) => new TestingError({
+      message: `the in-memory engine did not report its version: ${messageOf3(cause)}`,
+      cause
+    })
+  });
+  return {
+    version: version.version.replace(/^surrealdb-/u, ""),
+    send: (sql) => surreal.query(sql).responses()
+  };
+});
+var verifyAnalysed = (texts, options) => Effect5.gen(function* () {
+  const engine = yield* startEngine(
+    options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+  );
+  const problems = yield* Effect5.promise(async () => {
+    for (const { name, sql } of options.schema ?? []) {
+      let responses;
+      try {
+        responses = await engine.send(sql);
+      } catch (cause) {
+        return [refusal(name, cause)];
+      }
+      const failed = responses.findIndex((r) => !r.success);
+      const response = responses[failed];
+      if (response !== void 0 && !response.success)
+        return [
+          problem(
+            name,
+            `statement ${failed + 1} failed: ${response.error.message.split("\n", 1)[0]}`
+          )
+        ];
+    }
+    const found = [];
+    for (const { file, sql, slots } of texts) {
+      let responses;
+      try {
+        responses = await engine.send(sql);
+      } catch (cause) {
+        found.push(refusal(file, cause));
+        continue;
+      }
+      if (responses.length !== slots)
+        found.push(
+          problem(
+            file,
+            `the engine returned ${responses.length} results, the analyzer derived ${slots}`
+          )
+        );
+    }
+    return found;
+  });
+  return { engine: engine.version, problems };
+});
+var verifyStatements = (input) => Effect5.gen(function* () {
+  const sent = [];
+  const notSent = [];
+  const early = [];
+  for (const scope of input.scopes) {
+    for (const { name, sql } of scope.files) {
+      const file = `${scope.name}/${name}.surql`;
+      let analysis;
+      try {
+        analysis = analyzeSync(
+          sql,
+          input.holes === void 0 ? {} : { holes: input.holes }
+        );
+      } catch (cause) {
+        early.push(
+          problem(
+            file,
+            `the analyzer refused the text: ${messageOf3(cause)}`
+          )
+        );
+        continue;
+      }
+      if (analysis.kind === "part" && analysis.holes.length === 0)
+        sent.push({
+          file,
+          sql: analysis.sql,
+          slots: analysis.slots
+        });
+      else notSent.push(file);
+    }
+  }
+  const { engine, problems } = yield* Effect5.scoped(
+    verifyAnalysed(sent, input)
+  );
+  const all = [...early, ...problems].sort(
+    (a, b) => a.file < b.file ? -1 : a.file > b.file ? 1 : 0
+  );
+  if (all.length > 0)
+    return yield* new StatementVerificationError({
+      engine,
+      problems: all,
+      message: all.map((p) => p.message).join("\n")
+    });
+  return {
+    engine,
+    sent: sent.map((text) => text.file).sort(),
+    notSent: notSent.sort()
+  };
+});
 export {
   IndexExpectationError,
+  StatementVerificationError,
   TestDatabase,
   TestingError,
   checkConstraintErrors,
@@ -908,6 +1080,7 @@ export {
   result,
   schemaDrift,
   thrown,
-  unsupported
+  unsupported,
+  verifyStatements
 };
 //# sourceMappingURL=testing.js.map

@@ -4,6 +4,7 @@ import { Surreal, SurrealSession } from 'surrealdb';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { P as Params, C as Codec, S as Statement, q as Input } from './expr-CPMgbj5K.js';
+import { H as HoleDelimiters } from './lexer-VCZFEQjh.js';
 import './live-DwTMzZp0.js';
 import './row-CLBe1uWx.js';
 import './table-iF6L7xrW.js';
@@ -377,4 +378,71 @@ declare const conflictingSession: <S extends Queryable>(session: S, options: {
     };
 };
 
-export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, TestDatabase, TestingError, checkConstraintErrors, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexConflict, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordExists, recordUser, result, schemaDrift, thrown, unsupported };
+/** A file by the name its problems carry, and its text. */
+interface VerifyFile {
+    readonly name: string;
+    readonly sql: string;
+}
+interface VerifyInput {
+    /**
+     * The scopes as `renderStatementModules` takes them: each file is named
+     * `<scope>/<name>.surql` in what is reported.
+     */
+    readonly scopes: ReadonlyArray<{
+        readonly name: string;
+        readonly files: ReadonlyArray<VerifyFile>;
+    }>;
+    /**
+     * SurrealQL schema files, run first in this order, each named as given.
+     * Optional: the parse and the result count do not depend on it.
+     */
+    readonly schema?: ReadonlyArray<VerifyFile>;
+    /** The literal delimiters of a hole; default `__` and `__`. */
+    readonly holes?: HoleDelimiters;
+    /** How long one text or schema file may run; default 10. */
+    readonly timeoutSeconds?: number;
+}
+/** One problem: where it is, when the engine says, and what it is. */
+interface VerifyProblem {
+    readonly file: string;
+    readonly line?: number;
+    readonly column?: number;
+    readonly text: string;
+    /** `<file>[:<line>:<column>]: <text>`. */
+    readonly message: string;
+}
+/** What a passing check sent, and the engine it ran on. */
+interface Verification {
+    /** As `@surrealdb/node` reports it, e.g. `4.0.1`. */
+    readonly engine: string;
+    /** The complete texts sent, by file name. */
+    readonly sent: ReadonlyArray<string>;
+    /** The fragments and templates, which cannot be sent as they stand. */
+    readonly notSent: ReadonlyArray<string>;
+}
+declare const StatementVerificationError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
+    readonly _tag: "StatementVerificationError";
+} & Readonly<A>;
+/** The engine refused or miscounted a text, or a schema file failed. */
+declare class StatementVerificationError extends StatementVerificationError_base<{
+    readonly engine: string;
+    readonly problems: ReadonlyArray<VerifyProblem>;
+    readonly message: string;
+}> {
+}
+/**
+ * Checks authored texts on a discarded in-memory engine (`@surrealdb/node`,
+ * an optional peer, imported only here): loads `schema`, then sends each
+ * complete text once with no bindings, in scope and file order, on one
+ * database. Fails with {@link StatementVerificationError} on a parse error,
+ * a result count other than the analyzer's `slots`, a text that does not
+ * finish within `timeoutSeconds`, or a schema file that does not apply;
+ * with `TestingError` when the engine is not installed or does not start.
+ *
+ * The texts run: writes land in the discarded database, and the engine
+ * denies `http::` functions, network targets and scripting, so nothing a
+ * text does reaches outside it.
+ */
+declare const verifyStatements: (input: VerifyInput) => Effect.Effect<Verification, StatementVerificationError | TestingError>;
+
+export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, StatementVerificationError, TestDatabase, TestingError, type Verification, type VerifyFile, type VerifyInput, type VerifyProblem, checkConstraintErrors, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexConflict, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordExists, recordUser, result, schemaDrift, thrown, unsupported, verifyStatements };

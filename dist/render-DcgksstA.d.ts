@@ -55,7 +55,10 @@ interface DeclaredTable {
         readonly kind?: string;
         readonly rejectsNone?: boolean;
     }>>;
-    /** The table accepts fields it does not declare (it is schemaless). */
+    /**
+     * The table accepts fields it does not declare: it is schemaless, or a
+     * view, whose fields come from its SELECT.
+     */
     readonly acceptsUndeclared: boolean;
     /** The kind text of the id key, when the schema declares one. */
     readonly idKey?: string;

@@ -1,7 +1,7 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Schema, Effect } from 'effect';
-import { a as DeclaredNames } from './render-CfmfQH1h.js';
+import { a as DeclaredNames } from './render-DcgksstA.js';
 import './lexer-VCZFEQjh.js';
 
 /**
@@ -544,7 +544,8 @@ declare const kindText: (kind: Kind) => string;
  * with `.`) with each field's kind text (`option<K>` for a field the
  * document records as optional) and whether the engine rejects
  * NONE assigned to it (see `DeclaredTable`), whether it accepts undeclared
- * fields (it is not schemafull) and the kind text of its id key; and for
+ * fields (it is not schemafull, or it is a view) and the kind text of its
+ * id key; and for
  * each function the kind texts of its arguments, in order (`option<K>`
  * for an optional one). An id key has no optional flag. A field or key
  * the document gives no kind has none.

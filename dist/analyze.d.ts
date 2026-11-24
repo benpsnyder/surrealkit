@@ -5,8 +5,8 @@ import { B as BindingUses } from './uses-BXJXI3if.js';
 export { a as BindingUse } from './uses-BXJXI3if.js';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { S as StatementModule } from './render-CfmfQH1h.js';
-export { D as DeclaredDetail, a as DeclaredNames, b as DeclaredTable, R as RenderStatementModulesInput, c as STATEMENTS_MARK, d as StatementModules, e as StatementModulesError, f as StatementProblem, g as StatementScope, h as StatementSourceFile, i as StatementWarning, r as renderStatementModules, j as renderStatementModulesSync } from './render-CfmfQH1h.js';
+import { S as StatementModule } from './render-DcgksstA.js';
+export { D as DeclaredDetail, a as DeclaredNames, b as DeclaredTable, R as RenderStatementModulesInput, c as STATEMENTS_MARK, d as StatementModules, e as StatementModulesError, f as StatementProblem, g as StatementScope, h as StatementSourceFile, i as StatementWarning, r as renderStatementModules, j as renderStatementModulesSync } from './render-DcgksstA.js';
 export { F as FillError, a as FillOptions, b as Fills, T as Text, c as TextHoleScope, d as TextHoleScopes, f as fill, t as text } from './text-L6LzniE5.js';
 
 declare const AnalyzeError_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
@@ -20,6 +20,19 @@ declare class AnalyzeError extends AnalyzeError_base<{
     readonly column: number;
     readonly offset: number;
 }> {
+}
+
+/**
+ * The fields a `SELECT` projects from the one static table it reads: each
+ * bare field name and `*`, in the patterns a lexer can read with certainty.
+ * Anything else records nothing: refuse rather than guess.
+ */
+
+/** One projected field (`*` for all of them), at the 1-based line of its name. */
+interface ProjectedField {
+    readonly table: string;
+    readonly field: string;
+    readonly line: number;
 }
 
 /**
@@ -51,6 +64,13 @@ interface Analysis {
     readonly kind: 'part' | 'fragment';
     /** The text without whitespace and comments after its last token. */
     readonly sql: string;
+    /**
+     * The comments before the first token, as prose: each line without its
+     * `--`, `//` or `#` and one space after it, a block comment without
+     * `/*`, `*\/` and a leading `*` margin, a blank line between paragraphs.
+     * Empty when the text opens with a token.
+     */
+    readonly comment: string;
     /** `$names` read and not defined earlier in scope, sorted, without `$`. */
     readonly free: ReadonlyArray<string>;
     /** Names a top-level `LET` defines, sorted. */
@@ -108,6 +128,19 @@ interface Analysis {
      * is not certain; a binding with no such use is absent.
      */
     readonly uses: BindingUses;
+    /**
+     * The fields each `SELECT` projects from the one static table it reads
+     * (a table name, a record id, or `type::record`, `type::thing` or
+     * `type::table` with a literal table, after an optional `ONLY`, and
+     * nothing after it but the query's clauses): each projected item that
+     * is a bare field name, or `*`, sorted by line, table and field, without
+     * duplicates. A
+     * `SELECT VALUE`, an `OMIT`, two targets, an open target and any item
+     * that is not a bare name or `*` (a call, a path, an expression, an
+     * alias, a graph step, a subquery) record nothing; a parenthesised
+     * subquery is a query of its own.
+     */
+    readonly projected: ReadonlyArray<ProjectedField>;
     /**
      * For each hole, what the text around it does with names (empty for a
      * text without holes): `bound`, the names visible at every occurrence of
@@ -181,4 +214,4 @@ declare const renderPinnedStatements: (statements: Iterable<PinnableStatement>) 
  */
 declare const pinnedStatementProblems: (statements: Iterable<PinnableStatement>, files: ReadonlyArray<StatementModule>) => ReadonlyArray<PinnedStatementDrift>;
 
-export { type Analysis, AnalyzeError, type AnalyzeOptions, BindingUses, type Diagnostic, HoleDelimiters, type HoleScope, type PinnableStatement, type PinnedStatementDrift, type PinnedStatementProblem, PinnedStatementsError, StatementModule, analyze, analyzeSync, pinnedStatementProblems, renderPinnedStatements };
+export { type Analysis, AnalyzeError, type AnalyzeOptions, BindingUses, type Diagnostic, HoleDelimiters, type HoleScope, type PinnableStatement, type PinnedStatementDrift, type PinnedStatementProblem, PinnedStatementsError, type ProjectedField, StatementModule, analyze, analyzeSync, pinnedStatementProblems, renderPinnedStatements };

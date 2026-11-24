@@ -593,7 +593,9 @@ var declaredNames = (document) => ({
               }
             ])
           ),
-          acceptsUndeclared: !table.schemafull,
+          // A view's fields come from its SELECT, not from
+          // declarations, so it accepts any name, SCHEMAFULL or not.
+          acceptsUndeclared: !table.schemafull || table.view !== void 0,
           ...table.idKey !== void 0 && {
             idKey: kindText(table.idKey)
           }

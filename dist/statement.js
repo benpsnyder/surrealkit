@@ -10,9 +10,6 @@ import {
   SurrealValue
 } from "./chunk-LHVQILTS.js";
 import {
-  analyzeSync
-} from "./chunk-DHQRAJ4W.js";
-import {
   TraversalTypeId,
   andAll,
   both,
@@ -116,8 +113,9 @@ import {
 import "./chunk-3SWEJO3L.js";
 import {
   DEFAULT_HOLE_DELIMITERS,
+  analyzeSync,
   lex
-} from "./chunk-LJSHE6F3.js";
+} from "./chunk-LVYBF6FC.js";
 import "./chunk-FBUMKT7I.js";
 import "./chunk-PZ5AY32C.js";
 
