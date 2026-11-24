@@ -87,7 +87,10 @@ export interface DeclaredTable {
 			{ readonly kind?: string; readonly rejectsNone?: boolean }
 		>
 	>;
-	/** The table accepts fields it does not declare (it is schemaless). */
+	/**
+	 * The table accepts fields it does not declare: it is schemaless, or a
+	 * view, whose fields come from its SELECT.
+	 */
 	readonly acceptsUndeclared: boolean;
 	/** The kind text of the id key, when the schema declares one. */
 	readonly idKey?: string;
@@ -254,6 +257,26 @@ const acceptsNone = (use: BindingUse, kind: string | undefined): boolean =>
 			kind !== undefined &&
 			/^option<.*>$/u.test(kind);
 
+/** Control characters, and the two line separators, as `\u{…}` in a message. */
+const UNPRINTABLE = new RegExp(
+	`[\\x00-\\x1f\\x7f${String.fromCharCode(0x2028, 0x2029)}]`,
+	'gu',
+);
+
+/**
+ * A schema name in backticks for a message, as SurrealQL quotes it: a
+ * backtick or backslash in it escaped with a backslash, and a line break or
+ * other control character written as `\u{…}`, so the name cannot end the
+ * quotes or the message's line.
+ */
+const quoted = (name: string): string =>
+	`\`${name
+		.replace(/[\\`]/gu, '\\$&')
+		.replace(
+			UNPRINTABLE,
+			(char) => `\\u{${(char.codePointAt(0) as number).toString(16)}}`,
+		)}\``;
+
 /** How a problem names a use that does not resolve. */
 type Resolved =
 	| {
@@ -303,7 +326,7 @@ const resolve = (use: BindingUse, detail: DeclaredDetail): Resolved => {
 		? { kind: 'kind', text: undefined }
 		: {
 				kind: 'problem',
-				message: `${use.role === 'assign' ? 'assigns' : 'compares'} \`${use.field}\` of \`${use.table}\`, which declares no such field`,
+				message: `${use.role === 'assign' ? 'assigns' : 'compares'} ${quoted(use.field)} of ${quoted(use.table)}, which declares no such field`,
 			};
 };
 
@@ -372,6 +395,66 @@ const checkUses = (
 	return { problems, binds, rejectsNone };
 };
 
+/** Whether `table` declares `field`, or a field nested under it. */
+const declaresField = (table: DeclaredTable, field: string): boolean =>
+	field === '*' ||
+	field === 'id' ||
+	Object.hasOwn(table.fields, field) ||
+	Object.keys(table.fields).some(
+		(path) => path.startsWith(`${field}.`) || path.startsWith(`${field}[`),
+	);
+
+/**
+ * The projected fields that a table of `detail` does not declare and does
+ * not accept: a field of a `SCHEMAFULL` table. A table the schema does not
+ * declare is reported by the names check; with `schemaChanges` the text
+ * changes the schema itself, or a hole starts a statement that a fill can
+ * make do so, and nothing is checked.
+ */
+const checkProjected = (
+	projected: Analysis['projected'],
+	detail: DeclaredDetail,
+	schemaChanges: boolean,
+): ReadonlyArray<{ readonly line: number; readonly message: string }> =>
+	schemaChanges
+		? []
+		: projected.flatMap(({ table, field, line }) => {
+				const declared = Object.hasOwn(detail.tables, table)
+					? detail.tables[table]
+					: undefined;
+				return declared === undefined ||
+					declared.acceptsUndeclared ||
+					declaresField(declared, field)
+					? []
+					: [
+							{
+								line,
+								message: `selects ${quoted(field)} of ${quoted(table)}, which declares no such field`,
+							},
+						];
+			});
+
+/**
+ * Whether a hole of `sql` starts a statement: at the start of the text, or
+ * after `;` or `{`. A fill there can be a statement that defines a table or
+ * a field, which the text alone does not show.
+ */
+const holeStartsStatement = (
+	sql: string,
+	holes: HoleDelimiters | undefined,
+): boolean => {
+	const tokens = lex(sql, holeDelimiters(holes)).tokens;
+	return tokens.some((token, i) => {
+		const before = tokens[i - 1];
+		return (
+			token.kind === 'hole' &&
+			(before === undefined ||
+				(before.kind === 'punct' &&
+					(before.value === ';' || before.value === '{')))
+		);
+	});
+};
+
 /** Whether `sql` defines, alters or removes a table or a field. */
 const changesSchema = (
 	sql: string,
@@ -389,12 +472,53 @@ const changesSchema = (
 	);
 };
 
+/**
+ * The doc comment an editor shows on a generated constant: the comment that
+ * opens the text, the text after it in a fenced block, then `title`. A `*\/`
+ * is written `*\\/` so it cannot end the comment, an `@` after whitespace
+ * `\@` so TypeScript does not read a tag (SurrealQL's `@@` and `@1@`), and
+ * the fence is longer than any run of backticks in the text.
+ */
+const docComment = (
+	analysis: Analysis,
+	title: string,
+	holes: HoleDelimiters | undefined,
+): string => {
+	const first = lex(analysis.sql, holeDelimiters(holes)).tokens[0];
+	const body = analysis.sql.slice(first?.start ?? 0);
+	const longest = Math.max(
+		0,
+		...[...body.matchAll(/`+/gu)].map(([run]) => run.length),
+	);
+	const fence = '`'.repeat(Math.max(3, longest + 1));
+	const lines = [
+		...(analysis.comment === '' ? [] : [analysis.comment, '']),
+		`${fence}surql`,
+		body,
+		fence,
+		'',
+		title,
+	]
+		.join('\n')
+		.split(/\r\n|[\n\r\u2028\u2029]/u)
+		.map((line) =>
+			line
+				.replaceAll('*/', '*\\/')
+				.replace(/(^|\s)@/gu, '$1\\@')
+				.trimEnd(),
+		);
+	return ['/**', ...lines.map((line) => ` * ${line}`.trimEnd()), ' */'].join(
+		'\n',
+	);
+};
+
 const renderConstant = (
 	scope: string,
 	name: string,
 	analysis: Analysis,
 	binds: Readonly<Record<string, string>> | undefined,
 	rejectsNone: Readonly<Record<string, RejectedNone>> | undefined,
+	holes: HoleDelimiters | undefined,
 ): string => {
 	const file = `${scope}/${name}.surql`;
 	const complete = analysis.kind === 'part' && analysis.holes.length === 0;
@@ -437,7 +561,7 @@ const renderConstant = (
 			: []),
 	];
 	return [
-		`/** \`${file}\`: a ${what}. */`,
+		docComment(analysis, `\`${file}\`: a ${what}.`, holes),
 		`export const ${name} = ${complete ? '$statement.part' : '$analyze.text'}({`,
 		...fields.map((field) => `\t${field},`),
 		'} as const);',
@@ -568,19 +692,25 @@ export const renderStatementModulesSync = (
 		let rejectsNone: Readonly<Record<string, RejectedNone>> | undefined;
 		if (source.declared !== undefined) {
 			const detail = source.declared.detail;
+			const schemaChanges =
+				detail !== undefined && changesSchema(source.sql, input.holes);
 			const checked =
 				detail === undefined
 					? undefined
-					: checkUses(
-							analysis.uses,
-							detail,
-							changesSchema(source.sql, input.holes),
-						);
+					: checkUses(analysis.uses, detail, schemaChanges);
 			binds = checked?.binds;
 			rejectsNone = checked?.rejectsNone;
 			for (const problem of [
 				...undeclared(source.sql, source.declared, input.holes),
 				...(checked?.problems ?? []),
+				...(detail === undefined
+					? []
+					: checkProjected(
+							analysis.projected,
+							detail,
+							schemaChanges ||
+								holeStartsStatement(source.sql, input.holes),
+						)),
 			].sort((a, b) => a.line - b.line))
 				problems.push({
 					kind: 'undeclared',
@@ -620,6 +750,7 @@ export const renderStatementModulesSync = (
 				analysis,
 				binds,
 				rejectsNone,
+				input.holes,
 			),
 		);
 		byScope.set(source.scope, constants);

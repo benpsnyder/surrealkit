@@ -46,8 +46,8 @@ Verified on 2026-11-23 against this branch at `88d37cc`. Verify each row again b
 | Statements inside `BEGIN … CANCEL` come back as `The query was not executed due to a cancelled transaction`, so a cancelled transaction cannot be used to try a text. | Measured |
 | The analyzer is compared with an engine for every complete authored fixture (9 of 23; the other 14 are named fragments and templates), and the generated `counter` part runs through the client (lane L01). | `test/analyze-engine.test.ts`; `test/fixtures/statements`, `statements-binds`, `statements-presence` |
 | 34 TypeScript files under `test/` contain a skip. The skipped tests are pinned for the embedded lane (51) and `SURREAL_BIN` 3.3 (22) by `npm run test:skips`; the `SURREAL_URL` lanes are unpinned (lane L02). | `grep -rl --include='*.ts' "skipIf\|\.skip(" test`; `test/skips/` |
-| The analyzer records what a binding is used as in three patterns (`argument`, `key`, `field` with `compare` or `assign`). It records nothing about projected fields. | `src/analyze/uses.ts`; README, "What bindings are used as" |
-| A generated part's doc comment holds only its file name. | `src/analyze/render.ts:440` |
+| The analyzer records what a binding is used as in three patterns (`argument`, `key`, `field` with `compare` or `assign`), and, since lane L04, the bare fields and `*` a `SELECT` projects from one static table (`projected`). | `src/analyze/uses.ts`, `src/analyze/projections.ts`; README, "What bindings are used as" and "Projected fields" |
+| Since lane L08, a generated part's doc comment holds the comment that opens its file, its SurrealQL in a fenced block, and its file name. | `src/analyze/render.ts`, `docComment` |
 | `IndexDescriptor.type` distinguishes `'unique'`, and the generated descriptors keep each index under its name as a literal key. | `src/table.ts:67-83`; README, "What is generated" |
 | Effect 4.1.5 exports `Schema.toJsonSchemaDocument` and `Schema.toStandardSchemaV1`. No statement exposes a JSON Schema. | `node_modules/effect/dist/Schema.d.ts`; no match for `JsonSchema` under `src/statement` or `src/client` |
 | `vite-plugin-surrealkit` runs `surrealkit sync` or `compile`. It does not load `.surql` imports. | `packages/vite-plugin-surrealkit/src/index.ts` |
@@ -233,6 +233,20 @@ Review, 2026-11-23, by an agent that did not write the lane: verdict "fix first"
 - A text containing `*/`, a backtick or `${` still renders a module that compiles; a property test over generated texts proves it.
 - Output stays deterministic. The goldens are regenerated, and that is the only difference in them.
 
+Admission note, 2026-11-23, at `03ce51f`:
+
+1. **What is worse today?** Yes. The TypeScript language service's hover (`getQuickInfoAtPosition`, what an editor shows) on `bindOwner` in `test/golden/statements/accounts/statements.ts` shows `const bindOwner: $statement.Part<"boundOwner", "owner" | "principal", never>` and the documentation `` `accounts/bindOwner.surql`: a part. ``, and nothing else. The author's `-- Binds the owner a caller names, and the caller.` and the two `LET`s are in the module, but neither shows where the part is used. The same holds for every generated part (`gauges.readings` shows `` `gauges/readings.surql`: a part. ``), and 5 of the 23 authored fixtures open with such a comment.
+2. **Is this the better way?** Yes. Alternatives considered: the `sql` field is a literal under `as const`, but the hover prints the part's type, `Part<Free, Defines, Throws>`, which does not carry the text, and carrying it would add a literal type to every part for the checker to hold. Opening the `.surql` file means leaving the call site. A separate description field would be a second place for the author to write what the file's comment already says. The doc comment is the one place a hover reads, it costs the checker nothing, and the one renderer (resolved decision 7) writes it.
+3. **With SurrealDB or against it?** With it. What is sent to the engine does not change: `sql` stays byte for byte as it is. <https://surrealdb.com/docs/surrealql/comments>, read on 2026-11-23 (`surrealdb_version: "4.x"`; none is published for 3.x), lists the comments the analyzer reads: `#`, `//` and `--` to the end of the line, and `/* … */`. The package's lexer skips the same four, and `test/analyze-engine.test.ts` runs the fixtures that open with a `--` comment on both engine lanes.
+
+Implementation: `Analysis.comment` (`src/analyze/analyze.ts`) is the prose of the comments before the first token: a line comment without its marker and one space, a block comment without its delimiters, `*` margin and common indent, a blank line between paragraphs, empty when the text opens with a token. `docComment` in `src/analyze/render.ts`, called by `renderConstant` inside `renderStatementModules`, writes that prose, the text after it in a `surql` fence, then the file name, for templates and fragments as for parts. Measured while building: TypeScript reads an `@` after whitespace as a tag anywhere in a doc comment, fenced or not, so the hover on `catalog.byWords` stopped at `title` before its `@1@`; the renderer writes such an `@` as `\@` (TSDoc's escape) and a `*/` as `*\/`, and makes the fence longer than any run of backticks in the text. `sql` is unchanged.
+
+Tests: `test/doc-comment.test.ts`, written first and failing on all 9 cases: the comment of each comment form, the language service's hover on `accounts.bindOwner`, `counter.step` and `catalog.byWords`, the fence, and a property over 300 generated texts (seed `20261123`) holding `*/`, `/*`, backticks, `${`, `\`, `@see`, `\r` and U+2028 in a line comment, a block comment, a string and an identifier: each module transpiles without a diagnostic and carries one doc comment with no tag, ending with its file name. Removing either escape makes the property fail. The five generated modules under `test/golden/statements*` changed, and with every doc comment removed each is identical to its previous version.
+
+Measured again after the lane, the hover on `accounts.bindOwner` shows the comment, both `LET`s in a fence, then `` `accounts/bindOwner.surql`: a part. ``. Gate at the lane's head: `bun run lint`, `bun run typecheck` and `bun run build` pass; `npm run test:skips` passes on the embedded lane (1,899 passed, 51 skipped, as listed) and with `SURREAL_BIN` 3.3 (1,928 passed, 22 skipped, as listed); the type-check budgets hold with no limit raised.
+
+**State: closed, implemented.**
+
 ### L04. Schema-derived types for authored files
 
 Two steps, each closed by its own checks.
@@ -241,7 +255,8 @@ Projected fields:
 
 - Inside one query whose target is exactly one static table, the analyzer records each bare field name the `SELECT` projects, and `*`.
 - With `--schema`, or a scope's `declared` detail, a projected field that a `SCHEMAFULL` table does not declare fails generation with its file and line, for example ``selects `nmae` of `person`, which declares no such field``.
-- Nothing is recorded for a function call, a path, an expression, an aliased expression, `VALUE`, `OMIT`, a graph step, a subquery in the projection, two targets, an open target or a schemaless table. One test per case asserts that.
+- Nothing is recorded for a function call, a path, an expression, an alias of anything but one bare field, `VALUE` before anything but one bare field, `OMIT`, a graph step, a subquery in the projection (for the outer table; the subquery is read against its own), a bare word SurrealQL reads as a value, two targets or an open target. One test per case asserts that. `SELECT VALUE <one bare field>` and `<one bare field> AS <alias>` record the field, never the alias (added after review).
+- A schemaless table or a view has its fields recorded, and the check skips them, since both accept any field. A test asserts both halves.
 
 Ready statements:
 
@@ -250,6 +265,65 @@ Ready statements:
 - Its parameters take the codecs of the fields they are compared with, brands included, and its result is built from the descriptor's field codecs.
 - Every other file is still a `part`.
 - An engine test runs each generated ready statement through `run` on both engine lanes and decodes its rows. A type test uses one with no hand-written codec.
+
+Measured on 2026-11-23 at `1e3c9d5`, before any change, on two corpora: the 23 authored fixtures under `test/fixtures/statements*`, and the 190 query files (18 scope directories) of a consuming project, read only, each checked scope with the schema document its generator uses. A prototype of each step's recognised shape was run over both, and the built analyzer was run again over both after the change. The probe scripts and their output are `l04-measurement.txt` in the topic evidence of `20261123-decide-and-build-reylo-inspired-improvements`.
+
+| | Fixtures (23) | Consumer files (190) |
+| --- | --- | --- |
+| Contain a `SELECT` whose projection the check reads | 4, all templates in `statements/catalog` (`byVector`, `byWords`, `guarded`, `summary`) | 50: 43 with a bare field, 7 with only `*` |
+| Of those, with a bare field on a `SCHEMAFULL` table of a schema the project checks | none: no fixture directory with such a file has a schema document | 36 files, 225 distinct field reads; the other 7 are in the two scopes the project leaves unchecked |
+| Problems the check raises on the text as written | 0 | 0 |
+| Only `SELECT VALUE` (read by neither step) | 4 | 34; a single bare field after `VALUE` would add 5 files |
+| Exactly one `SELECT` of the ready shape | 0 | 0 |
+
+So the third finding of "What would disprove it" does not hold for projected fields: the single-table pattern matches 4 fixtures and 50 consumer files.
+
+Plans with bound parameters, through the SDK, on embedded 4.0.1 and `SURREAL_BIN` 3.3.4 alike: `WHERE id = $id` with `$id` bound as a `RecordId` plans as `RecordIdScan`, and with `$id` bound as the string `'person:1'` as `TableScan`, matching no row. `FROM $id` plans as `RecordIdScan`. A filter on a field with no index is `TableScan`, on a unique or standard index `IndexScan` (also with the parameter on the left, and with a second unindexed comparison joined by `AND`, as `Filter` over the `IndexScan`), and `!=` on an indexed field is `TableScan`.
+
+Admission note, projected fields, 2026-11-23, at `1e3c9d5`:
+
+1. **What is worse today?** Yes. On a `SCHEMAFULL` table both engines answer `SELECT nmae FROM person` with `[{}]` and `SELECT name, nmae FROM person` with `[{ name: 'Ada' }]`, without an error (`test/projections-engine.test.ts`, both lanes). Generation does not look at a projection at all: misspelling any one of the 225 projected field reads in the consumer's 36 checked files still generated its module at `1e3c9d5`. Written first, 20 of the 27 tests of `test/projections.test.ts` failed there; the 7 that passed are refusals and the unchanged output.
+2. **Is this the better way?** Yes. Alternatives considered: the engine itself, which does not refuse an undeclared field on read (above); a typed result codec, which reports the missing field only when the statement runs and decodes a row; lane L05's `--verify`, which checks only parse errors and result counts, so it cannot see a missing field; reading the field in the existing `uses`, which records bindings, not projections. The check reuses the schema detail `--schema` already loads, costs no engine, and runs where a misspelt table already fails.
+3. **With SurrealDB or against it?** With it, with one stated limit. <https://surrealdb.com/docs/surrealql/statements/define/table>, read on 2026-11-23 (`surrealdb_version: "4.x"`; none is published for 3.x): a `SCHEMAFULL` table "rejects any field that has not been defined" on write. The page says nothing of reads, and the engine test pins the read on 3.3.4 and 4.0.1. The first version of this answer said that a field the table does not declare "can hold no value to read". That is wrong for a row written while the table was schemaless: on both engines such a row keeps its undeclared field after `DEFINE TABLE OVERWRITE … SCHEMAFULL`, and `SELECT extra FROM loose` returns it, so the check refuses a text that returns data. This is accepted as a limit, the same one the binding-use check already has for a field a table neither declares nor accepts. The README states it with its remedies: declare the field, or clear it from the old rows with `UPDATE … UNSET` (both versions) or `ALTER TABLE … MIGRATE EXISTING ROWS AS … REMOVE UNDECLARED FIELDS` (4.0). `test/projections-engine.test.ts` pins the limit and both remedies on both lanes. The binding-use check has no way to exempt one text, so neither does this check; a scope generated without schema detail is not checked. <https://surrealdb.com/docs/surrealql/statements/select>, read the same day, says `SELECT VALUE` "only works if you select a single un-nested field", which is the one form of it the analyzer reads. Nothing is checked on a schemaless table or a view, which accept any field.
+
+Admission note, ready statements, 2026-11-23, at `1e3c9d5`:
+
+1. **What is worse today?** No file shows it. Of 213 authored texts, none is exactly one `SELECT` of the recognised shape. The 8 consumer files that are one `SELECT` miss it on `SELECT VALUE` with an aggregate, `FROM ONLY $id`, `FROM $ids`, a full-text `@1@` or vector `<|k,ef|>` operator, `search::score` or `vector::distance::knn()` aliased in the projection, and comparisons with literals. The nearest, `nativeScale/verifyCorpus` (`SELECT VALUE ordinal … WHERE corpus = $corpus ORDER BY ordinal LIMIT 1`), uses `VALUE` and is in a scope with no schema, so no descriptor would serve it even with a wider shape.
+2. **Is this the better way?** Not shown. The package's own `select` builder already gives a statement over a descriptor its parameter codecs and its result, so the step would add a second way to write a statement that no authored text uses.
+3. **With SurrealDB or against it?** Either way, by the measurement above: `WHERE id = $id` is a `RecordIdScan` on 3.3.4 and 4.0.1 when the binding is a record id, and a `TableScan` when it is a string; an unindexed filter is a `TableScan`.
+
+**Ready statements: closed, not admitted.** The shape matches no real file, so nothing of the step is built: no `--store` flag, no change to `src/cli/statements.ts`, and the generated output stays byte for byte as it was. If the step is reopened, the plans above set its conditions: the `id` parameter takes the table's record id codec, and a filter no index of the descriptor serves is reported.
+
+Implementation, projected fields: `analyzeProjections` (`src/analyze/projections.ts`) gives `Analysis.projected`, `{ table, field, line }` per bare field or `*` (`ProjectedField`, exported from `effect-surrealkit/analyze`). A `SELECT` is read at the top level (after `LET $name =` or `RETURN`) or as a parenthesised subquery, which is a query of its own. It needs exactly one `FROM` outside brackets and no `OMIT`. It needs one target after an optional `ONLY`: a table name, a record id whose key is one token or one bracket group, or `type::record`, `type::thing` or `type::table` with a plain string literal, followed by the end of the query or one of its clauses. Each item that is exactly `*`, one bare name, or one bare name `AS` one name is recorded, and so is `SELECT VALUE` with exactly one bare name before `FROM`. A bare name is a word or a quoted name, except `NONE`, `NULL`, `TRUE` and `FALSE` in any case and `NaN` and `Infinity` spelt so. `checkProjected` in `src/analyze/render.ts`, called by `renderStatementModulesSync` with a scope's `declared` detail, reports ``<scope>/<file>.surql:<line>: selects `<field>` of `<table>`, which declares no such field`` as an `undeclared` problem. `*`, `id`, a declared field and a field with declared nested paths resolve. A schemaless table, a view, a table the schema does not declare, a text that changes the schema itself and a template where a hole starts a statement are not checked. Nothing is rendered from it: the goldens are unchanged. Tests: `test/projections.test.ts` (34: what is read, one test per case that records nothing, the check and what it does not check), and `test/projections-engine.test.ts` (6, both lanes: the silent read, the keyword audit, the legacy-row limit and its remedies).
+
+Measured again after the build, at `fffd298`: the consumer's 190 files render with no new problem, and each of the 225 projected field reads, misspelt one at a time, failed generation with `selects \`<name>Typo\` of \`<table>\``: 225 of 225.
+
+Review, 2026-11-23, by a reviewer who did not write the lane. Verdict: fix first, for valid texts the check wrongly rejected. The orchestrator added two extensions and confirmed one reading. Every fix below has a test that failed first: 9 of the 34 tests of `test/projections.test.ts` failed against the source at `f7dbfe7`, and the keyword audit and the `VALUE` and alias pins in `test/projections-engine.test.ts` failed there too.
+
+1. **A view** (`DEFINE TABLE v SCHEMAFULL AS SELECT count() AS n …`) declares no fields, so `SELECT n FROM v` failed generation. On both engines such a view returns `n`, and `INFO FOR TABLE v` lists no fields. The binding-use check had the same hole: `WHERE n = $n` on the view failed too. Done: `declaredNames` marks a view `acceptsUndeclared` (`src/emitter/document.ts`), which fixes both checks.
+2. **Bare words read as values.** `SELECT NaN, Infinity FROM person` recorded both as fields. Done after an audit: every keyword of `surrealdb-syn` 3.3.0 and `surrealdb-parser-next` 4.0.0 (382, committed as `test/fixtures/surql-keywords.txt`), in capitals and in lower case, plus the other spellings of `NaN` and `Infinity` (777 words), was projected alone from a record that holds a field of that name. Both engines agree word for word. Only `NONE`, `NULL`, `TRUE` and `FALSE` (any case), `NaN` and `Infinity` (exactly so) are values; `nan`, `infinity` and `inf` read the field, and 46 statement words are errors. The analyzer excludes those six, in projections and in the comparisons of `uses.ts`, which had the same hole. The engine test pins the list on both lanes, and asserts that the analyzer never records a word the engine does not read as that field. The analyzer refuses only `FROM` and `OMIT`, which make the projection's end uncertain.
+3. **A hole that starts a statement** can be filled with a part that defines a field. Done: no check for a template with a hole at the start of the text, after `;` or after `{` (`holeStartsStatement`, `src/analyze/render.ts`).
+4. **Legacy rows** of a table made `SCHEMAFULL` keep their undeclared fields. Accepted as a stated limit, with answer 3 above corrected and the README stating the limit and its remedies. No exemption was added, because the binding-use check has none.
+5. **A schemaless table** is recorded, then skipped by the check; the lane text said nothing was recorded. Done: the lane text and the test now state both halves.
+6. **A quoted name** printed unescaped (``selects `lab`el` ``). Done: a backtick or backslash is escaped with a backslash, and a control character or line separator is written `\u{…}`, in this message and in the binding-use message.
+7. **Extension:** `SELECT VALUE <one bare field> FROM t` is read.
+8. **Extension:** `<one bare field> AS <alias>` records the field, never the alias; the reviewer measured that on both engines a later item never reads an earlier alias. Anything longer than one token on the field side still records nothing. Negative tests cover `VALUE` before a path, a call, an expression, `*`, a value word, an aliased field or nothing, and `AS` after a path, a call, an expression, a parameter or a value word, with no name after it, with a path as the name, or twice.
+
+Confirmed by the orchestrator: a subquery's projection, read against its own table, is within the lane.
+
+Measured after the fixes, on the same corpora (`l04-review-fixes.txt` in the same topic evidence; every probe used the embedded engine or a `surreal` 3.3.4 server the probe started on its own port):
+
+| | Fixtures (23) | Consumer files (190) |
+| --- | --- | --- |
+| Contain a `SELECT` whose projection the check reads | 7 (was 4): the four templates, plus `accounts/listWhere`, `gauges/readings` and `gauges/site` through `VALUE` | 64 (was 50) |
+| Of those, with a bare field on a `SCHEMAFULL` table of a schema the project checks | none with a schema document in the fixtures' own tests | 42 files (was 36), 239 distinct field reads (was 225) |
+| Checked | as above | 227 reads in 40 files. 12 reads in `retrievalGuards/graphNeighborhood` and `retrievalRead/topicNeighborhood` are not checked, because a hole starts a statement there (fix 3) |
+| Problems the check raises on the text as written | 0 | 0 |
+| Misspelt one at a time, caught | | 227 of the 227 checked |
+
+Gate at the lane's head: `bun run lint`, `bun run typecheck` and `bun run build` pass; `npm run test:skips` passes on the embedded lane (1,939 passed, 51 skipped, as listed) and with `SURREAL_BIN` 3.3.4 (1,968 passed, 22 skipped, as listed). The type-check budgets are unchanged from `1e3c9d5`: 300 statements 221,107 instantiations and 49,261 types; 30 blocks 184,366; 30 families 240,485; 30 pipeline calls 118,430; 30 bulk calls 23,465; no limit raised.
+
+**State: closed, implemented.** Projected fields are built. Ready statements were not admitted.
 
 ### L05. `statements --verify`
 
@@ -260,6 +334,22 @@ Ready statements:
 - The same check is exported as a function for a build that generates in process.
 - `effect-surrealkit/analyze` stays host-neutral: a test asserts that its built module does not import `@surrealdb/node`.
 - The README says that a verified text is executed on a discarded in-memory engine, and what that means for a text with effects outside the database.
+
+Admission note, 2026-11-23, at `070d421`:
+
+1. **What is worse today?** Yes, for one class of fault. `SELECT * FORM person;`, `SELECT name FROM person WHERE;` and `UPDATE person SET age = ;` each generate a module today; the embedded 4.0.1 engine refuses each before running it (`Parse error: Unexpected token … --> [1:10]`, `[1:30]`, `[1:25]`), so the fault surfaces at the first run. The analyzer is a lexer by design and cannot see it. Since lane L01 the package's own fixtures are sent to an engine in its tests; an author's files are sent nowhere before they run. On the consumer corpus (benBrain `packages/assistant/schema/queries`, read-only, scratch script outside both repositories), the check finds nothing today: of 190 files, 146 are complete texts (44 are fragments or templates), all 146 parse, and all 146 return the analyzer's `slots`. The same 146/146/146 holds on `surreal` 3.3.4. The run takes 0.36 s on embedded 4.0.1 with no schema, or 2.1 s when each scope loads its store's schema files in the order `tooling/generateStores.ts` applies them (1.7 s of that is loading the schema, 11 times for the earth store). Not real time for an opt-in flag, so the lane is admitted for the fault class, not for a fault the corpus has.
+2. **Is this the better way?** Yes. Alternatives: `EXPLAIN` (a parse error after `CREATE`, and silent on unknown functions, per Current state); `surrealkit compile`/`sync` (apply the schema, never read a query text); a SurrealQL parser in TypeScript (excluded by the terminal outcome); a running server (a database is not a requirement of generation, and live databases are outside the authority boundary); `BEGIN … CANCEL` around a text (every statement comes back cancelled); sending with bindings (there are no values at build time). The engine's own parser and result list on a discarded in-memory engine is the native way, and is what lane L01 already relies on.
+3. **With SurrealDB or against it?** With it. The two behaviours the check reads (a parse error refuses the whole text with its line and column; one result per top-level statement, also when a statement errors for lack of a binding) are pinned on both engine lanes by `test/analyze-engine.test.ts`. The capabilities page (<https://surrealdb.com/docs/surrealdb/security/capabilities>, labelled 4.x with 3.x notes, read 2026-11-23) says network targets and scripting are denied by default, functions are allowed, and gives `--deny-funcs http` as the way to deny the `http` family. Measured on embedded 4.0.1 against an HTTP server this run started on a port it chose: `http::get` sent 0 requests with the default options and with `network_targets: false`; with `functions: { deny: ['http'] }` the call is a per-statement error (`Function 'http::get' is not allowed to be executed`) and the other statements still return, so the count holds. With `query_timeout: 1`, `RETURN 1; sleep(3s); RETURN 2;` ends after 1 s with one result per statement (the second and third `The query was not executed because it exceeded the timeout: 1s`); one shape measured (a script call after the `sleep`) was refused as a whole with the same message. A file bucket on a host folder is refused by the default (`File access denied`), with experimental features on or off.
+
+Narrowed: the schema is optional. With and without the consumer's schema the outcome is identical on 4.0.1 and 3.3.4, because the parser reads no catalog and a statement's error never removes its result. A schema changes which errors the texts meet, never what the check reports; loading one is kept because it also proves the schema files apply on the engine. The engine is the installed `@surrealdb/node`, so a text that only one SurrealDB version refuses is checked against that version; the command prints it.
+
+**State: closed, implemented, narrowed (the schema is optional).** `statements --verify` and `--verify-schema <file>` (repeatable, in order, a usage error without `--verify`) run `verifyStatements` from `effect-surrealkit/testing` (`src/testing/verify.ts`) after generation succeeds and before anything is compared or written. It imports `@surrealdb/node` lazily through the helper `memory` uses (`src/testing/database.ts`); without it the command exits 1 with `npm install --save-dev @surrealdb/node @surrealdb/node-native`. One engine per run, on `mem://` with `scripting: false`, `guest_access: false`, `network_targets: false`, `functions: { allow: true, deny: ['http'] }` and `query_timeout: 10`. The schema files run first; a statement of one that fails is a problem with its name and position. Then each complete text (`part`, no holes) is sent once with no bindings, in scope and file order. A thrown parse error is `<file>:<line>:<column>: Parse error: …` from the engine's `--> [l:c]`; another refusal is `<file>: the engine did not run the text: …`; a count other than `slots` is `<file>: the engine returned N results, the analyzer derived M`. Every other per-statement error is ignored. With `--check` it verifies, then compares, and writes nothing either way. The README has a section "Checking texts on an engine: `--verify`" and a row in the Testing table, including what running a text means for its writes and for effects outside the database.
+
+Tests (`test/verify.test.ts`, `test/verify-peer.test.ts`): written first, and they failed on the missing export and the unknown flag. They cover the parse problem with file, line and column (lines 1 and 2), texts that error for lack of bindings (not problems), a count off by one (through `verifyAnalysed`), fragments and templates not sent, schema files loaded in order, a schema parse error and a failed schema statement, an `http::` call to a server the test starts (0 requests, still counted), a `sleep` stopped at the timeout and still counted, the CLI with and without problems, `--check --verify` writing nothing, `--verify-schema` order and its usage error, the missing peer (a mocked import), and that the `analyze` entry built as tsup builds it imports neither `@surrealdb/node` nor a Node built-in. The verify suites use the embedded engine on every lane and skip only when it does not start, so the committed skip lists are unchanged.
+
+Measured again after the build, through the built `verifyStatements` on the consumer corpus: 146 texts sent, 44 not sent, 0 problems, in 0.37 s with no schema and 0.47 s with the earth store's nine schema files loaded once. `SELECT * FORM person;`, which generated a module before the lane, now fails generation with `broken/typo.surql:1:10: Parse error: …` and writes nothing.
+
+Gate at the lane's head: `bun run lint`, `bun run typecheck` and `bun run build` pass; `npm run test:skips` passes on the embedded lane (1,955 passed, 51 skipped, as listed) and with `SURREAL_BIN` 3.3.4 (1,984 passed, 22 skipped, as listed). The type-check budget tests pass with no limit raised.
 
 ### L09. JSON Schema of a statement's bindings
 
@@ -326,46 +416,55 @@ Admission note, 2026-11-23, at `674c57b`:
 
 Narrowed to: a pair is a removed field and an added field on the same table whose names are each one identifier, with no `.` or `[`. Their statements must hash the same once the added field's name is written as the removed one's, which compares the catalog's own hashes and needs no old SQL. The definition must not carry `READONLY`, `VALUE` or `COMPUTED`. Nested fields, indexes and other kinds are out of scope and are still refused as today.
 
-**State: implemented, awaiting review.** Built on the narrowed scope above.
+**State: closed, implemented.** Built on the narrowed scope above, at `dfc0ed8`, and changed after review in the commit that records this state.
 
 What was built:
 
-- `rollout plan` pairs the fields in `crates/surrealkit/src/rollout/renames.rs`, with `schema_state::field_under_name` beside it. A proved pair is left out of the add-and-remove guard. Its record goes under `renames` (`kind = "field"`, the table as `scope`).
-- The pair's step, `copy_<table>_<from>_to_<to>`, runs in the start phase after the schema step. Its SQL is `UPDATE <table> SET <to> = <from> WHERE <from> != NONE;`, and it carries `unconfirmed = true`. The removal stays in `remove_legacy_entities`, in the complete phase.
+- `rollout plan` pairs the fields in `crates/surrealkit/src/rollout/renames.rs`, with `schema_state::field_under_name` beside it. A proved pair is left out of the add-and-remove guard.
+- The pair's copy is an ordinary `run_sql` step, `copy_<table>_<from>_to_<to>`. It runs in the start phase after the schema step, with `UPDATE <table> SET <to> = <from> WHERE <from> != NONE;`. The removal stays in `remove_legacy_entities`, in the complete phase.
+- The pair is recorded under `renames` as `kind = "field"`, with the table as `scope`, `step` naming the copy and `confirmed = false`. `RolloutRename` gained `step` and `confirmed`. It was the reserved type that nothing read, so only code that builds a `RolloutRename` literal is affected.
+- `rollout lint` (with or without an id), `rollout start`, `rollout up` (before any rollout starts) and `Rollout::start` refuse a rollout with an unconfirmed entry, and one whose entry names no start-phase `run_sql` step.
 - A pairing with more than one possibility proposes nothing for that table, and a warning names every candidate. A pair with a clause that cannot be copied gets a warning with the reason. Either way the existing refusal follows.
-- `rollout lint` (with or without an id), `rollout start`, `rollout up` (before any rollout starts), `Rollout::start` and step execution refuse an unconfirmed step.
 - `run_plan` returns the proposals, and the `rollout_plan` MCP tool reports them as `renames`. The `author_rollout` prompt and the root README, "Migrating existing records", describe the feature.
 
-What the lane turned out to need:
+Facts the lane rests on:
 
-- `RolloutAction::RunSql` gained `unconfirmed: bool`. It is skipped when false, so every existing step serializes, and checksums, as before. Code that builds or matches `RunSql { sql }` exhaustively has to add the field or `..`. That is a public API change at 1.0.0-rc.1, which the reviewer should judge.
 - `renames` keeps serializing as `renames = []` when empty, so it gets no `skip_serializing_if`. Every manifest written so far carries that line, including the three under `examples/rollout-testing/database/rollouts/`. A file manifest's checksum is the hash of its text, and a code-defined rollout's is the hash of `toml::to_string_pretty`. Skipping the empty list would have changed the second.
 - At level 4 a new `TYPE string` field on a table with records needs `MIGRATE EXISTING ROWS`. The catalog hash leaves that clause out, so such a field still pairs.
+
+Review, 2026-11-23, by a reviewer who did not write the lane. Verdict: fix first. Every acceptance check was met, and two findings had to change.
+
+1. **HIGH, data loss.** The texts told an author who reads the pair as no rename to delete the step and its `[[renames]]` entry. Before the lane, `plan` refused that change at `validate_autoplan` and wrote nothing. A manifest with the step deleted passed lint and start, added the new field empty in `start` and removed the old one, with its values, in `complete`.
+
+   Done:
+   - The README, the plan warning and every refusal now say to run `surrealkit rollout discard <id>`, which deletes the manifest and puts the snapshots back, and to plan the addition and the removal in separate rollouts.
+   - An entry whose step is missing, is not in the start phase or is not `run_sql` is refused, confirmed or not. Tests: `lint_refuses_a_rename_whose_copy_step_was_deleted` (CLI, lint with and without an id), `a_rename_without_its_copy_step_does_not_start` (embedded engine, `up` and `start`; the old field keeps its values), and `renames::tests::the_copy_runs_after_the_schema_step_and_is_unconfirmed` (missing, wrong-phase and unnamed steps).
+
+   Deleting both the step and the entry is not refused. That manifest is one a hand edit could always produce. `validate_autoplan` runs only from `run_plan` (its one call site outside tests is in `run_plan`, `rollout.rs:1091`), and nothing in lint or start re-checks a manifest for an add and a remove on one table. Measured with the binary built at `674c57b`, before the lane: the same change planned as an addition of `mail`, with a complete-phase `remove_entities` of `email` added by hand, passes `rollout lint <id>` and `rollout lint`. It does exactly what the both-deleted manifest does. The output is saved as `l11-guard-bypass-674c57b.txt` in the topic evidence.
+
+   A frozen manifest does keep its base catalog, so lint could recompute the guard. It would then also refuse hand-written manifests it accepts today, including the manual rename the README used to recommend. That widens the lane, so it was left out.
+2. **MEDIUM, public API.** The first version added `unconfirmed` to `RolloutAction::RunSql`, which breaks every `RunSql { sql }` pattern and literal at 1.0.0-rc.1. Done: `RolloutAction` is exactly as it was at `674c57b`, and the confirmation is carried on the `RolloutRename` entry, as above. `a_legacy_manifest_serializes_exactly_as_before` is unchanged from `674c57b` and passes. `a_rollout_without_renames_keeps_its_checksums` pins the code-defined checksum and the `run_sql` step's JSON, which is its step checksum. `a_rename_adds_its_record_and_an_unconfirmed_copy` pins the new form. No `#[non_exhaustive]` was added, and MIGRATING.md needed no entry.
+3. **Decided, no change:** no catch-up copy in the contract phase. It would guess: it misses later updates and restores values the new application cleared. The README says that a record the old application writes after `start` keeps that write only in the old field.
+4. **Decided, follow-up:** renamed indexes stay out of this lane. Measured with the CLI, an index that keeps its name and changes `FIELDS` is a modified index, which `plan --allow-modified` plans together with the rename. An index whose name changes as well is an add and a remove of an index on one table, which is still refused. Inferring index pairs is a follow-up.
 
 What was measured after the build:
 
 - The first-question test, `plan_proposes_a_rename_that_lint_refuses_until_it_is_confirmed`, failed on ``cannot tell apart from a rename`` before the change and passes now.
 - On the embedded engine, `a_confirmed_rename_keeps_every_value_through_up_and_complete` runs `up` and `up --complete`. Both fields hold every value between the two, `mail` holds them after, `email` is gone, and the catalog equals the snapshot. `a_rolled_back_rename_leaves_the_old_field_and_its_values` covers rollback.
 - The ambiguous case is `plan_proposes_nothing_when_fields_could_pair_in_more_than_one_way` (CLI) and `renames::tests::anything_else_is_not`, which has three ambiguity shapes. Differing definitions are `plan_proposes_no_rename_when_the_definitions_differ`, and the clauses are `plan_proposes_no_rename_for_a_field_a_copy_cannot_carry`.
-- Checksum compatibility is pinned by `a_legacy_manifest_serializes_exactly_as_before`. It now also pins the `run_sql` step's JSON, which is the per-step checksum, and the code-defined checksum of the beta.5 golden. `a_rename_adds_its_record_and_an_unconfirmed_copy` pins the new form.
 - MCP: `rollout_plan_reports_the_renames_it_proposes`.
 
-Gate, 2026-11-23, rustup 1.95.0, run on the tree of this change. The Homebrew `cargo` 1.100 that comes first on `PATH` ignores `rust-toolchain.toml`, so the gate ran with `~/.cargo/bin` first. Every credential-free step of `.github/workflows/cargo.yml` passed:
+Gate after the review fixes, 2026-11-23, rustup 1.95.0, run on the tree of the fixing commit. The Homebrew `cargo` 1.100 that comes first on `PATH` ignores `rust-toolchain.toml`, so the gate ran with `~/.cargo/bin` first. Every credential-free step of `.github/workflows/cargo.yml` passed:
 
 - the three `cargo clippy` invocations with `-D warnings`
 - `cargo doc` with `RUSTDOCFLAGS=-D warnings`
 - `cargo check` of the binary with only `cli`
 - `cargo fmt --all --check`
-- `cargo test --workspace --all-features --locked`: 1,050 passed, 0 failed, 8 ignored
+- `cargo test --workspace --all-features --locked`: 1,053 passed, 0 failed, 8 ignored
 - `cargo publish --workspace --dry-run --locked`, with `--allow-dirty` because the change was not yet committed
 - the package contents check: `build.rs` and 23 `templates/` files
 
-Questions for the reviewer:
-
-- Whether the `RunSql` field change is acceptable at rc.1.
-- Whether deleting the copy step should still plan the drop and the add. Today an author who deletes the step gets an add and a remove that the guard used to refuse.
-- Records the old application writes after `start` keep their new value only in the old field. The README says so and proposes no event or second copy. Is that enough?
-- An index on a renamed field has to change. Measured with the CLI: an index that keeps its name and changes `FIELDS` is a modified index, and `plan --allow-modified` plans it together with the rename. An index whose name changes as well is an add and a remove of an index on one table, which is still refused. Should index pairs be inferred too? Removing an index loses no data.
+Not proven: SurrealDB 3.3 does not apply, because the crate needs 4.0. Hosted CI has not run this revision.
 
 ### L12. Property tests for rollouts
 

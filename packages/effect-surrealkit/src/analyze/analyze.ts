@@ -12,6 +12,7 @@ import {
 	lex,
 	type Token,
 } from './lexer.js';
+import { analyzeProjections, type ProjectedField } from './projections.js';
 import { analyzeTargets } from './targets.js';
 import { analyzeUses, type BindingUses } from './uses.js';
 
@@ -41,6 +42,13 @@ export interface Analysis {
 	readonly kind: 'part' | 'fragment';
 	/** The text without whitespace and comments after its last token. */
 	readonly sql: string;
+	/**
+	 * The comments before the first token, as prose: each line without its
+	 * `--`, `//` or `#` and one space after it, a block comment without
+	 * `/*`, `*\/` and a leading `*` margin, a blank line between paragraphs.
+	 * Empty when the text opens with a token.
+	 */
+	readonly comment: string;
 	/** `$names` read and not defined earlier in scope, sorted, without `$`. */
 	readonly free: ReadonlyArray<string>;
 	/** Names a top-level `LET` defines, sorted. */
@@ -98,6 +106,19 @@ export interface Analysis {
 	 * is not certain; a binding with no such use is absent.
 	 */
 	readonly uses: BindingUses;
+	/**
+	 * The fields each `SELECT` projects from the one static table it reads
+	 * (a table name, a record id, or `type::record`, `type::thing` or
+	 * `type::table` with a literal table, after an optional `ONLY`, and
+	 * nothing after it but the query's clauses): each projected item that
+	 * is a bare field name, or `*`, sorted by line, table and field, without
+	 * duplicates. A
+	 * `SELECT VALUE`, an `OMIT`, two targets, an open target and any item
+	 * that is not a bare name or `*` (a call, a path, an expression, an
+	 * alias, a graph step, a subquery) record nothing; a parenthesised
+	 * subquery is a query of its own.
+	 */
+	readonly projected: ReadonlyArray<ProjectedField>;
 	/**
 	 * For each hole, what the text around it does with names (empty for a
 	 * text without holes): `bound`, the names visible at every occurrence of
@@ -628,6 +649,7 @@ const analyzeLexed = (sql: string, lexed: Lexed): Analysis => {
 	return {
 		kind,
 		sql: sql.slice(0, last.end),
+		comment: leadingComment(sql.slice(0, first.start)),
 		free: sorted(free),
 		defines: sorted(root.vars),
 		slots,
@@ -642,6 +664,7 @@ const analyzeLexed = (sql: string, lexed: Lexed): Analysis => {
 		functions: targets.functions,
 		openTargets: targets.openTargets,
 		uses: analyzeUses(tokens, sorted(free)),
+		projected: analyzeProjections(tokens),
 		holeScopes: holeScopesOf(holeSites, unboundReads, kind),
 		diagnostics,
 	};
@@ -693,6 +716,63 @@ const holeScopesOf = (
 		out[name] = { bound: sorted(bound), binds: sorted(binds) };
 	}
 	return out;
+};
+
+/** The lines of a block comment's body without their common indent. */
+const dedent = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
+	const indents = lines
+		.filter((line) => line.trim() !== '')
+		.map((line) => line.length - line.trimStart().length);
+	const indent = indents.length === 0 ? 0 : Math.min(...indents);
+	return lines.map((line) => line.slice(indent));
+};
+
+/**
+ * The prose of `head`, the text before a first token, which the lexer has
+ * read as whitespace and comments only; see {@link Analysis.comment}.
+ */
+const leadingComment = (head: string): string => {
+	const prose: string[] = [];
+	const paragraph = () => {
+		if (prose.length > 0 && prose[prose.length - 1] !== '') prose.push('');
+	};
+	let i = 0;
+	let blankLines = 0;
+	while (i < head.length) {
+		const c = head[i] as string;
+		if (/\s/u.test(c)) {
+			if (c === '\n' && ++blankLines > 1) paragraph();
+			i++;
+			continue;
+		}
+		blankLines = 0;
+		if (c === '/' && head[i + 1] === '*') {
+			const end = head.indexOf('*/', i + 2);
+			const body = head.slice(i + 2, end === -1 ? head.length : end);
+			const lines = body
+				.split('\n')
+				.map((line) => line.replace(/^\s*\*(?!\/) ?/u, ''));
+			prose.push(...dedent(lines));
+			i = end === -1 ? head.length : end + 2;
+			continue;
+		}
+		const marker = c === '#' ? 1 : 2;
+		const end = head.indexOf('\n', i);
+		const line = head.slice(i + marker, end === -1 ? head.length : end);
+		const text = line.startsWith(' ') ? line.slice(1) : line;
+		if (text.trim() === '') paragraph();
+		else prose.push(text);
+		i = end === -1 ? head.length : end;
+	}
+	const lines = prose.map((line) => line.trimEnd());
+	const from = lines.findIndex((line) => line !== '');
+	if (from === -1) return '';
+	let to = lines.length;
+	while (lines[to - 1] === '') to--;
+	return lines
+		.slice(from, to)
+		.filter((line, n, all) => line !== '' || all[n - 1] !== '')
+		.join('\n');
 };
 
 /** {@link analyze}, throwing its {@link AnalyzeError}. */
