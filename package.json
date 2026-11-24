@@ -1,6 +1,6 @@
 {
 	"name": "effect-surrealkit",
-	"version": "0.1.0-fork.848cfae",
+	"version": "0.1.0-fork.3b3571f",
 	"description": "Effect v4 schemas for SurrealDB values (SDK 2.x), an Effect emitter for SurrealKit schema documents, and typed statements built from the generated modules or analysed from .surql files",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -95,5 +95,5 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"gitHead": "848cfaeaa1ddb36717afd422fd7cc26f42f4430c"
+	"gitHead": "3b3571f788bdec8a30b646c28518b17fd3caa4d1"
 }
