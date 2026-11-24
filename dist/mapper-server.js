@@ -3,7 +3,7 @@ import {
   configurationDrift,
   openSurqlProject,
   surqlModuleIn
-} from "./chunk-BN7437D4.js";
+} from "./chunk-HNIKUY5K.js";
 
 // src/mapper/rpc.ts
 var frame = (message) => {

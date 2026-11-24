@@ -22,7 +22,7 @@ import {
   DEFAULT_HOLE_DELIMITERS,
   analyzeSync,
   lex
-} from "./chunk-3ISARNU6.js";
+} from "./chunk-5WCP2KPG.js";
 import {
   AnalyzeError
 } from "./chunk-FBUMKT7I.js";

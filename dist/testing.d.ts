@@ -1,14 +1,14 @@
 import { Effect, Context, Layer, Scope } from 'effect';
-import { o as StatementError, x as SurrealClient, C as Client, v as StatementUnsupported, Q as Queryable } from './bulk-C5a4VYnE.js';
+import { o as StatementError, x as SurrealClient, C as Client, v as StatementUnsupported, Q as Queryable } from './bulk-H5jCvinP.js';
 import { Surreal, SurrealSession } from 'surrealdb';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
-import { P as Params, C as Codec, S as Statement, q as Input } from './expr-CPMgbj5K.js';
+import { P as Params, C as Codec, S as Statement, q as Input } from './expr-99eIx780.js';
 import { H as HoleDelimiters } from './lexer-VCZFEQjh.js';
-import './live-DwTMzZp0.js';
+import './live-DS7CDSd5.js';
 import './row-CLBe1uWx.js';
 import './table-iF6L7xrW.js';
-import './uses-BXJXI3if.js';
+import './uses-D--Wj5lt.js';
 
 interface LiveHandle {
     readonly messages: AsyncIterable<{

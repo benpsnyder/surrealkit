@@ -5,7 +5,7 @@ import {
   analyzeTargets,
   holeDelimiters,
   lex
-} from "./chunk-3ISARNU6.js";
+} from "./chunk-5WCP2KPG.js";
 import {
   AnalyzeError
 } from "./chunk-FBUMKT7I.js";
@@ -208,6 +208,15 @@ var checkProjected = (projected, detail, schemaChanges) => schemaChanges ? [] : 
     }
   ];
 });
+var checkFields = (fields, detail, schemaChanges) => schemaChanges ? [] : fields.flatMap(({ table, field, role, line }) => {
+  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
+  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
+    {
+      line,
+      message: `${role === "assign" ? "assigns" : "compares"} ${quoted(field)} of ${quoted(table)}, which declares no such field`
+    }
+  ];
+});
 var holeStartsStatement = (sql, holes) => {
   const tokens = lex(sql, holeDelimiters(holes)).tokens;
   return tokens.some((token, i) => {
@@ -223,27 +232,34 @@ var changesSchema = (sql, holes) => {
     )
   );
 };
+var linesOf = (text2) => text2.split(/\r\n|[\n\r\u2028\u2029]/u);
+var commentSafe = (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@");
 var docComment = (analysis, title, holes) => {
   const first = lex(analysis.sql, holeDelimiters(holes)).tokens[0];
   const body = analysis.sql.slice(first?.start ?? 0);
   const longest = Math.max(
     0,
-    ...[...body.matchAll(/`+/gu)].map(([run]) => run.length)
+    ...[...`${analysis.comment}
+${body}
+${title}`.matchAll(/`+/gu)].map(
+      ([run]) => run.length
+    )
   );
   const fence = "`".repeat(Math.max(3, longest + 1));
+  const prose = (text2) => linesOf(text2).map((line) => commentSafe(line).trimEnd());
   const lines2 = [
-    ...analysis.comment === "" ? [] : [analysis.comment, ""],
+    ...analysis.comment === "" ? [] : [...prose(analysis.comment), ""],
     `${fence}surql`,
-    body,
+    ...linesOf(body).map(commentSafe),
     fence,
     "",
-    title
-  ].join("\n").split(/\r\n|[\n\r\u2028\u2029]/u).map(
-    (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@").trimEnd()
-  );
-  return ["/**", ...lines2.map((line) => ` * ${line}`.trimEnd()), " */"].join(
-    "\n"
-  );
+    ...prose(title)
+  ];
+  return [
+    "/**",
+    ...lines2.map((line) => line === "" ? " *" : ` * ${line}`),
+    " */"
+  ].join("\n");
 };
 var renderConstant = (scope, name, analysis, binds, rejectsNone, holes) => {
   const file = `${scope}/${name}.surql`;
@@ -381,14 +397,22 @@ var renderStatementModulesSync = (input) => {
       const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail, schemaChanges);
       binds = checked?.binds;
       rejectsNone = checked?.rejectsNone;
+      const fieldsUnknown = schemaChanges || holeStartsStatement(source.sql, input.holes);
       for (const problem2 of [
         ...undeclared(source.sql, source.declared, input.holes),
         ...checked?.problems ?? [],
-        ...detail === void 0 ? [] : checkProjected(
-          analysis.projected,
-          detail,
-          schemaChanges || holeStartsStatement(source.sql, input.holes)
-        )
+        ...detail === void 0 ? [] : [
+          ...checkProjected(
+            analysis.projected,
+            detail,
+            fieldsUnknown
+          ),
+          ...checkFields(
+            analysis.fields,
+            detail,
+            fieldsUnknown
+          )
+        ]
       ].sort((a, b) => a.line - b.line))
         problems.push({
           kind: "undeclared",

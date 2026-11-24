@@ -1,9 +1,9 @@
 import {
   surqlBunPlugin
-} from "./chunk-F3Y65UHD.js";
+} from "./chunk-SZMSW6R7.js";
 import {
   loadSurqlModule
-} from "./chunk-BN7437D4.js";
+} from "./chunk-HNIKUY5K.js";
 
 // src/mapper/register.ts
 import * as nodeModule from "module";

@@ -1233,8 +1233,10 @@ first token is not read), then the SurrealQL after them in a fenced block, then
 the file name. `analyze(sql).comment` returns the same prose. Templates and
 fragments get the same comment. In it a `*/` is written `*\/` and an `@` after
 whitespace (SurrealQL's `@@` and `@1@`) `\@`, so neither ends the comment or
-starts a tag, and the fence is longer than any run of backticks in the text;
-`sql` is never changed.
+starts a tag, and the fence is longer than any run of backticks in the comment
+or the text. Each line inside the fence is shown as written, trailing
+whitespace included (a string literal can hold it); the prose around it loses
+its trailing whitespace. `sql` is never changed.
 
 ```ts
 import { accounts } from './generated/statements/index.js';
@@ -1289,10 +1291,14 @@ type BindingUse =
   string literal and exactly one parameter. `SELECT * FROM
   type::record('site', $siteKey);` uses `$siteKey` as the key of `site`.
 - `field`: inside one query (a top-level statement or a parenthesised
-  subquery) whose targets are exactly one static table and not open, a
-  comparison (`=`, `==`, `!=`, `<`, `<=`, `>`, `>=`) in its `WHERE` between a
-  bare field name and a parameter, or an assignment `field = $name` in the
-  `SET` of an `UPDATE`, `UPSERT` or `CREATE`. `SELECT * FROM gauge WHERE
+  subquery) whose targets are exactly one static table and not open, and,
+  for a `SELECT`, with no subquery in its `FROM` (the rows are then the
+  subquery's results, not rows of its table), a comparison (`=`, `==`,
+  `!=`, `<`, `<=`, `>`, `>=`) in its `WHERE` between a bare field name and a
+  parameter, or an assignment `field = $name` in the `SET` of an `UPDATE`,
+  `UPSERT` or `CREATE` that is a top-level statement or the whole value of
+  one (`(UPDATE …);`, `LET $r = (UPDATE …);`, `RETURN (UPDATE …);`) and
+  has no `WHERE` of its own. `SELECT * FROM gauge WHERE
   station = $station;` uses `$station` as `gauge.station`. The analyzer sets
   `role` to `compare` for the `WHERE` comparison and `assign` for the `SET`
   assignment, which messages say; a declared use may leave it out.
@@ -1363,9 +1369,33 @@ holds anything, is not taken to hold NONE.
 
 The limits are plain: only these three patterns are read, by a lexer, not
 a parser, and nothing is recorded where it is not certain (a parameter in a
-longer expression, a path, two tables or an open target, a comparison
-inside a block). A binding with no recorded use is never checked against
-the schema.
+longer expression, a path, two tables or an open target, a subquery in
+`FROM`, a comparison inside a block). A binding with no recorded use is
+never checked against the schema. A statement in a block records no
+binding use because it may run for some values of a binding and not others
+(`IF $x != NONE { UPDATE gauge SET station = $x }`): a `rejectsNone` entry
+there would refuse a codec that holds NONE although the text never assigns
+NONE. For the same reason an assignment records no use anywhere a
+condition can skip it, which both versions show running without an error
+when the binding is NONE:
+
+- in a parenthesised query that is not the whole value of a top-level
+  statement: after `IF … THEN` or `ELSE` without braces, behind `AND`, `&&`
+  or `OR`, in a projection or `WHERE` of another query, in a closure (a
+  function argument or an array item skips nothing, but a lexer does not
+  tell it from these);
+- in a query with a `WHERE` of its own (`UPDATE gauge SET station = $x
+  WHERE $x != NONE`). No reading of the `WHERE` can rule out that it skips
+  every record when the binding is NONE: it can test a local `LET` from
+  it, call a function whose body reads the caller's bindings (both
+  versions), or, on 3.3, read a `COMPUTED` field whose expression does.
+
+A comparison in such a subquery is still a use: it accepts NONE whether or
+not it runs. `??` and `?:` evaluate their right side when the left is NONE,
+and a `RETURN` in a top-level `IF` block does not end the text, so these
+skip nothing, yet an assignment behind `??` or `?:` records nothing either.
+The field names these statements compare are checked all the same (see
+[Compared and assigned fields](#compared-and-assigned-fields)).
 
 #### Projected fields
 
@@ -1374,17 +1404,20 @@ FROM person` with `{}` and no error, so a misspelt field quietly comes back
 missing. `analyze(sql)` also reports `projected`: what each `SELECT`
 projects, as `{ table, field, line }` (`field` is `*` for `*`), sorted by
 line, table and field, without duplicates. A `SELECT` is read when it is a
-top-level statement (possibly after `LET $name =` or `RETURN`) or a
-parenthesised subquery, which is a query of its own (in a projection too,
-against its own table), and when all of this holds on tokens outside
-strings and comments:
+top-level statement (possibly after `LET $name =` or `RETURN`), a statement
+of a block (the body of `IF`, `ELSE`, `FOR`, a function or a bare `{ … }`,
+read like a top-level statement), or a parenthesised subquery, which is a
+query of its own (in a projection too, against its own table), and when all
+of this holds on tokens outside strings and comments:
 
 - it has exactly one `FROM` outside brackets;
 - it has no `OMIT`;
 - after `FROM` (and an optional `ONLY`) comes exactly one target: a table
   name, a record id `table:key` whose key is one token or one bracket
-  group, or `type::record('table', …)`, `type::thing('table', …)` or
-  `type::table('table')` with a plain string literal; then the end of the
+  group, `type::record('table', …)`, `type::thing('table', …)` or
+  `type::table('table')` with a plain string literal, or a local the text
+  fixes to one table (see [A local fixed to one
+  table](#a-local-fixed-to-one-table)); then the end of the
   query or one of its clauses (`WHERE`, `SPLIT`, `GROUP`, `ORDER`, `LIMIT`,
   `START`, `FETCH`, `TIMEOUT`, `EXPLAIN`, `WITH`, `VERSION`, `TEMPFILES`);
 - it has no `PARALLEL` after `FROM`, a parse error on both versions;
@@ -1416,9 +1449,10 @@ recorded, against that table:
 Every other item records nothing: a function call, a path (`address.city`,
 `tags[0]`), an expression, an alias of anything but one bare field, a graph
 step and a subquery, and `VALUE` before anything but one bare field. Two
-targets, an open target (`$owner`, `type::table($t)`, a subquery, a range
-or a graph step after the table), a hole after the target and a statement
-in a block that is not parenthesised record nothing.
+targets, an open target (`$owner` unless the text fixes it to one table,
+`type::table($t)`, a subquery, a range or a graph step after the table) and
+a hole after the target record nothing. A `{ … }` whose entries start with a key and `:` is an object
+literal, not a block, and has no statement.
 
 With `--schema` (or a scope's `declared` detail), a recorded field that a
 `SCHEMAFULL` table does not declare fails generation with its file and line:
@@ -1444,6 +1478,102 @@ FIELDS`). Until then an `UPDATE` of such a row fails on both versions with
 ``Found field 'extra', but no such field exists``. As for the
 binding uses, there is no way to exempt one text: a scope generated without
 schema detail is not checked at all.
+
+#### Compared and assigned fields
+
+SurrealDB 3.3 and 4.0 both answer `SELECT * FROM person WHERE nmae =
+'Ada'` with no rows and no error: on a `SCHEMAFULL` table a field it does
+not declare is NONE in every row, so the comparison never holds.
+`analyze(sql)` also reports `fields`: `{ table, field, role: 'compare',
+line }` for each bare field a query compares in its `WHERE`, whatever the
+other operand, sorted by line, table, field and role, without duplicates. A
+comparison already recorded as a binding use (`station = $station`) is not
+repeated there. A comparison is read where `uses` reads one: in a query
+whose targets are exactly one static table and not open (or a local [fixed
+to one table](#a-local-fixed-to-one-table)), as a top-level
+statement, a statement in a block or a parenthesised subquery (a bare word
+there is a field of the subquery's own row on both versions, never the
+outer one's), at the query's own level or inside parentheses, before a
+second `WHERE` or `SET` clause. A `SELECT` with a subquery in its `FROM`
+records nothing of its own: `SELECT * FROM (SELECT station AS s FROM
+gauge) WHERE s = 'a'` compares `s` of the subquery's results, which
+`gauge` need not declare, and the subquery is read against its own table.
+The field is
+recorded when it is a whole operand of `=`, `==`, `!=`, `<`, `<=`, `>` or
+`>=`:
+
+- on the left: after `WHERE`, `AND`, `OR`, `(` or `,`, and directly before
+  the operator;
+- on the right: directly after an operator that follows the end of an
+  operand (a name, a parameter, a literal or a closing bracket), and
+  before `;`, `)`, `,`, `AND`, `OR`, a clause or `FOR UPDATE`.
+
+A bare field is the word or quoted name `uses` reads: never `NONE`, `NULL`,
+`TRUE` or `FALSE` in any case nor `NaN` or `Infinity`, never a word that
+ends a clause (`AND`, `WHERE`, `ORDER`, …), and nothing followed by `.`,
+`(`, `[`, `:` or an arrow. A pinned engine test compares every keyword of
+both versions' parsers on either side and checks that the analyzer records
+one only where the engine reads the field of that name. A projection alias
+is not visible in `WHERE` on either version, so `SELECT name AS label FROM
+person WHERE label = 'Ada'` compares the field `label`. Nothing else is
+recorded: a path, a call, an index, a graph step, an operand of arithmetic
+or of a cast on the left, any other operator (`?=`, `@@`, `@1@`, `<|2|>`,
+`~`, `CONTAINS`, `IN`, …), and names in `ORDER BY`, `GROUP BY`, `SPLIT`,
+`OMIT` and `FETCH`.
+
+An assignment is recorded as `role: 'assign'`: the target of `field =
+<value>` in the `SET` of an `UPDATE`, `UPSERT` or `CREATE` (after `SET` or a
+`,` of the clause), in the same queries, when the value is a literal
+SurrealDB never evaluates to NONE and the assignment ends after it (at `,`,
+`;`, a closing bracket or a clause): a string of any prefix, a number (`1`,
+`1.5`, `-1`, `1d`, `10dec`), `TRUE`, `FALSE`, `NULL`, an array literal, or
+a record id `table:key`. Every record such a statement writes then fails on
+both versions (``Found field 'nmae', but no such field exists for table
+'person'``). Any other value is not read, because both versions accept
+NONE for a field the table does not declare: `SET nmae = NONE`, `SET nmae =
+$v` with `$v` NONE, `SET nmae = 1 AND NONE` and `SET nmae = [1][5]` all
+succeed, and on a row kept from before its table became `SCHEMAFULL` they
+clear the old field. For the same reason `UNSET` is never read: `UPDATE
+loose UNSET extra` is how such a field is cleared. A binding assigned in
+`SET` where `uses` takes the assignment for a binding use is not repeated
+in `fields`; anywhere else `SET field = $name` records nothing.
+
+With `--schema` (or a scope's `declared` detail), a compared or assigned
+field that a `SCHEMAFULL` table does not declare fails generation with its
+file and line, by the rule the projected fields follow (the same names resolve, the
+same tables and texts are not checked): ``shop/q.surql:2: compares
+`staton` of `gauge`, which declares no such field`` (or `assigns`). The generated modules
+do not change: `fields` is not written into a part. The limit is the one
+the projected fields have: a row written while its table was schemaless
+still matches a comparison with its old field, and the check refuses such a
+text.
+
+#### A local fixed to one table
+
+`LET $x = type::record('t', …);` makes `$x` a record id of `t` whatever the
+key, on both versions, so a later `FROM $x`, `FROM ONLY $x`, `UPDATE $x`,
+`UPSERT $x` or `DELETE $x` targets `t`, and its projected, compared and
+assigned fields are read against `t` as for a static target. A local
+counts only when nothing can make it hold anything else:
+
+- its one `LET` in the whole text is a top-level statement exactly `LET $x
+  = type::record('t', …);` (or `type::thing`) with a plain string literal
+  for the table, and no `FOR` of the same name exists: a `LET` in a block
+  is the block's own, and a second `LET` replaces the first;
+- the read comes after that statement;
+- it is not a name SurrealDB sets (`$this`, `$parent`, `$value`, `$before`,
+  `$after`, `$auth`, …);
+- the text has no hole (a fill could `LET` it), no closure (whose
+  parameters can shadow it) and no `DEFINE` (a function body sees the
+  caller's `LET`s on 3.3 and not on 4.0).
+
+A binding compared with or assigned to a field of such a target is not a
+binding use: `IF $revision = NONE { DELETE $marker } ELSE { UPSERT $marker
+SET revision = $revision }` assigns `$revision` only when it is not NONE,
+and a `rejectsNone` entry would refuse its codec. The tables a text
+reports (`tables`, `openTargets`) do not change: such a target is still
+open there. A local whose table comes from a parameter, a codec or a
+subquery is not read.
 
 #### Rendering in process
 
@@ -1509,7 +1639,8 @@ nothing:
   expected FROM`);
 - a number of results other than the analyzer's `slots`;
 - a text that does not finish within the timeout (10 seconds, or
-  `timeoutSeconds`): `slow/wait.surql: the text did not finish within 10s on
+  `--verify-timeout <seconds>`, a whole number; `timeoutSeconds` of the
+  function): `slow/wait.surql: the text did not finish within 10s on
   an empty database with no bindings, so its result count was not verified`.
   This is the one outcome whichever way the engine reports the timeout (an
   error for each statement it did not finish, or a refusal of the whole
@@ -1534,10 +1665,14 @@ run one after another on the same database, so one text's writes are visible
 to the next. The engine is started with network targets, `http::` functions
 and embedded scripts denied: an `http::post` fails with `Function 'http::post'
 is not allowed to be executed` and sends nothing, still counting as one result.
-File buckets are refused by the engine's default (no folder is allowed). Each
-text and each schema file may run for 10 seconds; a `sleep` or a long loop
-ends there and is a timeout problem, as above. Nothing else a text can write
-in SurrealQL reaches outside the engine.
+A script function fails with `Embedded functions are not enabled` (the
+`@surrealdb/node` build has no script runtime, so this holds with or without
+the capability), and a file bucket with `File access denied`, by the engine's
+default (no folder is allowed); each still counts as one result and writes
+nothing. Each text and each schema file may run for 10 seconds, or for
+`--verify-timeout <seconds>`; a `sleep` or a long loop ends there and is a
+timeout problem, as above. Nothing else a text can write in SurrealQL reaches
+outside the engine.
 
 `verifyStatements` from `effect-surrealkit/testing` is the same check, for a
 build that renders in process; it takes the scopes as `renderStatementModules`
@@ -1606,6 +1741,47 @@ check`, which ignores `contentMappers` (every `.surql` import is TS2307) and
 refuses `--runExternalCode`, measured on Bun 1.4.4 and 1.4.5. A project
 checked by `bun check` keeps the `statements` command.
 
+Bun reads `bunfig.toml` only from its working directory, not from the
+entry point's directory or any directory above it (measured on Bun 1.4.5).
+With the preload declared there,
+
+```toml
+# bunfig.toml, beside package.json
+preload = ["effect-surrealkit/register"]
+```
+
+`bun app.ts` in that directory loads the plugin, but a process started in a
+subdirectory or anywhere else never does, and the `.surql` import is not
+handled: `SyntaxError: Export named 'readProfile' not found in module
+'…/queries/accounts/readProfile.surql'`. Neither `--config
+<path>/bunfig.toml` nor `--preload effect-surrealkit/register` helps from
+elsewhere, since the package name is resolved from the working directory
+(`error: preload not found "effect-surrealkit/register"`). Start Bun in the
+project, or pass the preload as a path:
+
+```sh
+bun --cwd /path/to/app app.ts
+bun --preload /path/to/app/node_modules/effect-surrealkit/dist/register.js /path/to/app/app.ts
+```
+
+A type-aware linter that does not run content mappers cannot resolve a
+`.surql` import, so every constant imported from one has an unresolved type.
+typescript-eslint 8.72.2 (type information from TypeScript 5.9.3, as for
+`tsc` 5.9, which reports TS2307) reports `no-unsafe-member-access` (`Unsafe
+member access .name on a type that cannot be resolved`) and
+`no-unsafe-assignment` at each use, where `tsc --runExternalCode` from
+TypeScript 7.1 reports nothing. Lint those files without the type-aware
+rules, or keep the `statements` command.
+
+The loaders keep no cache: each process renders every `.surql` file it
+imports, when it first imports it. Importing all 31 files of this package's
+fixtures (six projects, with and without schema documents) took about 95 ms
+on Node 26.7.0, 103 ms on Node 22.21.1 and 58 ms on Bun 1.4.5, about 3 ms a
+file on Node and 2 ms on Bun (median of five fresh processes on an Apple M2
+Ultra, including the first import of `effect`). A consuming project measured
+about 0.7 s for 190 files. Where start-up time matters, the `statements`
+command's modules are ordinary TypeScript and cost nothing to render.
+
 ```jsonc
 // tsconfig.json
 {
@@ -1645,6 +1821,18 @@ compares the options TypeScript passes with the entry written in the checked
 from the written ones, or a project with no `tsconfig.json` refuse every
 file, each with that reason, rather than check with options the run time
 would not use. Write the entry in the `tsconfig.json` that is checked.
+
+One file can lie under the input of two entries: `tsconfig.json` with
+`"input": "sub/queries"` and `sub/tsconfig.json` with `"input": "queries"`.
+`tsc -p .` then renders `sub/queries/<scope>/<name>.surql` with the outer
+entry while the loaders read the nearest `tsconfig.json`, the inner one. When
+the two entries would render the file differently (another schema document,
+say), the type check of either project and every loader refuse that file by
+name (`effect-surrealkit8: two contentMappers entries hold this file in their
+input and render it differently: …`), naming both `tsconfig.json` files.
+Entries that render it the same are accepted. The entries compared are those
+written in each `tsconfig.json` at or above the file's directory, besides the
+one in use.
 
 The mapper runs the analyzer and the renderer only: no engine, no cache
 directory and no worker, so it needs neither `@surrealdb/node` nor a
@@ -3085,24 +3273,41 @@ on the lane the same variables select and exits 1 when its skipped tests
 differ from `test/skips/<lane>.txt` in either direction, printing each name
 that was skipped and is not listed, or is listed and was not skipped. The
 lanes are `embedded`, `binary-<major>.<minor>` for `SURREAL_BIN` (by the
-version the binary reports) and `remote` for `SURREAL_URL`, with `-http`
-appended under `SURREAL_TRANSPORT=http`. `embedded` and `binary-3.3` are
-committed; a lane without a list is reported as unpinned and not compared.
-After a change that is meant to skip or un-skip a test, rewrite the list from
-a passing run and commit it with the change:
+version the binary reports) and `remote-<major>.<minor>` for `SURREAL_URL` (by
+the version the server answers on `GET /version`), with `-http` appended
+under `SURREAL_TRANSPORT=http`. Seven lanes are pinned: `embedded`,
+`binary-3.3`, `binary-3.3-http`, `remote-3.3`, `remote-3.3-http`,
+`remote-4.0` and `remote-4.0-http`. Every run prints the pinned lanes; a
+lane without a list (`binary-4.0`, say) is reported as unpinned and not
+compared, and a list is written only from a passing run. After a change that
+is meant to skip or un-skip a test, rewrite the list from a passing run and
+commit it with the change:
 
 ```sh
 bun run test:skips                                                   # embedded
 SURREAL_BIN=/usr/local/bin/surreal bun run test:skips                # binary-3.3 with a 3.3 binary
+SURREAL_BIN=/usr/local/bin/surreal SURREAL_TRANSPORT=http bun run test:skips # binary-3.3-http
+SURREAL_URL=ws://127.0.0.1:8000/rpc bun run test:skips               # remote-4.0 against a 4.0 server
+SURREAL_URL=http://127.0.0.1:8000/rpc SURREAL_TRANSPORT=http bun run test:skips # remote-4.0-http
 UPDATE_SKIPS=1 SURREAL_BIN=/usr/local/bin/surreal bun run test:skips # rewrites test/skips/binary-3.3.txt
 ```
+
+A test that races a write against a statement sends the write with
+`Engine.aside` (`test/engine.ts`), on a connection of its own, and fails when
+the write lands after the statement has ended. Over HTTP the SDK sends
+through `fetch`, and on Node 26.7.0 (undici 8.9.0) a request to an origin can
+wait until another request to it has been answered, so a write sent through
+the client under test may not be concurrent at all; Node 22 and 24 send it at
+once.
 
 The content mapper has a suite of its own, because it needs TypeScript 7.1
 and the package's type check stays on TypeScript 5.9. `test/mapper-fixtures`
 pins `typescript@7.1.0-beta`, and `bun run test:mapper` (after `bun run
 build`, and `npm ci` in that directory) type-checks its `accepts` project with
 `tsc --runExternalCode`, checks that `rejects` reports exactly
-`rejects/expected.txt`, and runs `accepts/src/run.ts` under the Node hook and
+`rejects/expected.txt`, that `nested` and `nested/sub` (one file under two
+entries that render it differently) each report `nested/expected.txt` and
+that both loaders refuse that file, and runs `accepts/src/run.ts` under the Node hook and
 the Bun plugin against the texts the mapper gave the type check. It then
 asks the mapper process for every authored fixture, with and without its
 schema, and loads each under the Node hook and the Bun plugin as the same

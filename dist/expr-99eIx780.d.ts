@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 import { DateTime, Decimal, Duration, Uuid } from 'surrealdb';
 import { e as FunctionDescriptor } from './table-iF6L7xrW.js';
-import { B as BindingUses } from './uses-BXJXI3if.js';
+import { B as BindingUses } from './uses-D--Wj5lt.js';
 
 /**
  * A statement: one request to SurrealDB, described as a value.

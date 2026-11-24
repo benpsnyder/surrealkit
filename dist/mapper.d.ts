@@ -219,9 +219,10 @@ declare const surqlFileAt: (path: string, sql: string) => SurqlFile;
 /**
  * The module of the `.surql` file at `path` with text `sql` in `project`.
  * A project refused as a whole, a file outside the layout the command reads,
- * and a schema document that cannot be read are each a problem of the file,
- * which then exports nothing: nothing is rendered that the command or the
- * run time would not render the same way.
+ * a schema document that cannot be read, and a file that another entry also
+ * holds in its input and renders differently are each a problem of the
+ * file, which then exports nothing: nothing is rendered that the command or
+ * the run time would not render the same way.
  */
 declare const surqlModuleIn: (project: SurqlProject, path: string, sql: string) => SurqlModule;
 /** A `.surql` file a loader cannot turn into a module. */

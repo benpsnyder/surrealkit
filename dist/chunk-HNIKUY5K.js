@@ -433,11 +433,88 @@ var holeEnd = (sql, at, holes) => {
 };
 var lex2 = (sql, holes) => lex(sql, (start) => holeEnd(sql, start, holes));
 
-// src/analyze/lock.ts
+// src/analyze/locals.ts
 var upper = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
 var isPunct = (token, char) => token?.kind === "punct" && token.value === char;
 var isOpen = (token) => isPunct(token, "(") || isPunct(token, "[") || isPunct(token, "{");
 var isClose = (token) => isPunct(token, ")") || isPunct(token, "]") || isPunct(token, "}");
+var adjacent = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
+var isPlainString = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
+var ENGINE_NAMES = /* @__PURE__ */ new Set([
+  "auth",
+  "access",
+  "session",
+  "token",
+  "this",
+  "self",
+  "parent",
+  "value",
+  "input",
+  "before",
+  "after",
+  "event"
+]);
+var recordLocals = (tokens) => {
+  const out = /* @__PURE__ */ new Map();
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind === "hole") return out;
+    if (isPunct(token, "|") && tokens[i + 1]?.kind === "param") return out;
+    if (upper(token) === "DEFINE" && !isPunct(tokens[i - 1], ".") && !isPunct(tokens[i - 1], ":") && !isPunct(tokens[i + 1], ":"))
+      return out;
+  }
+  const lets = /* @__PURE__ */ new Map();
+  const loops = /* @__PURE__ */ new Set();
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.kind !== "param") continue;
+    const before = upper(tokens[i - 1]);
+    if (before === "LET")
+      lets.set(token.value, [...lets.get(token.value) ?? [], i]);
+    else if (before === "FOR") loops.add(token.value);
+  }
+  const depth = [];
+  let level = 0;
+  for (const token of tokens) {
+    if (isClose(token)) level--;
+    depth.push(level);
+    if (isOpen(token)) level++;
+  }
+  const closing = (at) => {
+    let d = 0;
+    for (let j = at; j < tokens.length; j++) {
+      if (isOpen(tokens[j])) d++;
+      else if (isClose(tokens[j]) && --d === 0) return j;
+    }
+    return tokens.length;
+  };
+  for (const [name, sites] of lets) {
+    if (sites.length !== 1 || loops.has(name) || ENGINE_NAMES.has(name))
+      continue;
+    const at = sites[0];
+    const let_ = at - 1;
+    if (depth[let_] !== 0 || let_ > 0 && !isPunct(tokens[let_ - 1], ";"))
+      continue;
+    const fn = tokens[at + 5];
+    if (!isPunct(tokens[at + 1], "=") || isPunct(tokens[at + 2], "=") || tokens[at + 2]?.kind !== "word" || tokens[at + 2]?.value.toLowerCase() !== "type" || !isPunct(tokens[at + 3], ":") || !isPunct(tokens[at + 4], ":") || !adjacent(tokens[at + 3], tokens[at + 4]) || fn?.kind !== "word" || !["record", "thing"].includes(fn.value.toLowerCase()) || !isPunct(tokens[at + 6], "(") || !isPlainString(tokens[at + 7]) || !isPunct(tokens[at + 8], ","))
+      continue;
+    const end = closing(at + 6) + 1;
+    if (!isPunct(tokens[end], ";")) continue;
+    const table = tokens[at + 7].value;
+    for (let j = end + 1; j < tokens.length; j++) {
+      const read = tokens[j];
+      if (read.kind === "param" && read.value === name)
+        out.set(read, table);
+    }
+  }
+  return out;
+};
+
+// src/analyze/lock.ts
+var upper2 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct2 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen2 = (token) => isPunct2(token, "(") || isPunct2(token, "[") || isPunct2(token, "{");
+var isClose2 = (token) => isPunct2(token, ")") || isPunct2(token, "]") || isPunct2(token, "}");
 var EXCLUDED = /* @__PURE__ */ new Set([
   "GROUP",
   "SPLIT",
@@ -449,35 +526,72 @@ var AFTER = /* @__PURE__ */ new Set(["TEMPFILES", "EXPLAIN", "FULL"]);
 var lockOf = (tokens, from, end) => {
   const level = [];
   for (let j = from; j < end; j++) {
-    if (isOpen(tokens[j])) {
+    if (isOpen2(tokens[j])) {
       let depth = 0;
       for (; j < end; j++) {
-        if (isOpen(tokens[j])) depth++;
-        else if (isClose(tokens[j]) && --depth === 0) break;
+        if (isOpen2(tokens[j])) depth++;
+        else if (isClose2(tokens[j]) && --depth === 0) break;
       }
       continue;
     }
-    if (!isPunct(tokens[j - 1], ".") && !isPunct(tokens[j - 1], ":"))
+    if (!isPunct2(tokens[j - 1], ".") && !isPunct2(tokens[j - 1], ":"))
       level.push(j);
   }
   const at = level.findIndex(
-    (j, k) => upper(tokens[j]) === "FOR" && level[k + 1] === j + 1 && upper(tokens[j + 1]) === "UPDATE"
+    (j, k) => upper2(tokens[j]) === "FOR" && level[k + 1] === j + 1 && upper2(tokens[j + 1]) === "UPDATE"
   );
   if (at === -1) return { kind: "none" };
   const index = level[at];
   for (const j of level.slice(at + 2))
-    if (!AFTER.has(upper(tokens[j]))) return { kind: "refused" };
+    if (!AFTER.has(upper2(tokens[j]))) return { kind: "refused" };
   for (const j of level.slice(0, at))
-    if (EXCLUDED.has(upper(tokens[j]))) return { kind: "refused" };
+    if (EXCLUDED.has(upper2(tokens[j]))) return { kind: "refused" };
   return { kind: "locked", at: index };
 };
 
+// src/analyze/statements.ts
+var upper3 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct3 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen3 = (token) => isPunct3(token, "(") || isPunct3(token, "[") || isPunct3(token, "{");
+var isClose3 = (token) => isPunct3(token, ")") || isPunct3(token, "]") || isPunct3(token, "}");
+var closingOf = (tokens, at) => {
+  let depth = 0;
+  for (let j = at; j < tokens.length; j++) {
+    if (isOpen3(tokens[j])) depth++;
+    else if (isClose3(tokens[j])) {
+      depth--;
+      if (depth === 0) return j;
+    }
+  }
+  return tokens.length;
+};
+var statementsIn = (tokens, start, stop) => {
+  const out = [];
+  let from = start;
+  for (let i = start; i <= stop; i++) {
+    const token = tokens[i];
+    if (i < stop && isOpen3(token)) {
+      i = closingOf(tokens, i);
+      continue;
+    }
+    if (i < stop && !isPunct3(token, ";")) continue;
+    let first = from;
+    if (upper3(tokens[first]) === "LET" && tokens[first + 1]?.kind === "param" && isPunct3(tokens[first + 2], "=") && !isPunct3(tokens[first + 3], "="))
+      first += 3;
+    else if (upper3(tokens[first]) === "RETURN") first += 1;
+    if (from < i) out.push({ start: from, first, end: i });
+    from = i + 1;
+  }
+  return out;
+};
+var queryAt = (tokens, statement, words) => statement.first < statement.end && words.has(upper3(tokens[statement.first]));
+
 // src/analyze/projections.ts
-var upper2 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
-var isPunct2 = (token, char) => token?.kind === "punct" && token.value === char;
-var isOpen2 = (token) => isPunct2(token, "(") || isPunct2(token, "[") || isPunct2(token, "{");
-var isClose2 = (token) => isPunct2(token, ")") || isPunct2(token, "]") || isPunct2(token, "}");
-var isPlainString = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
+var upper4 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct4 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen4 = (token) => isPunct4(token, "(") || isPunct4(token, "[") || isPunct4(token, "{");
+var isClose4 = (token) => isPunct4(token, ")") || isPunct4(token, "]") || isPunct4(token, "}");
+var isPlainString2 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
 var AFTER_TARGET = /* @__PURE__ */ new Set([
   "WHERE",
   "SPLIT",
@@ -494,13 +608,13 @@ var AFTER_TARGET = /* @__PURE__ */ new Set([
 ]);
 var VALUES = /* @__PURE__ */ new Set(["NONE", "NULL", "TRUE", "FALSE"]);
 var EXACT_VALUES = /* @__PURE__ */ new Set(["NaN", "Infinity"]);
-var analyzeProjections = (tokens) => {
+var analyzeProjections = (tokens, locals = /* @__PURE__ */ new Map()) => {
   const found = /* @__PURE__ */ new Map();
   const closing = (at) => {
     let depth = 0;
     for (let j = at; j < tokens.length; j++) {
-      if (isOpen2(tokens[j])) depth++;
-      else if (isClose2(tokens[j])) {
+      if (isOpen4(tokens[j])) depth++;
+      else if (isClose4(tokens[j])) {
         depth--;
         if (depth === 0) return j;
       }
@@ -516,57 +630,71 @@ var analyzeProjections = (tokens) => {
   };
   const targetTable = (at, end, lock) => {
     let j = at;
-    if (upper2(tokens[j]) === "ONLY") j++;
+    if (upper4(tokens[j]) === "ONLY") j++;
     const token = tokens[j];
     let table;
     let record2 = false;
-    if (token?.kind === "word" && token.value.toLowerCase() === "type" && isPunct2(tokens[j + 1], ":")) {
+    const local = token === void 0 ? void 0 : locals.get(token);
+    if (local !== void 0) {
+      table = local;
+      record2 = true;
+      j++;
+    } else if (token?.kind === "word" && token.value.toLowerCase() === "type" && isPunct4(tokens[j + 1], ":")) {
       const fn = tokens[j + 3];
       const name = fn?.kind === "word" ? fn.value.toLowerCase() : "";
-      if (!isPunct2(tokens[j + 2], ":") || !["record", "thing", "table"].includes(name) || !isPunct2(tokens[j + 4], "(") || !isPlainString(tokens[j + 5]) || !isPunct2(tokens[j + 6], name === "table" ? ")" : ","))
+      if (!isPunct4(tokens[j + 2], ":") || !["record", "thing", "table"].includes(name) || !isPunct4(tokens[j + 4], "(") || !isPlainString2(tokens[j + 5]) || !isPunct4(tokens[j + 6], name === "table" ? ")" : ","))
         return void 0;
       table = tokens[j + 5].value;
       record2 = name !== "table";
       j = closing(j + 4) + 1;
     } else {
       table = bareName(j);
-      if (table === void 0 || AFTER_TARGET.has(upper2(token)))
+      if (table === void 0 || AFTER_TARGET.has(upper4(token)))
         return void 0;
       j++;
-      if (isPunct2(tokens[j], ":")) {
+      if (isPunct4(tokens[j], ":")) {
         const key = tokens[j + 1];
-        if (key === void 0 || key.kind === "punct" && !isOpen2(key))
+        if (key === void 0 || key.kind === "punct" && !isOpen4(key))
           return void 0;
-        j = isOpen2(key) ? closing(j + 1) + 1 : j + 2;
+        j = isOpen4(key) ? closing(j + 1) + 1 : j + 2;
         record2 = true;
       }
     }
     if (lock !== void 0 && !record2) return void 0;
     const next = tokens[j];
-    return j >= end || j === lock || isPunct2(next, ";") || AFTER_TARGET.has(upper2(next)) ? table : void 0;
+    return j >= end || j === lock || isPunct4(next, ";") || AFTER_TARGET.has(upper4(next)) ? table : void 0;
   };
   const record = (table, field, line) => {
     found.set(JSON.stringify([line, table, field]), { table, field, line });
   };
-  const nested = (start2, stop) => {
-    for (let i = start2; i < stop; i++) {
-      if (!isOpen2(tokens[i])) continue;
+  const nested = (start, stop) => {
+    for (let i = start; i < stop; i++) {
+      if (!isOpen4(tokens[i])) continue;
       const close = closing(i);
-      if (isPunct2(tokens[i], "(") && upper2(tokens[i + 1]) === "SELECT")
+      if (isPunct4(tokens[i], "(") && upper4(tokens[i + 1]) === "SELECT")
         select(i + 1, close);
+      else if (isPunct4(tokens[i], "{")) statements(i + 1, close);
       else nested(i + 1, close);
       i = close;
+    }
+  };
+  const SELECT = /* @__PURE__ */ new Set(["SELECT"]);
+  const statements = (start, stop) => {
+    for (const statement of statementsIn(tokens, start, stop)) {
+      if (queryAt(tokens, statement, SELECT))
+        select(statement.first, statement.end);
+      else nested(statement.start, statement.end);
     }
   };
   const select = (from, end) => {
     nested(from + 1, end);
     const froms = [];
     for (let j = from + 1; j < end; j++) {
-      if (isOpen2(tokens[j])) {
+      if (isOpen4(tokens[j])) {
         j = closing(j);
         continue;
       }
-      if (upper2(tokens[j]) === "FROM" && !isPunct2(tokens[j - 1], ".") && !isPunct2(tokens[j - 1], ":"))
+      if (upper4(tokens[j]) === "FROM" && !isPunct4(tokens[j - 1], ".") && !isPunct4(tokens[j - 1], ":"))
         froms.push(j);
     }
     if (froms.length !== 1) return;
@@ -574,8 +702,8 @@ var analyzeProjections = (tokens) => {
     const lock = lockOf(tokens, from, end);
     if (lock.kind === "refused") return;
     for (let j = at + 1; j < end; j++) {
-      if (isOpen2(tokens[j])) j = closing(j);
-      else if (upper2(tokens[j]) === "PARALLEL" && !isPunct2(tokens[j - 1], ".") && !isPunct2(tokens[j - 1], ":"))
+      if (isOpen4(tokens[j])) j = closing(j);
+      else if (upper4(tokens[j]) === "PARALLEL" && !isPunct4(tokens[j - 1], ".") && !isPunct4(tokens[j - 1], ":"))
         return;
     }
     const table = targetTable(
@@ -585,46 +713,29 @@ var analyzeProjections = (tokens) => {
     );
     if (table === void 0) return;
     const fields = [];
-    if (upper2(tokens[from + 1]) === "VALUE") {
+    if (upper4(tokens[from + 1]) === "VALUE") {
       const name = at === from + 3 ? bareName(from + 2) : void 0;
       if (name !== void 0)
         record(table, name, tokens[from + 2].line);
       return;
     }
-    let start2 = from + 1;
+    let start = from + 1;
     for (let k = from + 1; k <= at; k++) {
-      if (k < at && isOpen2(tokens[k])) {
+      if (k < at && isOpen4(tokens[k])) {
         k = closing(k);
         continue;
       }
-      if (k < at && upper2(tokens[k]) === "OMIT") return;
-      if (k !== at && !isPunct2(tokens[k], ",")) continue;
-      const item = tokens[start2];
-      const name = k - start2 === 1 ? isPunct2(item, "*") ? "*" : bareName(start2) : k - start2 === 3 && upper2(tokens[start2 + 1]) === "AS" && bareName(start2 + 2) !== void 0 ? bareName(start2) : void 0;
+      if (k < at && upper4(tokens[k]) === "OMIT") return;
+      if (k !== at && !isPunct4(tokens[k], ",")) continue;
+      const item = tokens[start];
+      const name = k - start === 1 ? isPunct4(item, "*") ? "*" : bareName(start) : k - start === 3 && upper4(tokens[start + 1]) === "AS" && bareName(start + 2) !== void 0 ? bareName(start) : void 0;
       if (name !== void 0)
         fields.push({ field: name, line: item.line });
-      start2 = k + 1;
+      start = k + 1;
     }
     for (const { field, line } of fields) record(table, field, line);
   };
-  let start = 0;
-  for (let i = 0; i <= tokens.length; i++) {
-    const token = tokens[i];
-    if (token !== void 0 && isOpen2(token)) {
-      i = closing(i);
-      continue;
-    }
-    if (token !== void 0 && !isPunct2(token, ";")) continue;
-    let first = start;
-    if (upper2(tokens[first]) === "LET" && tokens[first + 1]?.kind === "param" && isPunct2(tokens[first + 2], "=") && !isPunct2(tokens[first + 3], "="))
-      first += 3;
-    else if (upper2(tokens[first]) === "RETURN") first += 1;
-    if (first < i) {
-      if (upper2(tokens[first]) === "SELECT") select(first, i);
-      else nested(start, i);
-    }
-    start = i + 1;
-  }
+  statements(0, tokens.length);
   return [...found.values()].sort(
     (a, b) => a.line !== b.line ? a.line - b.line : a.table !== b.table ? a.table < b.table ? -1 : 1 : a.field < b.field ? -1 : a.field > b.field ? 1 : 0
   );
@@ -683,14 +794,14 @@ var CLAUSES = /* @__PURE__ */ new Set([
   "END"
 ]);
 var VALUE_WORDS = /* @__PURE__ */ new Set(["RETURN", "THEN", "ELSE"]);
-var upper3 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
-var isPunct3 = (token, char) => token?.kind === "punct" && token.value === char;
-var isOpen3 = (token) => isPunct3(token, "(") || isPunct3(token, "[") || isPunct3(token, "{");
-var isClose3 = (token) => isPunct3(token, ")") || isPunct3(token, "]") || isPunct3(token, "}");
+var upper5 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct5 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen5 = (token) => isPunct5(token, "(") || isPunct5(token, "[") || isPunct5(token, "{");
+var isClose5 = (token) => isPunct5(token, ")") || isPunct5(token, "]") || isPunct5(token, "}");
 var isName = (token) => token?.kind === "word" && /^[A-Za-z_]/u.test(token.value) || token?.kind === "ident";
-var isPlainString2 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
-var adjacent = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
-var analyzeTargets = (tokens) => {
+var isPlainString3 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
+var adjacent2 = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
+var analyzeTargets = (tokens, locals) => {
   const readAt = /* @__PURE__ */ new Map();
   const writtenAt = /* @__PURE__ */ new Map();
   const functionsAt = /* @__PURE__ */ new Map();
@@ -704,33 +815,33 @@ var analyzeTargets = (tokens) => {
   const pastGroup = (at) => {
     let depth = 0;
     for (let j = at; j < tokens.length; j++) {
-      if (isOpen3(tokens[j])) depth++;
-      else if (isClose3(tokens[j])) {
+      if (isOpen5(tokens[j])) depth++;
+      else if (isClose5(tokens[j])) {
         depth--;
         if (depth === 0) return j + 1;
       }
     }
     return tokens.length;
   };
-  const pathAt = (at) => isPunct3(tokens[at], ":") && isPunct3(tokens[at + 1], ":") && adjacent(tokens[at], tokens[at + 1]);
-  const member = (at) => isPunct3(tokens[at - 1], ".") || isPunct3(tokens[at - 1], ":");
+  const pathAt = (at) => isPunct5(tokens[at], ":") && isPunct5(tokens[at + 1], ":") && adjacent2(tokens[at], tokens[at + 1]);
+  const member = (at) => isPunct5(tokens[at - 1], ".") || isPunct5(tokens[at - 1], ":");
   const statementPosition = (at) => {
     const previous = tokens[at - 1];
     if (previous === void 0) return true;
-    if (isPunct3(previous, ";") || isPunct3(previous, "{") || isPunct3(previous, "("))
+    if (isPunct5(previous, ";") || isPunct5(previous, "{") || isPunct5(previous, "("))
       return true;
-    if (VALUE_WORDS.has(upper3(previous))) return true;
-    return isPunct3(previous, "=") && tokens[at - 2]?.kind === "param" && upper3(tokens[at - 3]) === "LET";
+    if (VALUE_WORDS.has(upper5(previous))) return true;
+    return isPunct5(previous, "=") && tokens[at - 2]?.kind === "param" && upper5(tokens[at - 3]) === "LET";
   };
   const statementEnd = (at) => {
     for (let j = at; j < tokens.length; j++) {
       const token = tokens[j];
-      if (isPunct3(token, ";") || isClose3(token)) return j;
-      if (isOpen3(token)) j = pastGroup(j) - 1;
+      if (isPunct5(token, ";") || isClose5(token)) return j;
+      if (isOpen5(token)) j = pastGroup(j) - 1;
     }
     return tokens.length;
   };
-  const typeCall = (at, fn) => tokens[at]?.kind === "word" && tokens[at]?.value.toLowerCase() === "type" && pathAt(at + 1) && tokens[at + 3]?.kind === "word" && tokens[at + 3]?.value.toLowerCase() === fn && isPunct3(tokens[at + 4], "(") ? at + 4 : -1;
+  const typeCall = (at, fn) => tokens[at]?.kind === "word" && tokens[at]?.value.toLowerCase() === "type" && pathAt(at + 1) && tokens[at + 3]?.kind === "word" && tokens[at + 3]?.value.toLowerCase() === fn && isPunct5(tokens[at + 4], "(") ? at + 4 : -1;
   const typeTarget = (at, fns) => {
     for (const fn of fns) {
       const paren = typeCall(at, fn);
@@ -738,7 +849,7 @@ var analyzeTargets = (tokens) => {
       const literal = tokens[paren + 1];
       const after = tokens[paren + 2];
       const next = pastGroup(paren);
-      const certain = isPlainString2(literal) && (fn === "table" ? isPunct3(after, ")") : isPunct3(after, ","));
+      const certain = isPlainString3(literal) && (fn === "table" ? isPunct5(after, ")") : isPunct5(after, ","));
       return certain ? {
         kind: "table",
         name: literal.value,
@@ -750,6 +861,9 @@ var analyzeTargets = (tokens) => {
   };
   const target = (at, subqueries) => {
     const token = tokens[at];
+    const local = token === void 0 ? void 0 : locals?.get(token);
+    if (local !== void 0)
+      return { kind: "table", name: local, next: at + 1, record: true };
     const typed = typeTarget(at, ["record", "thing"]);
     if (typed !== void 0) return typed;
     const table = typeTarget(at, ["table"]);
@@ -761,19 +875,19 @@ var analyzeTargets = (tokens) => {
       }
       return table;
     }
-    if (isPunct3(token, "(")) {
-      return subqueries && SUBQUERY.has(upper3(tokens[at + 1])) ? { kind: "subquery", next: pastGroup(at) } : { kind: "open" };
+    if (isPunct5(token, "(")) {
+      return subqueries && SUBQUERY.has(upper5(tokens[at + 1])) ? { kind: "subquery", next: pastGroup(at) } : { kind: "open" };
     }
     if (!isName(token)) return { kind: "open" };
-    if (token.kind === "word" && CLAUSES.has(upper3(token)))
+    if (token.kind === "word" && CLAUSES.has(upper5(token)))
       return { kind: "open" };
     const colon = tokens[at + 1];
-    if (isPunct3(colon, ":") && !isPunct3(tokens[at + 2], ":")) {
+    if (isPunct5(colon, ":") && !isPunct5(tokens[at + 2], ":")) {
       const key = at + 2;
       const keyToken = tokens[key];
       if (keyToken === void 0) return { kind: "open" };
-      const next = isOpen3(keyToken) ? pastGroup(key) : key + 1;
-      if (!isOpen3(keyToken) && keyToken.kind === "punct")
+      const next = isOpen5(keyToken) ? pastGroup(key) : key + 1;
+      if (!isOpen5(keyToken) && keyToken.kind === "punct")
         return { kind: "open" };
       return { kind: "table", name: token.value, next, record: true };
     }
@@ -786,11 +900,11 @@ var analyzeTargets = (tokens) => {
   };
   const ends = (at, extra = []) => {
     const token = tokens[at];
-    return token === void 0 || isPunct3(token, ";") || isClose3(token) || CLAUSES.has(upper3(token)) || extra.includes(upper3(token));
+    return token === void 0 || isPunct5(token, ";") || isClose5(token) || CLAUSES.has(upper5(token)) || extra.includes(upper5(token));
   };
   const targetList = (at, into, subqueries, lock) => {
     let j = at;
-    if (upper3(tokens[j]) === "ONLY") j++;
+    if (upper5(tokens[j]) === "ONLY") j++;
     const found = [];
     for (; ; ) {
       const item = target(j, subqueries);
@@ -803,7 +917,7 @@ var analyzeTargets = (tokens) => {
         for (let k = j; k < item.next; k++) consumed.add(k);
       }
       j = item.next;
-      if (isPunct3(tokens[j], ",")) {
+      if (isPunct5(tokens[j], ",")) {
         j++;
         continue;
       }
@@ -819,11 +933,11 @@ var analyzeTargets = (tokens) => {
     const end = statementEnd(at + 1);
     const froms = [];
     for (let j = at + 1; j < end; j++) {
-      if (isOpen3(tokens[j])) {
+      if (isOpen5(tokens[j])) {
         j = pastGroup(j) - 1;
         continue;
       }
-      if (upper3(tokens[j]) === "FROM" && !member(j)) froms.push(j);
+      if (upper5(tokens[j]) === "FROM" && !member(j)) froms.push(j);
     }
     if (froms.length !== 1) {
       open = true;
@@ -844,9 +958,9 @@ var analyzeTargets = (tokens) => {
   const write = (at, word) => {
     let j = at + 1;
     if (word === "INSERT") {
-      while (upper3(tokens[j]) === "IGNORE" || upper3(tokens[j]) === "RELATION")
+      while (upper5(tokens[j]) === "IGNORE" || upper5(tokens[j]) === "RELATION")
         j++;
-      if (upper3(tokens[j]) !== "INTO") {
+      if (upper5(tokens[j]) !== "INTO") {
         open = true;
         return;
       }
@@ -860,22 +974,22 @@ var analyzeTargets = (tokens) => {
         } else open = true;
         return;
       }
-      if (isName(token) && !isPunct3(tokens[j + 1], ".") && !isPunct3(tokens[j + 1], ":")) {
+      if (isName(token) && !isPunct5(tokens[j + 1], ".") && !isPunct5(tokens[j + 1], ":")) {
         consumed.add(j);
         add(writtenAt, token.value, token);
       } else open = true;
       return;
     }
     if (word === "RELATE") {
-      if (upper3(tokens[j]) === "ONLY") j++;
+      if (upper5(tokens[j]) === "ONLY") j++;
       const end = statementEnd(j);
       let arrow = -1;
       for (let k = j; k < end; k++) {
-        if (isOpen3(tokens[k])) {
+        if (isOpen5(tokens[k])) {
           k = pastGroup(k) - 1;
           continue;
         }
-        if (isPunct3(tokens[k], "-") && isPunct3(tokens[k + 1], ">") && adjacent(tokens[k], tokens[k + 1])) {
+        if (isPunct5(tokens[k], "-") && isPunct5(tokens[k + 1], ">") && adjacent2(tokens[k], tokens[k + 1])) {
           arrow = k;
           break;
         }
@@ -888,20 +1002,20 @@ var analyzeTargets = (tokens) => {
       consumed.add(arrow + 1);
       const edge = target(arrow + 2, false);
       const after = edge.kind === "table" ? edge.next : -1;
-      if (edge.kind === "table" && isPunct3(tokens[after], "-") && isPunct3(tokens[after + 1], ">") && adjacent(tokens[after], tokens[after + 1])) {
+      if (edge.kind === "table" && isPunct5(tokens[after], "-") && isPunct5(tokens[after + 1], ">") && adjacent2(tokens[after], tokens[after + 1])) {
         for (let k = arrow + 2; k < after + 2; k++) consumed.add(k);
         add(writtenAt, edge.name, tokens[arrow + 2]);
       } else open = true;
       return;
     }
-    if (word === "DELETE" && upper3(tokens[j]) === "FROM") j++;
+    if (word === "DELETE" && upper5(tokens[j]) === "FROM") j++;
     targetList(j, writtenAt, false);
   };
   const definition = (at) => {
-    const kind = upper3(tokens[at + 1]);
+    const kind = upper5(tokens[at + 1]);
     let j = at + 2;
-    if (upper3(tokens[j]) === "OVERWRITE") j++;
-    if (upper3(tokens[j]) === "IF" && upper3(tokens[j + 1]) === "NOT" && upper3(tokens[j + 2]) === "EXISTS")
+    if (upper5(tokens[j]) === "OVERWRITE") j++;
+    if (upper5(tokens[j]) === "IF" && upper5(tokens[j + 1]) === "NOT" && upper5(tokens[j + 2]) === "EXISTS")
       j += 3;
     if (kind === "TABLE" && isName(tokens[j]))
       definedTables.add(tokens[j].value);
@@ -926,9 +1040,9 @@ var analyzeTargets = (tokens) => {
     const a = tokens[at];
     const b = tokens[at + 1];
     const c = tokens[at + 2];
-    if (isPunct3(a, "-") && isPunct3(b, ">") && adjacent(a, b)) return at + 2;
-    if (isPunct3(a, "<") && isPunct3(b, "-") && adjacent(a, b)) {
-      return isPunct3(c, ">") && adjacent(b, c) ? at + 3 : at + 2;
+    if (isPunct5(a, "-") && isPunct5(b, ">") && adjacent2(a, b)) return at + 2;
+    if (isPunct5(a, "<") && isPunct5(b, "-") && adjacent2(a, b)) {
+      return isPunct5(c, ">") && adjacent2(b, c) ? at + 3 : at + 2;
     }
     return -1;
   };
@@ -938,11 +1052,11 @@ var analyzeTargets = (tokens) => {
       add(readAt, token.value, token);
       return;
     }
-    if (!isPunct3(token, "(")) {
+    if (!isPunct5(token, "(")) {
       open = true;
       return;
     }
-    if (SUBQUERY.has(upper3(tokens[at + 1]))) return;
+    if (SUBQUERY.has(upper5(tokens[at + 1]))) return;
     let j = at + 1;
     const names = [];
     for (; ; ) {
@@ -953,7 +1067,7 @@ var analyzeTargets = (tokens) => {
       }
       names.push(name);
       j++;
-      if (isPunct3(tokens[j], ",")) {
+      if (isPunct5(tokens[j], ",")) {
         j++;
         continue;
       }
@@ -970,7 +1084,7 @@ var analyzeTargets = (tokens) => {
     const token = tokens[i];
     if (token.kind === "word") {
       const word = token.value.toUpperCase();
-      if (IGNORED.has(word) && statementPosition(i) && !isPunct3(tokens[i + 1], ":")) {
+      if (IGNORED.has(word) && statementPosition(i) && !isPunct5(tokens[i + 1], ":")) {
         if (word === "DEFINE") definition(i);
         i = statementEnd(i) - 1;
         continue;
@@ -981,7 +1095,7 @@ var analyzeTargets = (tokens) => {
         i = fn.next - 1;
         continue;
       }
-      if (member(i) || isPunct3(tokens[i + 1], ":")) {
+      if (member(i) || isPunct5(tokens[i + 1], ":")) {
         const typed = typeTarget(i, ["record", "thing", "table"]);
         if (typed?.kind === "table") {
           add(readAt, typed.name, token);
@@ -992,11 +1106,11 @@ var analyzeTargets = (tokens) => {
         select(i);
         continue;
       }
-      if (word === "UPDATE" && upper3(tokens[i - 1]) === "FOR") continue;
+      if (word === "UPDATE" && upper5(tokens[i - 1]) === "FOR") continue;
       if (WRITES.has(word)) {
-        if (statementPosition(i) || isPunct3(tokens[i - 1], "[")) {
+        if (statementPosition(i) || isPunct5(tokens[i - 1], "[")) {
           write(i, word);
-        } else if (!(tokens[i + 1]?.kind === "punct" || upper3(tokens[i + 1]) === "FROM" || upper3(tokens[i + 1]) === "AS")) {
+        } else if (!(tokens[i + 1]?.kind === "punct" || upper5(tokens[i + 1]) === "FROM" || upper5(tokens[i + 1]) === "AS")) {
           open = true;
         }
       }
@@ -1004,7 +1118,7 @@ var analyzeTargets = (tokens) => {
     }
     if (token.kind === "punct") {
       const past = arrowEnd(i);
-      if (past !== -1 && !isPunct3(tokens[i - 1], "|")) {
+      if (past !== -1 && !isPunct5(tokens[i - 1], "|")) {
         graphStep(past);
         i = past - 1;
       }
@@ -1025,12 +1139,12 @@ var analyzeTargets = (tokens) => {
 };
 
 // src/analyze/uses.ts
-var upper4 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
-var isPunct4 = (token, char) => token?.kind === "punct" && token.value === char;
-var isOpen4 = (token) => isPunct4(token, "(") || isPunct4(token, "[") || isPunct4(token, "{");
-var isClose4 = (token) => isPunct4(token, ")") || isPunct4(token, "]") || isPunct4(token, "}");
-var adjacent2 = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
-var isPlainString3 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
+var upper6 = (token) => token?.kind === "word" ? token.value.toUpperCase() : "";
+var isPunct6 = (token, char) => token?.kind === "punct" && token.value === char;
+var isOpen6 = (token) => isPunct6(token, "(") || isPunct6(token, "[") || isPunct6(token, "{");
+var isClose6 = (token) => isPunct6(token, ")") || isPunct6(token, "]") || isPunct6(token, "}");
+var adjacent3 = (a, b) => a !== void 0 && b !== void 0 && a.end === b.start;
+var isPlainString4 = (token) => token?.kind === "string" && (token.prefix === void 0 || token.prefix === "s");
 var QUERIES = /* @__PURE__ */ new Set([
   "SELECT",
   "CREATE",
@@ -1082,73 +1196,76 @@ var localNames = (tokens) => {
     if (token.kind !== "param") return;
     const before = tokens[i - 1];
     const after = tokens[i + 1];
-    if (upper4(before) === "LET" || upper4(before) === "FOR" || isPunct4(before, "|") || isPunct4(after, "|") || isPunct4(after, ":"))
+    if (upper6(before) === "LET" || upper6(before) === "FOR" || isPunct6(before, "|") || isPunct6(after, "|") || isPunct6(after, ":"))
       names.add(token.value);
   });
   return names;
 };
-var analyzeUses = (tokens, free) => {
+var analyzeUses = (tokens, free, locals = /* @__PURE__ */ new Map()) => {
   const local = localNames(tokens);
-  const bindable = new Set(free.filter((name) => !local.has(name)));
+  const bindable = new Set(free.filter((name2) => !local.has(name2)));
   const found = /* @__PURE__ */ new Map();
   const record = (token, use) => {
-    if (token?.kind !== "param" || !bindable.has(token.value)) return;
+    if (token?.kind !== "param" || !bindable.has(token.value)) return false;
     const uses2 = found.get(token.value) ?? /* @__PURE__ */ new Map();
     uses2.set(JSON.stringify(use), use);
     found.set(token.value, uses2);
+    return true;
   };
+  const named = /* @__PURE__ */ new Map();
+  const used = /* @__PURE__ */ new Set();
   const closing = (at) => {
     let depth = 0;
     for (let j = at; j < tokens.length; j++) {
-      if (isOpen4(tokens[j])) depth++;
-      else if (isClose4(tokens[j])) {
+      if (isOpen6(tokens[j])) depth++;
+      else if (isClose6(tokens[j])) {
         depth--;
         if (depth === 0) return j;
       }
     }
     return tokens.length;
   };
-  const pathAt = (at) => isPunct4(tokens[at], ":") && isPunct4(tokens[at + 1], ":") && adjacent2(tokens[at], tokens[at + 1]);
-  const loneParam = (at) => tokens[at]?.kind === "param" && !isPunct4(tokens[at + 1], ".") && !isPunct4(tokens[at + 1], "[");
+  const pathAt = (at) => isPunct6(tokens[at], ":") && isPunct6(tokens[at + 1], ":") && adjacent3(tokens[at], tokens[at + 1]);
+  const loneParam = (at) => tokens[at]?.kind === "param" && !isPunct6(tokens[at + 1], ".") && !isPunct6(tokens[at + 1], "[");
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.kind !== "word") continue;
-    if (isPunct4(tokens[i - 1], ".") || isPunct4(tokens[i - 1], ":"))
+    if (isPunct6(tokens[i - 1], ".") || isPunct6(tokens[i - 1], ":"))
       continue;
     const word = token.value.toLowerCase();
     if (word === "fn" && pathAt(i + 1)) {
-      let name = token.value;
+      let name2 = token.value;
       let j = i + 1;
       while (pathAt(j) && (tokens[j + 2]?.kind === "word" || tokens[j + 2]?.kind === "ident")) {
-        name += `::${tokens[j + 2].value}`;
+        name2 += `::${tokens[j + 2].value}`;
         j += 3;
       }
-      if (!isPunct4(tokens[j], "(")) continue;
+      if (!isPunct6(tokens[j], "(")) continue;
       const end = closing(j);
-      let start2 = j + 1;
+      let start = j + 1;
       let index = 0;
       for (let k = j + 1; k <= end; k++) {
-        if (isOpen4(tokens[k])) {
+        if (isOpen6(tokens[k])) {
           k = closing(k);
           continue;
         }
-        if (k === end || isPunct4(tokens[k], ",")) {
-          if (k - start2 === 1 && tokens[start2]?.kind === "param")
-            record(tokens[start2], {
+        if (k === end || isPunct6(tokens[k], ",")) {
+          if (k - start === 1 && tokens[start]?.kind === "param")
+            record(tokens[start], {
               kind: "argument",
-              function: name,
+              function: name2,
               index,
-              line: tokens[start2].line
+              line: tokens[start].line
             });
           index++;
-          start2 = k + 1;
+          start = k + 1;
         }
       }
       continue;
     }
     if (word === "type" && pathAt(i + 1) && tokens[i + 3]?.kind === "word" && ["record", "thing"].includes(
       tokens[i + 3].value.toLowerCase()
-    ) && isPunct4(tokens[i + 4], "(") && isPlainString3(tokens[i + 5]) && isPunct4(tokens[i + 6], ",") && tokens[i + 7]?.kind === "param" && isPunct4(tokens[i + 8], ")")) {
+    ) && isPunct6(tokens[i + 4], "(") && isPlainString4(tokens[i + 5]) && isPunct6(tokens[i + 6], ",") && tokens[i + 7]?.kind === "param" && isPunct6(tokens[i + 8], ")")) {
       record(tokens[i + 7], {
         kind: "key",
         table: tokens[i + 5].value,
@@ -1159,11 +1276,22 @@ var analyzeUses = (tokens, free) => {
   const operatorAt = (at) => {
     let text = "";
     let j = at;
-    while (tokens[j]?.kind === "punct" && OPERATOR.includes(tokens[j].value) && (j === at || adjacent2(tokens[j - 1], tokens[j]))) {
+    while (tokens[j]?.kind === "punct" && OPERATOR.includes(tokens[j].value) && (j === at || adjacent3(tokens[j - 1], tokens[j]))) {
       text += tokens[j].value;
       j++;
     }
     return COMPARISONS.has(text) ? { text, next: j } : void 0;
+  };
+  const operatorBefore = (at) => {
+    let j = at - 1;
+    let text = "";
+    while (tokens[j]?.kind === "punct" && OPERATOR.includes(tokens[j].value) && (j === at - 1 || adjacent3(tokens[j], tokens[j + 1]))) {
+      text = tokens[j].value + text;
+      j--;
+    }
+    const operand = tokens[j];
+    const ends = operand !== void 0 && (operand.kind === "ident" || operand.kind === "param" || operand.kind === "string" || isClose6(operand) || operand.kind === "word" && !startsAfter(j));
+    return ends && COMPARISONS.has(text) ? text : void 0;
   };
   const bareField = (at) => {
     const token = tokens[at];
@@ -1177,44 +1305,76 @@ var analyzeUses = (tokens, free) => {
         return void 0;
     } else if (token.kind !== "ident") return void 0;
     const after = tokens[at + 1];
-    if (isPunct4(after, ".") || isPunct4(after, "(") || isPunct4(after, "[") || isPunct4(after, ":") || isPunct4(after, "-") && isPunct4(tokens[at + 2], ">") || isPunct4(after, "<") && isPunct4(tokens[at + 2], "-"))
+    if (isPunct6(after, ".") || isPunct6(after, "(") || isPunct6(after, "[") || isPunct6(after, ":") || isPunct6(after, "-") && isPunct6(tokens[at + 2], ">") || isPunct6(after, "<") && isPunct6(tokens[at + 2], "-"))
       return void 0;
     return token.value;
   };
   const startsAfter = (at) => {
     const token = tokens[at];
-    return BEFORE.has(upper4(token)) || isPunct4(token, "(") || isPunct4(token, ",");
+    return BEFORE.has(upper6(token)) || isPunct6(token, "(") || isPunct6(token, ",");
   };
-  const forUpdateAt = (at) => upper4(tokens[at]) === "FOR" && upper4(tokens[at + 1]) === "UPDATE";
-  const endsAt = (at) => {
+  const forUpdateAt = (at) => upper6(tokens[at]) === "FOR" && upper6(tokens[at + 1]) === "UPDATE";
+  const endsAt = (at, end) => {
     const token = tokens[at];
-    return token === void 0 || isPunct4(token, ";") || isPunct4(token, ")") || isPunct4(token, ",") || AFTER2.has(upper4(token)) || forUpdateAt(at);
+    return at >= end || token === void 0 || isPunct6(token, ";") || isPunct6(token, ")") || isPunct6(token, ",") || AFTER2.has(upper6(token)) || forUpdateAt(at);
   };
-  const query = (from, end) => {
-    const word = upper4(tokens[from]);
-    const targets = analyzeTargets(tokens.slice(from, end));
+  const fromSubquery = (from, end) => {
+    for (let j = from + 1; j < end; j++) {
+      if (isOpen6(tokens[j])) {
+        j = closing(j);
+        continue;
+      }
+      if (upper6(tokens[j]) !== "FROM" || isPunct6(tokens[j - 1], ".") || isPunct6(tokens[j - 1], ":"))
+        continue;
+      let k = j + 1;
+      if (upper6(tokens[k]) === "ONLY") k++;
+      for (; ; ) {
+        if (isPunct6(tokens[k], "(")) return true;
+        while (k < end && !isPunct6(tokens[k], ",") && !isPunct6(tokens[k], ";") && !(CLAUSE_ENDS.has(upper6(tokens[k])) && !isPunct6(tokens[k + 1], ":")))
+          k = isOpen6(tokens[k]) ? closing(k) + 1 : k + 1;
+        if (!isPunct6(tokens[k], ",")) break;
+        k++;
+      }
+    }
+    return false;
+  };
+  const query = (from, end, place) => {
+    const word = upper6(tokens[from]);
+    let filtered = false;
+    for (let j = from + 1; j < end && !filtered; j++) {
+      if (isOpen6(tokens[j])) j = closing(j);
+      else
+        filtered = upper6(tokens[j]) === "WHERE" && !isPunct6(tokens[j - 1], ".") && !isPunct6(tokens[j - 1], ":") && !isPunct6(tokens[j + 1], ":");
+    }
+    const slice = tokens.slice(from, end);
+    const targets = analyzeTargets(slice);
     const tables = /* @__PURE__ */ new Set([...targets.read, ...targets.written]);
     const table = tables.size === 1 ? [...tables][0] : void 0;
-    const certain = table !== void 0 && !targets.openTargets && QUERIES.has(word);
+    const opaque = word === "SELECT" && fromSubquery(from, end);
+    const certain = table !== void 0 && !targets.openTargets && QUERIES.has(word) && !opaque;
+    const fixed = certain || locals.size === 0 ? targets : analyzeTargets(slice, locals);
+    const fixedTables = /* @__PURE__ */ new Set([...fixed.read, ...fixed.written]);
+    const fieldTable = fixedTables.size === 1 && !fixed.openTargets && QUERIES.has(word) && !opaque ? [...fixedTables][0] : void 0;
     let clause = "";
     let clauses = 0;
-    const scan = (start2, stop, depth) => {
-      for (let i = start2; i < stop; i++) {
+    const scan = (start, stop, depth) => {
+      for (let i = start; i < stop; i++) {
         const token = tokens[i];
-        if (isPunct4(token, "(")) {
+        if (isPunct6(token, "(")) {
           const close = closing(i);
-          if (QUERIES.has(upper4(tokens[i + 1]))) query(i + 1, close);
+          if (QUERIES.has(upper6(tokens[i + 1])))
+            query(i + 1, close, "subquery");
           else scan(i + 1, close, depth + 1);
           i = close;
           continue;
         }
-        if (isOpen4(token)) {
+        if (isOpen6(token)) {
           const close = closing(i);
           nested(i + 1, close);
           i = close;
           continue;
         }
-        if (depth === 0 && token.kind === "word" && CLAUSE_ENDS.has(token.value.toUpperCase()) && !isPunct4(tokens[i - 1], ".") && !isPunct4(tokens[i - 1], ":") && !isPunct4(tokens[i + 1], ":")) {
+        if (depth === 0 && token.kind === "word" && CLAUSE_ENDS.has(token.value.toUpperCase()) && !isPunct6(tokens[i - 1], ".") && !isPunct6(tokens[i - 1], ":") && !isPunct6(tokens[i + 1], ":")) {
           clause = token.value.toUpperCase();
           if (clause === "WHERE" || clause === "SET") clauses++;
           continue;
@@ -1223,76 +1383,137 @@ var analyzeUses = (tokens, free) => {
           clause = "FOR";
           continue;
         }
-        if (!certain || table === void 0 || clauses > 1) continue;
+        if (fieldTable === void 0 || clauses > 1) continue;
         const inWhere = clause === "WHERE";
         const inSet = clause === "SET" && depth === 0 && (word === "UPDATE" || word === "UPSERT" || word === "CREATE");
         if (!inWhere && !inSet) continue;
-        if (!startsAfter(i - 1)) continue;
-        const field = bareField(i);
-        if (field !== void 0) {
-          const op = operatorAt(i + 1);
-          if (op !== void 0 && (inWhere || op.text === "=") && loneParam(op.next) && endsAt(op.next + 1))
-            record(tokens[op.next], {
-              kind: "field",
-              table,
-              field,
-              role: inWhere ? "compare" : "assign",
-              line: tokens[op.next].line
-            });
-          continue;
-        }
-        if (inWhere && loneParam(i)) {
-          const op = operatorAt(i + 1);
-          if (op === void 0) continue;
-          const other = bareField(op.next);
-          if (other !== void 0 && endsAt(op.next + 1))
-            record(token, {
-              kind: "field",
-              table,
-              field: other,
-              role: "compare",
-              line: token.line
-            });
-        }
+        if (certain && table !== void 0 && (inWhere ? place !== "block" : place === "statement" && !filtered))
+          bindingUse(i, table, inWhere);
+        if (inWhere) compared(i, fieldTable);
+        else assigned(i, fieldTable);
       }
+    };
+    const bindingUse = (i, table2, inWhere) => {
+      const token = tokens[i];
+      if (!startsAfter(i - 1)) return;
+      const field = bareField(i);
+      if (field !== void 0) {
+        const op = operatorAt(i + 1);
+        if (op !== void 0 && (inWhere || op.text === "=") && loneParam(op.next) && endsAt(op.next + 1, end) && record(tokens[op.next], {
+          kind: "field",
+          table: table2,
+          field,
+          role: inWhere ? "compare" : "assign",
+          line: tokens[op.next].line
+        }))
+          used.add(i);
+        return;
+      }
+      if (inWhere && loneParam(i)) {
+        const op = operatorAt(i + 1);
+        if (op === void 0) return;
+        const other = bareField(op.next);
+        if (other !== void 0 && endsAt(op.next + 1, end) && record(token, {
+          kind: "field",
+          table: table2,
+          field: other,
+          role: "compare",
+          line: token.line
+        }))
+          used.add(op.next);
+      }
+    };
+    const compared = (i, table2) => {
+      const field = bareField(i);
+      if (field === void 0 || used.has(i)) return;
+      const left = startsAfter(i - 1) && operatorAt(i + 1) !== void 0;
+      const right = operatorBefore(i) !== void 0 && endsAt(i + 1, end);
+      if (!left && !right) return;
+      name(i, table2, field, "compare");
+    };
+    const assigned = (i, table2) => {
+      const after = upper6(tokens[i - 1]);
+      if (after !== "SET" && !isPunct6(tokens[i - 1], ",")) return;
+      const field = bareField(i);
+      const op = operatorAt(i + 1);
+      if (field === void 0 || op?.text !== "=") return;
+      const past = neverNone(op.next);
+      if (past === void 0 || !assignmentEndsAt(past)) return;
+      name(i, table2, field, "assign");
+    };
+    const assignmentEndsAt = (at) => {
+      const token = tokens[at];
+      return at >= end || token === void 0 || isPunct6(token, ";") || isPunct6(token, ")") || isPunct6(token, "}") || isPunct6(token, ",") || CLAUSE_ENDS.has(upper6(token)) && !isPunct6(tokens[at + 1], ":");
     };
     scan(from, end, 0);
   };
-  const nested = (start2, stop) => {
-    for (let i = start2; i < stop; i++) {
-      if (!isOpen4(tokens[i])) continue;
+  const name = (i, table, field, role) => {
+    const line = tokens[i].line;
+    named.set(JSON.stringify([line, table, field, role]), {
+      table,
+      field,
+      role,
+      line
+    });
+  };
+  const numberAt = (at) => tokens[at]?.kind === "word" && /^[0-9]/u.test(tokens[at]?.value ?? "");
+  const neverNone = (at) => {
+    const token = tokens[at];
+    if (token === void 0) return void 0;
+    if (token.kind === "string") return at + 1;
+    if (isPunct6(token, "[")) return closing(at) + 1;
+    let j = at;
+    if (isPunct6(token, "-") && adjacent3(token, tokens[at + 1])) j++;
+    if (numberAt(j)) {
+      if (isPunct6(tokens[j + 1], ".") && numberAt(j + 2) && adjacent3(tokens[j], tokens[j + 1]) && adjacent3(tokens[j + 1], tokens[j + 2]))
+        return j + 3;
+      return j + 1;
+    }
+    if (j !== at || token.kind !== "word" && token.kind !== "ident")
+      return void 0;
+    const word = token.value.toUpperCase();
+    if (token.kind === "word" && (word === "TRUE" || word === "FALSE" || word === "NULL") && !isPunct6(tokens[at + 1], ":"))
+      return at + 1;
+    if (/^[A-Za-z_]/u.test(token.value) && isPunct6(tokens[at + 1], ":") && !isPunct6(tokens[at + 2], ":")) {
+      const key = tokens[at + 2];
+      if (isPunct6(key, "[")) return closing(at + 2) + 1;
+      if (key !== void 0 && (key.kind === "word" || key.kind === "ident" || key.kind === "string"))
+        return at + 3;
+    }
+    return void 0;
+  };
+  const nested = (start, stop) => {
+    for (let i = start; i < stop; i++) {
+      if (!isOpen6(tokens[i])) continue;
       const close = closing(i);
-      if (isPunct4(tokens[i], "(") && QUERIES.has(upper4(tokens[i + 1])))
-        query(i + 1, close);
+      if (isPunct6(tokens[i], "(") && QUERIES.has(upper6(tokens[i + 1])))
+        query(i + 1, close, "subquery");
+      else if (isPunct6(tokens[i], "{")) statements(i + 1, close, true);
       else nested(i + 1, close);
       i = close;
     }
   };
-  let start = 0;
-  for (let i = 0; i <= tokens.length; i++) {
-    const token = tokens[i];
-    if (token !== void 0 && isOpen4(token)) {
-      i = closing(i);
-      continue;
+  const statements = (start, stop, inBlock) => {
+    for (const statement of statementsIn(tokens, start, stop)) {
+      const { first, end } = statement;
+      if (queryAt(tokens, statement, QUERIES))
+        query(first, end, inBlock ? "block" : "statement");
+      else if (!inBlock && isPunct6(tokens[first], "(") && QUERIES.has(upper6(tokens[first + 1])) && closing(first) === end - 1)
+        query(first + 1, end - 1, "statement");
+      else nested(statement.start, end);
     }
-    if (token !== void 0 && !isPunct4(token, ";")) continue;
-    let first = start;
-    if (upper4(tokens[first]) === "LET" && tokens[first + 1]?.kind === "param" && isPunct4(tokens[first + 2], "=") && !isPunct4(tokens[first + 3], "="))
-      first += 3;
-    else if (upper4(tokens[first]) === "RETURN") first += 1;
-    if (first < i) {
-      if (QUERIES.has(upper4(tokens[first]))) query(first, i);
-      else nested(start, i);
-    }
-    start = i + 1;
-  }
+  };
+  statements(0, tokens.length, false);
   const uses = {};
-  for (const name of [...found.keys()].sort()) {
-    uses[name] = [...found.get(name).entries()].sort(
+  for (const name2 of [...found.keys()].sort()) {
+    uses[name2] = [...found.get(name2).entries()].sort(
       ([a, x], [b, y]) => x.line !== y.line ? x.line - y.line : a < b ? -1 : a > b ? 1 : 0
     ).map(([, use]) => use);
   }
-  return uses;
+  const fields = [...named.values()].sort(
+    (a, b) => a.line !== b.line ? a.line - b.line : a.table !== b.table ? a.table < b.table ? -1 : 1 : a.field !== b.field ? a.field < b.field ? -1 : 1 : a.role < b.role ? -1 : a.role > b.role ? 1 : 0
+  );
+  return { uses, fields };
 };
 
 // src/analyze/analyze.ts
@@ -1342,7 +1563,7 @@ var frame = (open, role, vars = []) => ({
   params: []
 });
 var isWord = (token, word) => token?.kind === "word" && token.value.toUpperCase() === word;
-var isPunct5 = (token, char) => token?.kind === "punct" && token.value === char;
+var isPunct7 = (token, char) => token?.kind === "punct" && token.value === char;
 var sorted = (values) => [...new Set(values)].sort();
 var analyzeLexed = (sql, lexed) => {
   const { tokens, locate } = lexed;
@@ -1453,7 +1674,7 @@ var analyzeLexed = (sql, lexed) => {
     const current = top();
     if (skip.has(i)) continue;
     let starting = false;
-    if (!isPunct5(token, ";")) {
+    if (!isPunct7(token, ";")) {
       starting = current === root ? statementFirst === void 0 : current.statementStart;
       if (starting) startStatement(token, current);
       current.statementStart = false;
@@ -1500,9 +1721,9 @@ var analyzeLexed = (sql, lexed) => {
         const word = token.value.toUpperCase();
         const next = tokens[i + 1];
         const previous = tokens[i - 1];
-        const member = isPunct5(previous, ".") || isPunct5(previous, ":") || isPunct5(next, ":");
+        const member = isPunct7(previous, ".") || isPunct7(previous, ":") || isPunct7(next, ":");
         if (member) break;
-        if (WRITE_WORDS.has(word) && (starting || isPunct5(previous, "(") || previous?.kind === "word" && VALUE_WORDS2.has(previous.value.toUpperCase()) || isPunct5(previous, "=") && tokens[i - 2]?.kind === "param" && isWord(tokens[i - 3], "LET"))) {
+        if (WRITE_WORDS.has(word) && (starting || isPunct7(previous, "(") || previous?.kind === "word" && VALUE_WORDS2.has(previous.value.toUpperCase()) || isPunct7(previous, "=") && tokens[i - 2]?.kind === "param" && isWord(tokens[i - 3], "LET"))) {
           writes = true;
         }
         if (word === "LET" && next?.kind === "param") {
@@ -1541,7 +1762,7 @@ var analyzeLexed = (sql, lexed) => {
           }
         } else if (word === "THROW") {
           const after = tokens[i + 2];
-          if (next?.kind === "string" && (next.prefix === void 0 || next.prefix === "s") && (after === void 0 || isPunct5(after, ";") || isPunct5(after, "}") || isPunct5(after, ")"))) {
+          if (next?.kind === "string" && (next.prefix === void 0 || next.prefix === "s") && (after === void 0 || isPunct7(after, ";") || isPunct7(after, "}") || isPunct7(after, ")"))) {
             const lines2 = throwsAt.get(next.value) ?? /* @__PURE__ */ new Set();
             lines2.add(token.line);
             throwsAt.set(next.value, lines2);
@@ -1610,14 +1831,14 @@ var analyzeLexed = (sql, lexed) => {
             }
             names.push(param.value);
             j++;
-            if (isPunct5(tokens[j], ":")) {
+            if (isPunct7(tokens[j], ":")) {
               let angle = 0;
               j++;
               while (j < tokens.length) {
                 const t = tokens[j];
-                if (isPunct5(t, "<")) angle++;
-                else if (isPunct5(t, ">")) angle--;
-                else if (angle === 0 && (isPunct5(t, ",") || isPunct5(t, "|")))
+                if (isPunct7(t, "<")) angle++;
+                else if (isPunct7(t, ">")) angle--;
+                else if (angle === 0 && (isPunct7(t, ",") || isPunct7(t, "|")))
                   break;
                 else if (t.kind === "punct" && "()[]{};".includes(t.value))
                   return fail(
@@ -1628,11 +1849,11 @@ var analyzeLexed = (sql, lexed) => {
                 j++;
               }
             }
-            if (isPunct5(tokens[j], ",")) {
+            if (isPunct7(tokens[j], ",")) {
               j++;
               continue;
             }
-            if (isPunct5(tokens[j], "|")) break;
+            if (isPunct7(tokens[j], "|")) break;
             return fail(
               "unexpectedToken",
               "cannot read this closure parameter list",
@@ -1644,7 +1865,7 @@ var analyzeLexed = (sql, lexed) => {
             vars: new Set(names)
           });
           const after = tokens[j + 1];
-          if (isPunct5(after, "{") || isPunct5(after, "-")) {
+          if (isPunct7(after, "{") || isPunct7(after, "-")) {
             current.pendingBody = { vars: [], role: "closure" };
           }
           i = j;
@@ -1664,7 +1885,7 @@ var analyzeLexed = (sql, lexed) => {
         statementFirst
       );
     }
-    if (statementFirst.kind === "word" && STATEMENT_WORDS.has(statementFirst.value.toUpperCase()) && !isPunct5(tokens[1], ":")) {
+    if (statementFirst.kind === "word" && STATEMENT_WORDS.has(statementFirst.value.toUpperCase()) && !isPunct7(tokens[1], ":")) {
       fail(
         "notAFragment",
         `an unterminated ${statementFirst.value.toUpperCase()} statement: terminate it with \`;\`, or a fragment must be a single expression or block`,
@@ -1682,6 +1903,8 @@ var analyzeLexed = (sql, lexed) => {
   }
   diagnostics.sort((a, b) => a.offset - b.offset);
   const targets = analyzeTargets(tokens);
+  const locals = recordLocals(tokens);
+  const { uses, fields } = analyzeUses(tokens, sorted(free), locals);
   return {
     kind,
     sql: sql.slice(0, last.end),
@@ -1699,8 +1922,9 @@ var analyzeLexed = (sql, lexed) => {
     tables: { read: targets.read, written: targets.written },
     functions: targets.functions,
     openTargets: targets.openTargets,
-    uses: analyzeUses(tokens, sorted(free)),
-    projected: analyzeProjections(tokens),
+    uses,
+    projected: analyzeProjections(tokens, locals),
+    fields,
     holeScopes: holeScopesOf(holeSites, unboundReads, kind),
     diagnostics
   };
@@ -1896,6 +2120,15 @@ var checkProjected = (projected, detail, schemaChanges) => schemaChanges ? [] : 
     }
   ];
 });
+var checkFields = (fields, detail, schemaChanges) => schemaChanges ? [] : fields.flatMap(({ table, field, role, line }) => {
+  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
+  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
+    {
+      line,
+      message: `${role === "assign" ? "assigns" : "compares"} ${quoted(field)} of ${quoted(table)}, which declares no such field`
+    }
+  ];
+});
 var holeStartsStatement = (sql, holes) => {
   const tokens = lex2(sql, holeDelimiters(holes)).tokens;
   return tokens.some((token, i) => {
@@ -1911,27 +2144,34 @@ var changesSchema = (sql, holes) => {
     )
   );
 };
+var linesOf = (text) => text.split(/\r\n|[\n\r\u2028\u2029]/u);
+var commentSafe = (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@");
 var docComment = (analysis, title, holes) => {
   const first = lex2(analysis.sql, holeDelimiters(holes)).tokens[0];
   const body = analysis.sql.slice(first?.start ?? 0);
   const longest = Math.max(
     0,
-    ...[...body.matchAll(/`+/gu)].map(([run]) => run.length)
+    ...[...`${analysis.comment}
+${body}
+${title}`.matchAll(/`+/gu)].map(
+      ([run]) => run.length
+    )
   );
   const fence = "`".repeat(Math.max(3, longest + 1));
+  const prose = (text) => linesOf(text).map((line) => commentSafe(line).trimEnd());
   const lines2 = [
-    ...analysis.comment === "" ? [] : [analysis.comment, ""],
+    ...analysis.comment === "" ? [] : [...prose(analysis.comment), ""],
     `${fence}surql`,
-    body,
+    ...linesOf(body).map(commentSafe),
     fence,
     "",
-    title
-  ].join("\n").split(/\r\n|[\n\r\u2028\u2029]/u).map(
-    (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@").trimEnd()
-  );
-  return ["/**", ...lines2.map((line) => ` * ${line}`.trimEnd()), " */"].join(
-    "\n"
-  );
+    ...prose(title)
+  ];
+  return [
+    "/**",
+    ...lines2.map((line) => line === "" ? " *" : ` * ${line}`),
+    " */"
+  ].join("\n");
 };
 var renderConstant = (scope, name, analysis, binds, rejectsNone2, holes) => {
   const file = `${scope}/${name}.surql`;
@@ -2069,14 +2309,22 @@ var renderStatementModulesSync = (input) => {
       const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail, schemaChanges);
       binds = checked?.binds;
       rejectsNone2 = checked?.rejectsNone;
+      const fieldsUnknown = schemaChanges || holeStartsStatement(source.sql, input.holes);
       for (const problem2 of [
         ...undeclared(source.sql, source.declared, input.holes),
         ...checked?.problems ?? [],
-        ...detail === void 0 ? [] : checkProjected(
-          analysis.projected,
-          detail,
-          schemaChanges || holeStartsStatement(source.sql, input.holes)
-        )
+        ...detail === void 0 ? [] : [
+          ...checkProjected(
+            analysis.projected,
+            detail,
+            fieldsUnknown
+          ),
+          ...checkFields(
+            analysis.fields,
+            detail,
+            fieldsUnknown
+          )
+        ]
       ].sort((a, b) => a.line - b.line))
         problems.push({
           kind: "undeclared",
@@ -3063,7 +3311,20 @@ var openSurqlProject = (root, raw, about = {}) => {
     }
   };
 };
-var stripJsonComments = (text) => {
+var stripJsonComments = (source) => {
+  const text = source.startsWith("\uFEFF") ? source.slice(1) : source;
+  const commentEnd = (at2) => {
+    if (text[at2] !== "/") return at2;
+    if (text[at2 + 1] === "/") {
+      const end = text.indexOf("\n", at2 + 2);
+      return end === -1 ? text.length : end;
+    }
+    if (text[at2 + 1] === "*") {
+      const end = text.indexOf("*/", at2 + 2);
+      return end === -1 ? text.length : end + 2;
+    }
+    return at2;
+  };
   let out = "";
   let at = 0;
   while (at < text.length) {
@@ -3074,17 +3335,30 @@ var stripJsonComments = (text) => {
         end += text[end] === "\\" ? 2 : 1;
       out += text.slice(at, end + 1);
       at = end + 1;
-    } else if (char === "/" && text[at + 1] === "/") {
-      while (at < text.length && text[at] !== "\n") at++;
-    } else if (char === "/" && text[at + 1] === "*") {
-      const end = text.indexOf("*/", at + 2);
-      at = end === -1 ? text.length : end + 2;
-    } else {
-      out += char;
-      at++;
+      continue;
     }
+    const comment = commentEnd(at);
+    if (comment !== at) {
+      at = comment;
+      continue;
+    }
+    if (char === ",") {
+      let next = at + 1;
+      for (; ; ) {
+        const skipped = commentEnd(next);
+        if (skipped !== next) next = skipped;
+        else if (/\s/u.test(text[next] ?? "")) next++;
+        else break;
+      }
+      if (text[next] === "}" || text[next] === "]") {
+        at++;
+        continue;
+      }
+    }
+    out += char;
+    at++;
   }
-  return out.replace(/,(\s*[}\]])/gu, "$1");
+  return out;
 };
 var MAPPER_PACKAGE = "effect-surrealkit";
 var mapperEntryIn = (tsconfig) => {
@@ -3164,20 +3438,51 @@ var surqlProjectFor = (file, tsconfig) => {
 };
 
 // src/mapper/load.ts
-import { readFileSync as readFileSync2 } from "fs";
-import { basename, dirname as dirname2, resolve as resolve4 } from "path";
+import { readFileSync as readFileSync2, statSync as statSync2 } from "fs";
+import {
+  basename,
+  dirname as dirname2,
+  isAbsolute as isAbsolute3,
+  join as join3,
+  relative as relative2,
+  resolve as resolve4,
+  sep as sep2
+} from "path";
 var surqlFileAt = (path, sql) => ({
   scope: basename(dirname2(resolve4(path))),
   name: basename(path).replace(/\.surql$/u, ""),
   sql
 });
-var surqlModuleIn = (project, path, sql) => {
-  const file = surqlFileAt(path, sql);
-  const refuse = (kind, message) => ({
-    text: EMPTY_SURQL_MODULE,
-    problems: [surqlDiagnostic(file, kind, message)]
-  });
-  if (project.refusal !== void 0) return refuse("config", project.refusal);
+var refusal = (file, kind, message) => ({
+  text: EMPTY_SURQL_MODULE,
+  problems: [surqlDiagnostic(file, kind, message)]
+});
+var isFile = (path) => {
+  try {
+    return statSync2(path).isFile();
+  } catch {
+    return false;
+  }
+};
+var inInput = (project, file) => project.inputs.some((root) => {
+  const at = relative2(root, file);
+  return at !== "" && !isAbsolute3(at) && at.split(sep2)[0] !== "..";
+});
+var otherEntries = (project, file) => {
+  const found = [];
+  for (let at = dirname2(file); ; at = dirname2(at)) {
+    const config = join3(at, "tsconfig.json");
+    if (config !== project.config && isFile(config)) {
+      const other = surqlProjectFor(file, config);
+      if (other.refusal === void 0 && inInput(other, file))
+        found.push(other);
+    }
+    if (dirname2(at) === at) return found;
+  }
+};
+var renderIn = (project, path, file) => {
+  if (project.refusal !== void 0)
+    return refusal(file, "config", project.refusal);
   const layout = surqlLayout(project.inputs, path);
   if ("problems" in layout)
     return {
@@ -3188,12 +3493,13 @@ var surqlModuleIn = (project, path, sql) => {
     };
   const settings = project.settingsFor(path);
   if (settings.schemaProblem !== void 0)
-    return refuse(
+    return refusal(
+      file,
       "schema",
       `the schema document of this directory cannot be used: ${settings.schemaProblem}`
     );
   return renderSurqlModule(
-    { scope: layout.scope, name: layout.name, sql },
+    { scope: layout.scope, name: layout.name, sql: file.sql },
     {
       ...settings.declared !== void 0 && {
         declared: settings.declared
@@ -3201,6 +3507,22 @@ var surqlModuleIn = (project, path, sql) => {
       ...settings.holes !== void 0 && { holes: settings.holes }
     }
   );
+};
+var surqlModuleIn = (project, path, sql) => {
+  const absolute = resolve4(path);
+  const file = surqlFileAt(absolute, sql);
+  const module = renderIn(project, absolute, file);
+  if (module.problems.length > 0) return module;
+  for (const other of otherEntries(project, absolute)) {
+    const theirs = renderIn(other, absolute, file);
+    if (theirs.problems.length > 0 || theirs.text !== module.text)
+      return refusal(
+        file,
+        "config",
+        `two contentMappers entries hold this file in their input and render it differently: ${project.config ?? `the options of ${project.root}`} and ${other.config}. The type check renders it with the tsconfig.json tsc was started with and the run-time loaders with the nearest one above the file, so the module run could differ from the module checked; take the file out of one entry's input, or write the same options in both`
+      );
+  }
+  return module;
 };
 var SurqlModuleError = class extends Error {
   constructor(file, problems) {
@@ -3244,4 +3566,4 @@ export {
   SurqlModuleError,
   loadSurqlModule
 };
-//# sourceMappingURL=chunk-BN7437D4.js.map
+//# sourceMappingURL=chunk-HNIKUY5K.js.map
