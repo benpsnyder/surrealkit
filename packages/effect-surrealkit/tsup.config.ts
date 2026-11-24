@@ -26,9 +26,25 @@ export default defineConfig([
 		entry: { cli: "src/cli/main.ts" },
 		format: ["esm"],
 		sourcemap: true,
-		target: "node20",
+		target: "node22",
 		platform: "node",
 		external: ["effect", "surrealdb"],
 		banner: { js: "#!/usr/bin/env node" },
+	},
+	{
+		// `.surql` imports: the content mapper's process (`mapper-server`,
+		// which TypeScript starts) and the Node, Bun and Vite loaders. They read
+		// files, so they target Node; none of them imports an engine.
+		entry: {
+			mapper: "src/mapper/index.ts",
+			register: "src/mapper/register.ts",
+			"mapper-server": "src/mapper/bin.ts",
+		},
+		format: ["esm"],
+		dts: { entry: { mapper: "src/mapper/index.ts", register: "src/mapper/register.ts" } },
+		sourcemap: true,
+		target: "node22",
+		platform: "node",
+		external: ["effect", "surrealdb"],
 	},
 ]);

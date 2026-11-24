@@ -603,7 +603,8 @@ and accepts, plus runtime codecs for every SurrealDB value.
 `effect-surrealkit` is not published to npm yet. Build it from this repository
 (`packages/effect-surrealkit`: `pnpm install --frozen-lockfile && pnpm run build`) and depend on that
 directory, or on the package from a Git checkout (its `prepare` script builds it),
-with `effect` 4 (4.0.6 or later) and `surrealdb` 2 (2.1.1 or later) as peers.
+with `effect` 4 (4.1.5 or later) and `surrealdb` 2 (2.2.2 or later) as peers,
+on Node 22.21.1 or later.
 
 ```toml
 # surrealkit.toml
@@ -1042,8 +1043,9 @@ they remove.
 
 SurrealDB has no statement that renames a field or carries its values to a new
 name, so a rename is a new field, a copy, and the removal of the old field.
-When a plan removes one field and adds another on the same table, and the two
-are defined the same apart from the name, `rollout plan` proposes the rename:
+When a plan removes one field and adds another on the same `SCHEMAFULL` table,
+and the two are defined the same apart from the name, `rollout plan` proposes
+the rename:
 
 ```toml
 [[renames]]
@@ -1072,6 +1074,19 @@ If it is not a rename, do not edit the manifest. Run `surrealkit rollout
 discard <id>`, which deletes it and puts the snapshots back, and plan the
 addition and the removal in separate rollouts.
 
+- Only a `SCHEMAFULL` table gets a proposal, and only when the rollout leaves
+  its `DEFINE TABLE` as it was. On a schemaless table `plan` proposes nothing
+  and warns, naming the pair: a schemaless table can already hold values under
+  the new name, which the copy would overwrite, and removing a field there
+  does not clear its values, so a rollback would leave the copies behind.
+  Neither can be undone without guessing which values were there first, so
+  plan such a rename by hand.
+- `rollout start` and `rollout up` refuse a rollout with a confirmed rename on
+  a database below compatibility level 4, before anything runs. There
+  `REMOVE FIELD` leaves a field's values too, so a rollback could not undo the
+  copy, and a value a record already held under the new name would be lost.
+  Raise the database with `surrealkit compat raise --yes --wait` (see below)
+  and start the rollout again.
 - Whitespace and comments do not count, and neither does a `MIGRATE EXISTING
   ROWS` clause on the new field, which level 4 needs when the table holds
   records and the field's `TYPE` does not accept `NONE`.

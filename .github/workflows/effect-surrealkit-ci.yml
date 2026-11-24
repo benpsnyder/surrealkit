@@ -40,7 +40,7 @@ jobs:
             fail-fast: false
             matrix:
                 # The floor declared in `engines`, plus current.
-                node: ["20.19", "24"]
+                node: ["22.21.1", "24"]
         defaults:
             run:
                 working-directory: packages/effect-surrealkit
@@ -94,7 +94,7 @@ jobs:
                   pnpm run prepare
                   pnpm pack --pack-destination /tmp/pack > /dev/null
                   listing="$(tar -tzf /tmp/pack/effect-surrealkit-*.tgz)"
-                  for f in dist/index.js dist/emitter.js dist/statement.js dist/functions.js dist/client.js dist/analyze.js dist/testing.js dist/cli.js; do
+                  for f in dist/index.js dist/emitter.js dist/statement.js dist/functions.js dist/client.js dist/analyze.js dist/testing.js dist/cli.js dist/mapper.js dist/register.js dist/mapper-server.js; do
                       grep -qx "package/$f" <<<"$listing" || { echo "::error::$f is not in the package"; exit 1; }
                   done
                   # A dry run over a version already on the registry is refused,
@@ -107,6 +107,55 @@ jobs:
                   else
                       pnpm publish --dry-run --no-git-checks
                   fi
+
+    # `.surql` imports through the content mapper. The package's own type
+    # check stays on its TypeScript 5.9 (the check job); these fixtures pin
+    # TypeScript 7.1.0-beta, the release the owner approved on 2026-11-23,
+    # in test/mapper-fixtures/package.json and its lockfile. A required check
+    # like the others.
+    mapper:
+        name: .surql imports through the content mapper (TypeScript 7.1, Node and Bun)
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: packages/effect-surrealkit
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+            - name: Setup Node.js
+              uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+              with:
+                  # module.registerHooks, which effect-surrealkit/register needs.
+                  node-version: 24
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+              with:
+                  bun-version: 1.4.5
+
+            # The version comes from the package's `packageManager` field.
+            - name: Setup pnpm
+              uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+              with:
+                  package_json_file: packages/effect-surrealkit/package.json
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            # The mapper process TypeScript starts is dist/mapper-server.js.
+            - name: Build
+              run: pnpm run build
+
+            - name: Install the fixtures' TypeScript
+              working-directory: packages/effect-surrealkit/test/mapper-fixtures
+              run: npm ci
+
+            # tsc --runExternalCode on an accepting and a rejecting project, then
+            # the Node hook and the Bun plugin against the texts the mapper gave
+            # the type check (scripts/mapper-fixtures.mjs).
+            - name: Content-mapper fixtures
+              run: pnpm run test:mapper
 
     generated-ts:
         name: Generated TypeScript compiles (examples/effect-typegen through surrealkit compile)

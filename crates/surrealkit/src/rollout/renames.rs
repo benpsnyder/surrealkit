@@ -19,6 +19,12 @@
 //! An author who reads the pair as no rename discards the rollout and plans the
 //! addition and the removal separately, as the refusal always advised.
 //!
+//! Only a `SCHEMAFULL` table whose own definition this rollout leaves alone gets
+//! a proposal. A schemaless table can already hold values under the new name,
+//! which the copy would overwrite, and removing a field there does not clear its
+//! values, so a rollback would leave the copies behind. Neither can be undone
+//! without guessing which values were there first.
+//!
 //! Anything less certain proposes nothing, and the plan is refused as an add
 //! and a remove that could be a rename, as it was before.
 
@@ -106,8 +112,9 @@ fn uncopyable_reason(clause: &str) -> &'static str {
 }
 
 /// The renames this diff proposes: pairs of a removed and an added field on
-/// one table whose definitions are the same apart from the name, where no other
-/// pairing is possible. Pairs it cannot propose are logged with the reason.
+/// one `SCHEMAFULL` table whose definitions are the same apart from the name,
+/// where no other pairing is possible and the table's own definition does not
+/// change. Pairs it cannot propose are logged with the reason.
 pub(crate) fn find(diff: &CatalogDiff, files: &[SchemaFile]) -> Result<Vec<FieldRename>> {
 	let by_table = |entities: &[CatalogEntity]| {
 		let mut out: BTreeMap<String, Vec<CatalogEntity>> = BTreeMap::new();
@@ -176,10 +183,35 @@ pub(crate) fn find(diff: &CatalogDiff, files: &[SchemaFile]) -> Result<Vec<Field
 			continue;
 		}
 
+		let unsafe_table = if diff
+			.modified
+			.iter()
+			.any(|change| change.new.kind == EntityKind::Table && change.new.name == *table)
+		{
+			Some(
+				"its own definition changes in this rollout, so `rollout plan` cannot tell whether it \
+				 was SCHEMAFULL before",
+			)
+		} else if !crate::schema_state::table_is_schemafull(files, table)? {
+			Some("it is not SCHEMAFULL")
+		} else {
+			None
+		};
+
 		for (from, to) in &candidates {
 			let Some(to) = to.first() else {
 				continue;
 			};
+			if let Some(why) = unsafe_table {
+				log::warn!(
+					"`{table}.{from}` and `{table}.{to}` are the same field apart from the name, but \
+					 `rollout plan` proposes no rename on `{table}`: {why}. A schemaless table can \
+					 already hold values under `{to}`, which the copy would overwrite, and removing a \
+					 field there does not clear its values, so a rollback would leave the copies \
+					 behind. Plan the rename by hand"
+				);
+				continue;
+			}
 			if let Some(clause) = uncopyable.get(&(*from, *to)) {
 				log::warn!(
 					"`{table}.{from}` and `{table}.{to}` are the same field apart from the name, but \
@@ -293,6 +325,54 @@ pub(crate) fn check_renames(spec: &RolloutSpec) -> Result<()> {
 	Ok(())
 }
 
+/// Refuse a rollout with a confirmed rename on a database below compatibility
+/// level 4. There `REMOVE FIELD` leaves a field's values in place, so a
+/// rollback could not undo the copy: the copies would stay under the new name,
+/// and a value a record already held there would be gone. `start`, `up` and
+/// [`super::Rollout::start`] call this; `plan` and `lint` do not connect.
+pub(crate) fn check_level(spec: &RolloutSpec, level: i64) -> Result<()> {
+	if level >= 4 {
+		return Ok(());
+	}
+	let pairs: Vec<String> = spec
+		.renames
+		.iter()
+		.filter(|rename| rename.confirmed)
+		.map(|rename| match &rename.scope {
+			Some(scope) => format!("`{scope}.{}` to `{scope}.{}`", rename.from, rename.to),
+			None => format!("`{}` to `{}`", rename.from, rename.to),
+		})
+		.collect();
+	if pairs.is_empty() {
+		return Ok(());
+	}
+	bail!(
+		"rollout '{rollout}' renames {pairs}, and this database is at compatibility level {level}. \
+		 Below level 4 `REMOVE FIELD` does not clear a field's values, so a rollback could not \
+		 undo the copy: the copies would stay under the new name, and a value a record already \
+		 held there would be lost. Raise the database to level 4 with `surrealkit compat raise \
+		 --yes --wait` once every node runs SurrealDB 4.0, then start the rollout again",
+		pairs = pairs.join(", "),
+		rollout = spec.id
+	);
+}
+
+/// [`check_level`] against the connected database's level. Reads the level
+/// only for a rollout that carries a confirmed rename.
+pub(crate) async fn check_database_level(
+	db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
+	spec: &RolloutSpec,
+) -> Result<()> {
+	if !spec.renames.iter().any(|rename| rename.confirmed) {
+		return Ok(());
+	}
+	let info = super::retry_conflicts("reading the database", || async {
+		super::info_json(db, "INFO FOR DB;", None).await
+	})
+	.await?;
+	check_level(spec, crate::migrate::compatibility(&info))
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -315,7 +395,15 @@ mod tests {
 		(diff, new.to_vec())
 	}
 
+	/// The proposals for `old` to `new`, where each table they name is defined
+	/// `SCHEMAFULL` in both.
 	fn proposals(old: &str, new: &str) -> Vec<(String, String, String)> {
+		const TABLES: &str = "DEFINE TABLE person SCHEMAFULL; DEFINE TABLE contact SCHEMAFULL; \
+		                      DEFINE TABLE computed SCHEMAFULL;\n";
+		proposals_as_written(&format!("{TABLES}{old}"), &format!("{TABLES}{new}"))
+	}
+
+	fn proposals_as_written(old: &str, new: &str) -> Vec<(String, String, String)> {
 		let (diff, files) = diff(old, new);
 		find(&diff, &files).unwrap().into_iter().map(|r| (r.table, r.from, r.to)).collect()
 	}
@@ -405,6 +493,49 @@ mod tests {
 		}
 	}
 
+	/// A schemaless table can already hold values under the new name, and
+	/// removing a field there leaves its values, so only a `SCHEMAFULL` table
+	/// whose definition stays as it was gets a proposal.
+	#[test]
+	fn only_a_schemafull_table_that_keeps_its_definition_gets_a_proposal() {
+		let fields = |name: &str| format!("DEFINE FIELD {name} ON person TYPE string;");
+		for (old_table, new_table) in [
+			("DEFINE TABLE person SCHEMALESS;", "DEFINE TABLE person SCHEMALESS;"),
+			("DEFINE TABLE person;", "DEFINE TABLE person;"),
+			("", ""),
+			("DEFINE TABLE person SCHEMALESS;", "DEFINE TABLE person SCHEMAFULL;"),
+			("DEFINE TABLE person SCHEMAFULL;", "DEFINE TABLE person SCHEMALESS;"),
+			("DEFINE TABLE person SCHEMAFULL;", "DEFINE TABLE person SCHEMAFULL COMMENT 'p';"),
+			// A view's SELECT is not the table's own clause.
+			(
+				"DEFINE TABLE person AS SELECT * FROM schemafull;",
+				"DEFINE TABLE person AS SELECT * FROM schemafull;",
+			),
+		] {
+			assert_eq!(
+				proposals_as_written(
+					&format!("{old_table}\n{}", fields("email")),
+					&format!("{new_table}\n{}", fields("mail"))
+				),
+				vec![],
+				"{old_table} -> {new_table}"
+			);
+		}
+		for table in [
+			"DEFINE TABLE person SCHEMAFULL;",
+			"DEFINE TABLE OVERWRITE person TYPE NORMAL schemafull;",
+		] {
+			assert_eq!(
+				proposals_as_written(
+					&format!("{table}\n{}", fields("email")),
+					&format!("{table}\n{}", fields("mail"))
+				),
+				vec![pair("person", "email", "mail")],
+				"{table}"
+			);
+		}
+	}
+
 	#[test]
 	fn a_field_or_table_named_like_a_clause_is_not_a_clause() {
 		assert_eq!(
@@ -425,6 +556,31 @@ mod tests {
 			),
 			vec![pair("person", "age", "years"), pair("person", "email", "mail")]
 		);
+	}
+
+	#[test]
+	fn a_confirmed_rename_needs_level_4() {
+		let rename = FieldRename {
+			table: "person".into(),
+			from: "email".into(),
+			to: "mail".into(),
+		};
+		let mut spec = RolloutSpec::builder("20260101000000__r").build();
+		spec.renames.push(rename.record("copy_person_email_to_mail"));
+		// Unconfirmed is `check_renames`' refusal, not this one.
+		check_level(&spec, 3).unwrap();
+		spec.renames[0].confirmed = true;
+		check_level(&spec, 4).unwrap();
+		check_level(&spec, 5).unwrap();
+		let err = check_level(&spec, 3).unwrap_err().to_string();
+		assert!(
+			err.contains("rollout '20260101000000__r' renames `person.email` to `person.mail`")
+				&& err.contains("compatibility level 3")
+				&& err.contains("surrealkit compat raise"),
+			"{err}"
+		);
+		spec.renames.clear();
+		check_level(&spec, 3).unwrap();
 	}
 
 	#[test]
