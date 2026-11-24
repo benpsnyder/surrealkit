@@ -2163,7 +2163,12 @@ interface Select<T extends PureTable, P extends Params, Row extends Codec, Only 
     readonly orderByAlias: <const A extends string>(alias: A extends OrderAlias<Row> ? A : `\`${A}\` is not a name the result row holds`, direction?: 'ASC' | 'DESC') => Select<T, P, Row, Only>;
     /** `LIMIT`: at most this many rows. */
     readonly limit: <const L extends Count>(rows: L) => Select<T, P & OperandParams<L>, Row, Only>;
-    /** `START`: skip this many rows. */
+    /**
+     * `START`: skip this many rows. The engine still reads every skipped
+     * row, and a row removed from an earlier page makes the next one skip a
+     * row; to page through a table, start each page after the last id read
+     * with {@link idRange} (README, "Paging through a table").
+     */
     readonly start: <const L extends Count>(rows: L) => Select<T, P & OperandParams<L>, Row, Only>;
     /**
      * Selects named expressions instead of the stored row. Each key of the

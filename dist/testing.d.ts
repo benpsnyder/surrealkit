@@ -402,8 +402,17 @@ interface VerifyInput {
     /** How long one text or schema file may run; default 10. */
     readonly timeoutSeconds?: number;
 }
+/**
+ * What a problem is: a parse error the engine reports (`parse`), another
+ * refusal of the whole text (`refused`), a result count other than `slots`
+ * (`count`), a text or schema file that did not finish within the timeout
+ * (`timeout`), a schema statement that failed (`schema`), or a text the
+ * analyzer refused (`analyzer`).
+ */
+type VerifyProblemKind = 'parse' | 'refused' | 'count' | 'timeout' | 'schema' | 'analyzer';
 /** One problem: where it is, when the engine says, and what it is. */
 interface VerifyProblem {
+    readonly kind: VerifyProblemKind;
     readonly file: string;
     readonly line?: number;
     readonly column?: number;
@@ -435,9 +444,13 @@ declare class StatementVerificationError extends StatementVerificationError_base
  * an optional peer, imported only here): loads `schema`, then sends each
  * complete text once with no bindings, in scope and file order, on one
  * database. Fails with {@link StatementVerificationError} on a parse error,
- * a result count other than the analyzer's `slots`, a text that does not
- * finish within `timeoutSeconds`, or a schema file that does not apply;
- * with `TestingError` when the engine is not installed or does not start.
+ * a result count other than the analyzer's `slots`, a schema file that does
+ * not apply, or a text that does not finish within `timeoutSeconds`. A text
+ * that does not finish is a problem of kind `timeout` however the engine
+ * reports it: it did not finish within the limit on an empty database with
+ * no bindings, so its result count was not verified. It is never reported as
+ * verified and never as a parse error. Fails with `TestingError` when the
+ * engine is not installed or does not start.
  *
  * The texts run: writes land in the discarded database, and the engine
  * denies `http::` functions, network targets and scripting, so nothing a
@@ -445,4 +458,4 @@ declare class StatementVerificationError extends StatementVerificationError_base
  */
 declare const verifyStatements: (input: VerifyInput) => Effect.Effect<Verification, StatementVerificationError | TestingError>;
 
-export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, StatementVerificationError, TestDatabase, TestingError, type Verification, type VerifyFile, type VerifyInput, type VerifyProblem, checkConstraintErrors, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexConflict, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordExists, recordUser, result, schemaDrift, thrown, unsupported, verifyStatements };
+export { type Call, type Connection, type Database, type DeclaredStore, type DeclaredTable, type FakeClient, IndexExpectationError, type MemoryOptions, type RecordUser, type RecordUserOptions, type Reply, type SchemaDifference, type Script, StatementVerificationError, TestDatabase, TestingError, type Verification, type VerifyFile, type VerifyInput, type VerifyProblem, type VerifyProblemKind, checkConstraintErrors, conflict, conflictingSession, events, expectIndex, expectNoIndex, explain, failure, fake, fakeLayer, fromConnection, indexConflict, indexesOf, layerFrom, loadSchema, memory, memoryLayer, recordExists, recordUser, result, schemaDrift, thrown, unsupported, verifyStatements };

@@ -22,7 +22,7 @@ import {
   DEFAULT_HOLE_DELIMITERS,
   analyzeSync,
   lex
-} from "./chunk-LVYBF6FC.js";
+} from "./chunk-3ISARNU6.js";
 import {
   AnalyzeError
 } from "./chunk-FBUMKT7I.js";
@@ -903,23 +903,57 @@ var engineOptions = (timeoutSeconds) => ({
   }
 });
 var messageOf3 = (cause) => cause instanceof Error ? cause.message : String(cause);
-var problem = (file, text, at) => ({
+var problem = (kind, file, text, at) => ({
+  kind,
   file,
   ...at !== void 0 && at,
   text,
   message: `${file}${at === void 0 ? "" : `:${at.line}:${at.column}`}: ${text}`
 });
-var refusal = (file, cause) => {
+var isTimeout = (error) => {
+  for (let at = error, depth = 0; typeof at === "object" && at !== null && depth < 8; at = at.cause, depth++) {
+    const { kind, details } = at;
+    if (kind === "Query" && typeof details === "object" && details?.kind === "TimedOut")
+      return true;
+  }
+  return false;
+};
+var timeoutProblem = (file, timeoutSeconds) => problem(
+  "timeout",
+  file,
+  `the text did not finish within ${timeoutSeconds}s on an empty database with no bindings, so its result count was not verified`
+);
+var refusal = (file, cause, timeoutSeconds) => {
+  if (isTimeout(cause)) return timeoutProblem(file, timeoutSeconds);
   const message = messageOf3(cause);
   const first = message.split("\n", 1)[0]?.trim() ?? "";
   if (!message.startsWith("Parse error"))
-    return problem(file, `the engine did not run the text: ${first}`);
+    return problem(
+      "refused",
+      file,
+      `the engine did not run the text: ${first}`
+    );
   const at = /-->\s*\[(\d+):(\d+)\]/u.exec(message);
   return problem(
+    "parse",
     file,
     first,
     at === null ? void 0 : { line: Number(at[1]), column: Number(at[2]) }
   );
+};
+var judgeText = (text, sent, timeoutSeconds) => {
+  if ("refused" in sent)
+    return refusal(text.file, sent.refused, timeoutSeconds);
+  const { responses } = sent;
+  if (responses.some((r) => !r.success && isTimeout(r.error)))
+    return timeoutProblem(text.file, timeoutSeconds);
+  if (responses.length !== text.slots)
+    return problem(
+      "count",
+      text.file,
+      `the engine returned ${responses.length} results, the analyzer derived ${text.slots}`
+    );
+  return void 0;
 };
 var startEngine = (timeoutSeconds) => Effect5.gen(function* () {
   const { createNodeEngines } = yield* nodeEngines;
@@ -962,43 +996,39 @@ var startEngine = (timeoutSeconds) => Effect5.gen(function* () {
   };
 });
 var verifyAnalysed = (texts, options) => Effect5.gen(function* () {
-  const engine = yield* startEngine(
-    options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
-  );
+  const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const engine = yield* startEngine(timeoutSeconds);
+  const send = async (sql) => {
+    try {
+      return { responses: await engine.send(sql) };
+    } catch (refused) {
+      return { refused };
+    }
+  };
   const problems = yield* Effect5.promise(async () => {
     for (const { name, sql } of options.schema ?? []) {
-      let responses;
-      try {
-        responses = await engine.send(sql);
-      } catch (cause) {
-        return [refusal(name, cause)];
-      }
-      const failed = responses.findIndex((r) => !r.success);
-      const response = responses[failed];
+      const sent = await send(sql);
+      if ("refused" in sent)
+        return [refusal(name, sent.refused, timeoutSeconds)];
+      const failed = sent.responses.findIndex((r) => !r.success);
+      const response = sent.responses[failed];
       if (response !== void 0 && !response.success)
         return [
-          problem(
+          isTimeout(response.error) ? timeoutProblem(name, timeoutSeconds) : problem(
+            "schema",
             name,
             `statement ${failed + 1} failed: ${response.error.message.split("\n", 1)[0]}`
           )
         ];
     }
     const found = [];
-    for (const { file, sql, slots } of texts) {
-      let responses;
-      try {
-        responses = await engine.send(sql);
-      } catch (cause) {
-        found.push(refusal(file, cause));
-        continue;
-      }
-      if (responses.length !== slots)
-        found.push(
-          problem(
-            file,
-            `the engine returned ${responses.length} results, the analyzer derived ${slots}`
-          )
-        );
+    for (const text of texts) {
+      const judged = judgeText(
+        text,
+        await send(text.sql),
+        timeoutSeconds
+      );
+      if (judged !== void 0) found.push(judged);
     }
     return found;
   });
@@ -1020,6 +1050,7 @@ var verifyStatements = (input) => Effect5.gen(function* () {
       } catch (cause) {
         early.push(
           problem(
+            "analyzer",
             file,
             `the analyzer refused the text: ${messageOf3(cause)}`
           )
