@@ -9,3 +9,6 @@ lockfile:
 # that binary through its optional dependency without it.
 allowBuilds:
   esbuild: false
+# effect-surrealkit is an optional peer the `surql` tests link from the
+# sibling package; installing the registry copy would shadow that link.
+autoInstallPeers: false

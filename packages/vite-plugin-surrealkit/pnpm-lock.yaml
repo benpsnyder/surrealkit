@@ -180,7 +180,7 @@ snapshots:
 
 	"settings": {
 		"autoDedupe": false,
-		"autoInstallPeers": true,
+		"autoInstallPeers": false,
 		"dedupeInjectedDeps": true,
 		"dedupePeerDependents": true,
 		"excludeLinksFromLockfile": false,
