@@ -1,6 +1,6 @@
 import {
   loadSurqlModule
-} from "./chunk-HNIKUY5K.js";
+} from "./chunk-E3KG4LTH.js";
 
 // src/mapper/bun.ts
 var surqlBunPlugin = (options = {}) => ({
@@ -16,4 +16,4 @@ var surqlBunPlugin = (options = {}) => ({
 export {
   surqlBunPlugin
 };
-//# sourceMappingURL=chunk-SZMSW6R7.js.map
+//# sourceMappingURL=chunk-GYQVPLVU.js.map

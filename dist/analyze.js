@@ -11,6 +11,227 @@ import {
 } from "./chunk-FBUMKT7I.js";
 import "./chunk-PZ5AY32C.js";
 
+// src/analyze/check.ts
+var SIMPLE = /^(?:string|bool|int|float|number|decimal|datetime|duration|uuid|record<[^<>|,\s]+>)$/u;
+var simpleKind = (kind) => {
+  if (kind === void 0) return void 0;
+  const inner = /^option<(.*)>$/u.exec(kind)?.[1] ?? kind;
+  return SIMPLE.test(inner) ? inner : void 0;
+};
+var acceptsNone = (use, kind) => use.kind === "field" && use.role !== "assign" ? true : use.kind !== "key" && kind !== void 0 && /^option<.*>$/u.test(kind);
+var UNPRINTABLE = new RegExp(
+  `[\\x00-\\x1f\\x7f${String.fromCharCode(8232, 8233)}]`,
+  "gu"
+);
+var quoted = (name) => `\`${name.replace(/[\\`]/gu, "\\$&").replace(
+  UNPRINTABLE,
+  (char) => `\\u{${char.codePointAt(0).toString(16)}}`
+)}\``;
+var resolve = (use, detail) => {
+  if (use.kind === "argument") {
+    const args = Object.hasOwn(detail.functions, use.function) ? detail.functions[use.function] : void 0;
+    if (args === void 0) return { kind: "unchecked" };
+    return use.index < args.length ? { kind: "kind", text: args[use.index] } : {
+      kind: "problem",
+      code: "extraArgument",
+      message: `passes argument ${use.index + 1} to \`${use.function}\`, which takes ${args.length === 1 ? "1 argument" : `${args.length} arguments`}`
+    };
+  }
+  const table = Object.hasOwn(detail.tables, use.table) ? detail.tables[use.table] : void 0;
+  if (table === void 0) return { kind: "unchecked" };
+  if (use.kind === "key") return { kind: "kind", text: table.idKey };
+  if (Object.hasOwn(table.fields, use.field)) {
+    const field = table.fields[use.field];
+    return {
+      kind: "kind",
+      text: field?.kind,
+      rejectsNone: field?.rejectsNone === true
+    };
+  }
+  if (use.field === "id")
+    return { kind: "kind", text: `record<${use.table}>` };
+  return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
+    kind: "problem",
+    code: "undeclaredField",
+    message: `${use.role === "assign" ? "assigns" : "compares"} ${quoted(use.field)} of ${quoted(use.table)}, which declares no such field`
+  };
+};
+var checkUses = (uses, detail, schemaChanges) => {
+  const problems = [];
+  const binds = {};
+  const rejectsNone = {};
+  for (const [name, list2] of Object.entries(uses)) {
+    const kinds = /* @__PURE__ */ new Set();
+    let none = true;
+    for (const use of list2) {
+      const resolved = resolve(use, detail);
+      if (resolved.kind === "problem") {
+        problems.push({
+          line: use.line,
+          code: resolved.code,
+          message: resolved.message
+        });
+        kinds.add(void 0);
+      } else if (resolved.kind === "unchecked") kinds.add(void 0);
+      else {
+        kinds.add(simpleKind(resolved.text));
+        if (!acceptsNone(use, resolved.text)) none = false;
+        if (!schemaChanges && use.kind === "field" && use.role === "assign" && resolved.rejectsNone === true && resolved.text !== void 0 && !Object.hasOwn(rejectsNone, name))
+          rejectsNone[name] = {
+            table: use.table,
+            field: use.field,
+            kind: resolved.text
+          };
+      }
+    }
+    const [only] = kinds;
+    if (kinds.size === 1 && only !== void 0)
+      binds[name] = none ? `option<${only}>` : only;
+  }
+  return { problems, binds, rejectsNone };
+};
+var declaresField = (table, field) => field === "*" || field === "id" || Object.hasOwn(table.fields, field) || Object.keys(table.fields).some(
+  (path) => path.startsWith(`${field}.`) || path.startsWith(`${field}[`)
+);
+var checkProjected = (projected, detail, schemaChanges) => schemaChanges ? [] : projected.flatMap(({ table, field, line }) => {
+  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
+  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
+    {
+      line,
+      code: "undeclaredField",
+      message: `selects ${quoted(field)} of ${quoted(table)}, which declares no such field`
+    }
+  ];
+});
+var checkFields = (fields, detail, schemaChanges) => schemaChanges ? [] : fields.flatMap(({ table, field, role, line }) => {
+  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
+  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
+    {
+      line,
+      code: "undeclaredField",
+      message: `${role === "assign" ? "assigns" : "compares"} ${quoted(field)} of ${quoted(table)}, which declares no such field`
+    }
+  ];
+});
+var holeStartsStatement = (sql, holes) => {
+  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  return tokens.some((token, i) => {
+    const before = tokens[i - 1];
+    return token.kind === "hole" && (before === void 0 || before.kind === "punct" && (before.value === ";" || before.value === "{"));
+  });
+};
+var changesSchema = (sql, holes) => {
+  const tokens = lex(sql, holeDelimiters(holes)).tokens;
+  return tokens.some(
+    (token, i) => token.kind === "word" && ["DEFINE", "ALTER", "REMOVE"].includes(token.value.toUpperCase()) && tokens[i + 1]?.kind === "word" && ["TABLE", "FIELD"].includes(
+      (tokens[i + 1]?.value ?? "").toUpperCase()
+    )
+  );
+};
+var undeclared = (sql, declared, holes) => {
+  const targets = analyzeTargets(lex(sql, holeDelimiters(holes)).tokens);
+  const tables = /* @__PURE__ */ new Set([...declared.tables, ...targets.definedTables]);
+  const functions = /* @__PURE__ */ new Set([
+    ...declared.functions,
+    ...targets.definedFunctions
+  ]);
+  const found = [];
+  const check = (at, known, what, code) => {
+    for (const [name, line] of at)
+      if (!known.has(name))
+        found.push({
+          line,
+          code,
+          message: `${what} \`${name}\`, which the schema does not declare`
+        });
+  };
+  check(targets.readAt, tables, "reads table", "undeclaredTable");
+  check(targets.writtenAt, tables, "writes table", "undeclaredTable");
+  check(
+    targets.functionsAt,
+    functions,
+    "calls function",
+    "undeclaredFunction"
+  );
+  return found.sort((a, b) => a.line - b.line);
+};
+var checkText = (sql, declared, holes) => {
+  let analysis;
+  try {
+    analysis = analyzeSync(sql, { ...holes !== void 0 && { holes } });
+  } catch (error) {
+    if (error instanceof AnalyzeError) return { kind: "refused", error };
+    throw error;
+  }
+  if (declared === void 0)
+    return { kind: "analysed", analysis, problems: [] };
+  const detail = declared.detail;
+  const schemaChanges = detail !== void 0 && changesSchema(sql, holes);
+  const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail, schemaChanges);
+  const fieldsUnknown = schemaChanges || holeStartsStatement(sql, holes);
+  const problems = [
+    ...undeclared(sql, declared, holes),
+    ...checked?.problems ?? [],
+    ...detail === void 0 ? [] : [
+      ...checkProjected(
+        analysis.projected,
+        detail,
+        fieldsUnknown
+      ),
+      ...checkFields(analysis.fields, detail, fieldsUnknown)
+    ]
+  ].sort((a, b) => a.line - b.line);
+  return {
+    kind: "analysed",
+    analysis,
+    problems,
+    ...checked !== void 0 && {
+      binds: checked.binds,
+      rejectsNone: checked.rejectsNone
+    }
+  };
+};
+var compareProblems = (a, b) => a.name !== b.name ? a.name < b.name ? -1 : 1 : a.line !== b.line ? a.line - b.line : (a.column ?? 0) !== (b.column ?? 0) ? (a.column ?? 0) - (b.column ?? 0) : a.text < b.text ? -1 : a.text > b.text ? 1 : 0;
+var schemaProblems = (texts, declared, options = {}) => {
+  const found = /* @__PURE__ */ new Map();
+  const add = (name, line, column, code, message) => {
+    const text2 = `${name}:${line}${column === void 0 ? "" : `:${column}`}: ${message} (${code})`;
+    if (!found.has(text2))
+      found.set(text2, {
+        name,
+        line,
+        ...column !== void 0 && { column },
+        code,
+        message,
+        text: text2
+      });
+  };
+  for (const { name, sql } of texts) {
+    if (name === "") {
+      add(name, 1, void 0, "unnamed", "a text has no name");
+      continue;
+    }
+    const checked = checkText(sql, declared, options.holes);
+    if (checked.kind === "refused") {
+      const { line, column, code, message } = checked.error;
+      add(name, line, column, code, message);
+      continue;
+    }
+    for (const problem of checked.problems)
+      add(name, problem.line, void 0, problem.code, problem.message);
+    for (const diagnostic of checked.analysis.diagnostics)
+      if (diagnostic.severity === "error")
+        add(
+          name,
+          diagnostic.line,
+          diagnostic.column,
+          diagnostic.code,
+          diagnostic.message
+        );
+  }
+  return [...found.values()].sort(compareProblems);
+};
+
 // src/analyze/pin.ts
 import { Data } from "effect";
 var PinnedStatementsError = class extends Data.TaggedError(
@@ -124,114 +345,6 @@ var rejectsNoneField = (fields) => `{ ${Object.entries(fields).map(
 var bindsField = (binds) => `{ ${Object.entries(binds).map(
   ([name, kind]) => `${JSON.stringify(name)}: ${JSON.stringify(kind)}`
 ).join(", ")} }`;
-var SIMPLE = /^(?:string|bool|int|float|number|decimal|datetime|duration|uuid|record<[^<>|,\s]+>)$/u;
-var simpleKind = (kind) => {
-  if (kind === void 0) return void 0;
-  const inner = /^option<(.*)>$/u.exec(kind)?.[1] ?? kind;
-  return SIMPLE.test(inner) ? inner : void 0;
-};
-var acceptsNone = (use, kind) => use.kind === "field" && use.role !== "assign" ? true : use.kind !== "key" && kind !== void 0 && /^option<.*>$/u.test(kind);
-var UNPRINTABLE = new RegExp(
-  `[\\x00-\\x1f\\x7f${String.fromCharCode(8232, 8233)}]`,
-  "gu"
-);
-var quoted = (name) => `\`${name.replace(/[\\`]/gu, "\\$&").replace(
-  UNPRINTABLE,
-  (char) => `\\u{${char.codePointAt(0).toString(16)}}`
-)}\``;
-var resolve = (use, detail) => {
-  if (use.kind === "argument") {
-    const args = Object.hasOwn(detail.functions, use.function) ? detail.functions[use.function] : void 0;
-    if (args === void 0) return { kind: "unchecked" };
-    return use.index < args.length ? { kind: "kind", text: args[use.index] } : {
-      kind: "problem",
-      message: `passes argument ${use.index + 1} to \`${use.function}\`, which takes ${args.length === 1 ? "1 argument" : `${args.length} arguments`}`
-    };
-  }
-  const table = Object.hasOwn(detail.tables, use.table) ? detail.tables[use.table] : void 0;
-  if (table === void 0) return { kind: "unchecked" };
-  if (use.kind === "key") return { kind: "kind", text: table.idKey };
-  if (Object.hasOwn(table.fields, use.field)) {
-    const field = table.fields[use.field];
-    return {
-      kind: "kind",
-      text: field?.kind,
-      rejectsNone: field?.rejectsNone === true
-    };
-  }
-  if (use.field === "id")
-    return { kind: "kind", text: `record<${use.table}>` };
-  return table.acceptsUndeclared ? { kind: "kind", text: void 0 } : {
-    kind: "problem",
-    message: `${use.role === "assign" ? "assigns" : "compares"} ${quoted(use.field)} of ${quoted(use.table)}, which declares no such field`
-  };
-};
-var checkUses = (uses, detail, schemaChanges) => {
-  const problems = [];
-  const binds = {};
-  const rejectsNone = {};
-  for (const [name, list2] of Object.entries(uses)) {
-    const kinds = /* @__PURE__ */ new Set();
-    let none = true;
-    for (const use of list2) {
-      const resolved = resolve(use, detail);
-      if (resolved.kind === "problem") {
-        problems.push({ line: use.line, message: resolved.message });
-        kinds.add(void 0);
-      } else if (resolved.kind === "unchecked") kinds.add(void 0);
-      else {
-        kinds.add(simpleKind(resolved.text));
-        if (!acceptsNone(use, resolved.text)) none = false;
-        if (!schemaChanges && use.kind === "field" && use.role === "assign" && resolved.rejectsNone === true && resolved.text !== void 0 && !Object.hasOwn(rejectsNone, name))
-          rejectsNone[name] = {
-            table: use.table,
-            field: use.field,
-            kind: resolved.text
-          };
-      }
-    }
-    const [only] = kinds;
-    if (kinds.size === 1 && only !== void 0)
-      binds[name] = none ? `option<${only}>` : only;
-  }
-  return { problems, binds, rejectsNone };
-};
-var declaresField = (table, field) => field === "*" || field === "id" || Object.hasOwn(table.fields, field) || Object.keys(table.fields).some(
-  (path) => path.startsWith(`${field}.`) || path.startsWith(`${field}[`)
-);
-var checkProjected = (projected, detail, schemaChanges) => schemaChanges ? [] : projected.flatMap(({ table, field, line }) => {
-  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
-  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
-    {
-      line,
-      message: `selects ${quoted(field)} of ${quoted(table)}, which declares no such field`
-    }
-  ];
-});
-var checkFields = (fields, detail, schemaChanges) => schemaChanges ? [] : fields.flatMap(({ table, field, role, line }) => {
-  const declared = Object.hasOwn(detail.tables, table) ? detail.tables[table] : void 0;
-  return declared === void 0 || declared.acceptsUndeclared || declaresField(declared, field) ? [] : [
-    {
-      line,
-      message: `${role === "assign" ? "assigns" : "compares"} ${quoted(field)} of ${quoted(table)}, which declares no such field`
-    }
-  ];
-});
-var holeStartsStatement = (sql, holes) => {
-  const tokens = lex(sql, holeDelimiters(holes)).tokens;
-  return tokens.some((token, i) => {
-    const before = tokens[i - 1];
-    return token.kind === "hole" && (before === void 0 || before.kind === "punct" && (before.value === ";" || before.value === "{"));
-  });
-};
-var changesSchema = (sql, holes) => {
-  const tokens = lex(sql, holeDelimiters(holes)).tokens;
-  return tokens.some(
-    (token, i) => token.kind === "word" && ["DEFINE", "ALTER", "REMOVE"].includes(token.value.toUpperCase()) && tokens[i + 1]?.kind === "word" && ["TABLE", "FIELD"].includes(
-      (tokens[i + 1]?.value ?? "").toUpperCase()
-    )
-  );
-};
 var linesOf = (text2) => text2.split(/\r\n|[\n\r\u2028\u2029]/u);
 var commentSafe = (line) => line.replaceAll("*/", "*\\/").replace(/(^|\s)@/gu, "$1\\@");
 var docComment = (analysis, title, holes) => {
@@ -294,27 +407,6 @@ var renderConstant = (scope, name, analysis, binds, rejectsNone, holes) => {
     "} as const);"
   ].join("\n");
 };
-var undeclared = (sql, declared, holes) => {
-  const targets = analyzeTargets(lex(sql, holeDelimiters(holes)).tokens);
-  const tables = /* @__PURE__ */ new Set([...declared.tables, ...targets.definedTables]);
-  const functions = /* @__PURE__ */ new Set([
-    ...declared.functions,
-    ...targets.definedFunctions
-  ]);
-  const found = [];
-  const check = (at, known, what) => {
-    for (const [name, line] of at)
-      if (!known.has(name))
-        found.push({
-          line,
-          message: `${what} \`${name}\`, which the schema does not declare`
-        });
-  };
-  check(targets.readAt, tables, "reads table");
-  check(targets.writtenAt, tables, "writes table");
-  check(targets.functionsAt, functions, "calls function");
-  return found.sort((a, b) => a.line - b.line);
-};
 var renderStatementModulesSync = (input) => {
   const problems = [];
   const warnings = [];
@@ -368,61 +460,31 @@ var renderStatementModulesSync = (input) => {
       });
       continue;
     }
-    let analysis;
-    try {
-      analysis = analyzeSync(source.sql, {
-        ...input.holes !== void 0 && { holes: input.holes }
+    const checked = checkText(source.sql, source.declared, input.holes);
+    if (checked.kind === "refused") {
+      const { error } = checked;
+      problems.push({
+        kind: "analysis",
+        scope: source.scope,
+        file: source.name,
+        line: error.line,
+        column: error.column,
+        code: error.code,
+        message: error.message,
+        text: `${file}:${error.line}:${error.column}: ${error.message}`
       });
-    } catch (error) {
-      if (error instanceof AnalyzeError) {
-        problems.push({
-          kind: "analysis",
-          scope: source.scope,
-          file: source.name,
-          line: error.line,
-          column: error.column,
-          code: error.code,
-          message: error.message,
-          text: `${file}:${error.line}:${error.column}: ${error.message}`
-        });
-        continue;
-      }
-      throw error;
+      continue;
     }
-    let binds;
-    let rejectsNone;
-    if (source.declared !== void 0) {
-      const detail = source.declared.detail;
-      const schemaChanges = detail !== void 0 && changesSchema(source.sql, input.holes);
-      const checked = detail === void 0 ? void 0 : checkUses(analysis.uses, detail, schemaChanges);
-      binds = checked?.binds;
-      rejectsNone = checked?.rejectsNone;
-      const fieldsUnknown = schemaChanges || holeStartsStatement(source.sql, input.holes);
-      for (const problem2 of [
-        ...undeclared(source.sql, source.declared, input.holes),
-        ...checked?.problems ?? [],
-        ...detail === void 0 ? [] : [
-          ...checkProjected(
-            analysis.projected,
-            detail,
-            fieldsUnknown
-          ),
-          ...checkFields(
-            analysis.fields,
-            detail,
-            fieldsUnknown
-          )
-        ]
-      ].sort((a, b) => a.line - b.line))
-        problems.push({
-          kind: "undeclared",
-          scope: source.scope,
-          file: source.name,
-          line: problem2.line,
-          message: problem2.message,
-          text: `${file}:${problem2.line}: ${problem2.message}`
-        });
-    }
+    const { analysis, binds, rejectsNone } = checked;
+    for (const problem2 of checked.problems)
+      problems.push({
+        kind: "undeclared",
+        scope: source.scope,
+        file: source.name,
+        line: problem2.line,
+        message: problem2.message,
+        text: `${file}:${problem2.line}: ${problem2.message}`
+      });
     for (const diagnostic of analysis.diagnostics) {
       const at = {
         scope: source.scope,
@@ -614,6 +676,7 @@ export {
   renderPinnedStatements,
   renderStatementModules,
   renderStatementModulesSync,
+  schemaProblems,
   text
 };
 //# sourceMappingURL=analyze.js.map

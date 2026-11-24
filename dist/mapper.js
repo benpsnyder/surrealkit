@@ -1,6 +1,6 @@
 import {
   surqlBunPlugin
-} from "./chunk-SZMSW6R7.js";
+} from "./chunk-GYQVPLVU.js";
 import {
   EMPTY_SURQL_MODULE,
   MAPPER_PACKAGE,
@@ -15,7 +15,7 @@ import {
   surqlLayout,
   surqlModuleIn,
   surqlProjectFor
-} from "./chunk-HNIKUY5K.js";
+} from "./chunk-E3KG4LTH.js";
 export {
   EMPTY_SURQL_MODULE,
   MAPPER_PACKAGE,

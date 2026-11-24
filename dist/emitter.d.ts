@@ -1,7 +1,7 @@
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';
 import { Schema, Effect } from 'effect';
-import { a as DeclaredNames } from './render-DcgksstA.js';
+import { D as DeclaredNames } from './check-BzUPD3DO.js';
 import './lexer-VCZFEQjh.js';
 
 /**

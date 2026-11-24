@@ -8,6 +8,16 @@ interface HoleDelimiters {
     readonly close: string;
 }
 
+/**
+ * The checks that compare an authored text with a schema's declared names:
+ * a table or custom function the schema does not declare, a projected,
+ * compared or assigned field a `SCHEMAFULL` table does not declare, and a
+ * binding use that does not resolve. {@link checkText} is the one
+ * implementation: `renderStatementModules` calls it for each file of a scope
+ * with `declared`, and {@link schemaProblems} calls it for named texts
+ * without rendering anything. Pure and host-neutral.
+ */
+
 /** The tables and custom functions (`fn::…`) a schema declares. */
 interface DeclaredNames {
     readonly tables: ReadonlyArray<string>;
@@ -49,6 +59,7 @@ interface DeclaredTable {
     /** The kind text of the id key, when the schema declares one. */
     readonly idKey?: string;
 }
+
 /**
  * Why a module could not be rendered. `analysis`: the analyzer rejected the
  * file (`line`, `column` and `code` set). `name`: the file name is not an
