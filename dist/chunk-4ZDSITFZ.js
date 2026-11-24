@@ -510,10 +510,10 @@ var declaredBy = (statements, reason) => {
   return site === void 0 ? { statement: first.name } : { statement: first.name, source: site.source, lines: site.lines };
 };
 var duplicateMessage = /^Database index `[\s\S]+` already contains [\s\S]+, with record `[\s\S]+`$/u;
+var isIndexDuplicate = (error) => typeof error.kind === "string" && error.kind !== "Thrown" && duplicateMessage.test(error.message);
 var conflictingIndex = (error, declared) => {
-  if (error.kind !== "Internal" || error.details !== void 0) return;
+  if (!isIndexDuplicate(error)) return;
   const { message } = error;
-  if (!duplicateMessage.test(message)) return;
   let found;
   for (const index of declared) {
     if (message.startsWith(
@@ -525,7 +525,7 @@ var conflictingIndex = (error, declared) => {
   return found;
 };
 var isRecordExists = (error) => {
-  if (error.kind !== "AlreadyExists") return false;
+  if (error.kind !== "AlreadyExists" || isIndexDuplicate(error)) return false;
   const { details } = error;
   return typeof details === "object" && details?.kind === "Record";
 };
@@ -559,18 +559,21 @@ var classify = (name2, statements, cause) => {
         cause
       });
     }
+    if (isIndexDuplicate(error)) {
+      const index = conflictingIndex(error, declared);
+      if (index !== void 0) {
+        return new StatementIndexConflict({
+          statement: indexDeclarer(statements, index),
+          index,
+          cause
+        });
+      }
+      continue;
+    }
     if (isRecordExists(error)) {
       return new StatementRecordExists({
         statement: name2,
         message: `\`${name2}\` tried to create a record whose id already exists`,
-        cause
-      });
-    }
-    const index = conflictingIndex(error, declared);
-    if (index !== void 0) {
-      return new StatementIndexConflict({
-        statement: indexDeclarer(statements, index),
-        index,
         cause
       });
     }
@@ -2516,4 +2519,4 @@ export {
   withTransaction,
   stream
 };
-//# sourceMappingURL=chunk-NY3EKZCE.js.map
+//# sourceMappingURL=chunk-4ZDSITFZ.js.map
