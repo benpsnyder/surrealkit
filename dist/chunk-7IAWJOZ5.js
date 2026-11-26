@@ -107,6 +107,8 @@ var BulkWriteError = class extends Data.TaggedError("BulkWriteError") {
 };
 var LiveQueryClosed = class extends Data.TaggedError("LiveQueryClosed") {
 };
+var WatchQueryClosed = class extends Data.TaggedError("WatchQueryClosed") {
+};
 
 // src/client/timing.ts
 import { Context, Effect } from "effect";
@@ -412,47 +414,33 @@ var recordingScoped = (kind, name2) => Effect3.acquireRelease(
   ({ finish }) => finish
 ).pipe(Effect3.map(({ recorder }) => recorder));
 
-// src/client/client.ts
-import {
-  Context as Context3,
-  Effect as Effect13,
-  Layer,
-  Stream as Stream6
-} from "effect";
-
-// src/client/bulk.ts
-import {
-  Cause as Cause2,
-  Duration as Duration5,
-  Effect as Effect9,
-  Pull,
-  Stream as Stream3
-} from "effect";
-import {
-  AuthenticationError,
-  ConnectionUnavailableError as ConnectionUnavailableError2,
-  ExpressionError as ExpressionError2,
-  InvalidSessionError as InvalidSessionError2,
-  MissingNamespaceDatabaseError as MissingNamespaceDatabaseError2,
-  ServerError as ServerError2,
-  UnavailableFeatureError as UnavailableFeatureError2,
-  UnsupportedFeatureError as UnsupportedFeatureError2,
-  UnsupportedVersionError
-} from "surrealdb";
-
-// src/client/interactive.ts
-import { Context as Context2, Duration as Duration3, Effect as Effect7, Exit as Exit2, Stream as Stream2 } from "effect";
-import {
-  ConnectionUnavailableError,
-  InvalidSessionError,
-  MissingNamespaceDatabaseError,
-  ServerError,
-  UnavailableFeatureError,
-  UnsupportedFeatureError
-} from "surrealdb";
+// src/client/watch-query.ts
+import { Cause as Cause2, Deferred, Duration as Duration3, Effect as Effect7, Queue as Queue2, Stream as Stream3 } from "effect";
 
 // src/client/internal/classify.ts
-import { ExpressionError } from "surrealdb";
+import {
+  AuthenticationError,
+  ExpressionError,
+  InvalidSessionError,
+  NotAllowedError,
+  NotFoundError
+} from "surrealdb";
+var causedBy = (cause, matches) => {
+  const visited = /* @__PURE__ */ new Set();
+  for (let error = cause; error instanceof Error && !visited.has(error); error = error.cause) {
+    if (matches(error)) return true;
+    visited.add(error);
+  }
+  return false;
+};
+var isAuthenticationFailure = (cause) => causedBy(
+  cause,
+  (error) => error instanceof AuthenticationError || error instanceof NotAllowedError && error.details?.kind === "Auth"
+);
+var isClosedSession = (cause) => causedBy(
+  cause,
+  (error) => error instanceof InvalidSessionError || error instanceof NotFoundError && error.details?.kind === "Session"
+);
 var isCollateralFailure = (error) => {
   if (!(error instanceof Error)) return false;
   const query = error;
@@ -592,59 +580,16 @@ var classify = (name2, statements, cause) => {
   });
 };
 
-// src/client/internal/decode.ts
-import { Effect as Effect4, Schema } from "effect";
-var changesOf = (statements) => statements.some((statement) => statement.writes === true) ? "writes" : statements.every((statement) => statement.writes === false) ? "none" : "maybe";
-var committedNote = (changes2) => changes2 === "writes" ? ". The request succeeded and its writes are committed, so do not send it again to retry" : changes2 === "maybe" ? ". The request succeeded and may have written: it is not known whether it writes, and any writes it made are committed; read the data back before sending it again" : "";
-var decodeOutcome = (request, changes2) => (error) => changes2 !== "none" && error instanceof StatementDecodeError ? new StatementWriteOutcomeError({ request, cause: error }) : error;
-var decode = (statement, results, offset, writes) => {
-  const at = offset + statement.valueSlot - 1;
-  for (let slot = offset; slot < offset + statement.slots; slot++) {
-    if (slot !== at && results[slot] !== void 0) {
-      return Effect4.fail(
-        new StatementDecodeError({
-          statement: statement.name,
-          slot: slot - offset + 1,
-          committed: writes !== "none",
-          message: `result ${slot - offset + 1} of ${statement.slots} must be NONE; only result ${statement.valueSlot} of a statement is decoded${committedNote(writes)}`
-        })
-      );
-    }
-  }
-  const value = results[at];
-  if (statement.nonEmpty === true && (value === void 0 || value === null || Array.isArray(value) && value.length === 0)) {
-    return Effect4.fail(
-      new StatementEmptyResult({
-        statement: statement.name,
-        slot: statement.valueSlot,
-        message: `\`${statement.name}\` returned nothing, although it returns a row whenever it applies: the session may lack permission for it (SurrealDB reports a denied write as an empty result, without an error), and it wrote nothing`
-      })
-    );
-  }
-  return Schema.decodeUnknownEffect(statement.result)(value, {
-    onExcessProperty: "error"
-  }).pipe(
-    Effect4.mapError(
-      (error) => new StatementDecodeError({
-        statement: statement.name,
-        slot: statement.valueSlot,
-        committed: writes !== "none",
-        message: `${codecIssueText(error.issue, statement.result.ast)}${committedNote(writes)}`
-      })
-    )
-  );
-};
-var countOf = (name2, results, expected, writes) => Array.isArray(results) && results.length === expected ? Effect4.succeed(results) : Effect4.fail(
-  new StatementDecodeError({
-    statement: name2,
-    slot: 0,
-    committed: writes !== "none",
-    message: `expected ${expected} results, one per SurrealQL statement, and received ${Array.isArray(results) ? results.length : "no list"}${committedNote(writes)}`
-  })
-);
+// src/client/live.ts
+import { Effect as Effect6, Queue, Schema as Schema2, Stream as Stream2 } from "effect";
+import {
+  ConfigurationError,
+  UnavailableFeatureError,
+  UnsupportedFeatureError
+} from "surrealdb";
 
 // src/client/internal/encode.ts
-import { Effect as Effect5, Schema as Schema2, SchemaAST } from "effect";
+import { Effect as Effect4, Schema, SchemaAST } from "effect";
 
 // src/client/values.ts
 import {
@@ -841,11 +786,11 @@ var valueProblem = (value) => {
 var pathText = (binding, path) => `$${binding}${path.map((step) => typeof step === "number" ? `[${step}]` : "[*]").join("")}`;
 
 // src/client/internal/encode.ts
-var encode = (statement, input) => Effect5.forEach(
+var encode = (statement, input) => Effect4.forEach(
   Object.entries(statement.params),
-  ([name2, codec]) => Schema2.encodeUnknownEffect(codec)(input[name2]).pipe(
-    Effect5.map((value) => [name2, value]),
-    Effect5.mapError(
+  ([name2, codec]) => Schema.encodeUnknownEffect(codec)(input[name2]).pipe(
+    Effect4.map((value) => [name2, value]),
+    Effect4.mapError(
       (error) => new StatementEncodeError({
         statement: statement.name,
         binding: name2,
@@ -856,13 +801,13 @@ var encode = (statement, input) => Effect5.forEach(
       })
     )
   )
-).pipe(Effect5.map((entries) => Object.fromEntries(entries)));
+).pipe(Effect4.map((entries) => Object.fromEntries(entries)));
 var checkValues = (bindings, owner, options) => {
-  if (options?.unsafeSkipValueCheck === true) return Effect5.void;
+  if (options?.unsafeSkipValueCheck === true) return Effect4.void;
   for (const [binding, value] of Object.entries(bindings)) {
     const found = valueProblem(value);
     if (found !== void 0) {
-      return Effect5.fail(
+      return Effect4.fail(
         new StatementEncodeError({
           statement: owner(binding),
           binding,
@@ -872,12 +817,12 @@ var checkValues = (bindings, owner, options) => {
       );
     }
   }
-  return Effect5.void;
+  return Effect4.void;
 };
 
 // src/client/internal/join.ts
-import { Effect as Effect6 } from "effect";
-var planRenames = (statements) => Effect6.gen(function* () {
+import { Effect as Effect5 } from "effect";
+var planRenames = (statements) => Effect5.gen(function* () {
   const used = /* @__PURE__ */ new Set();
   const shared = /* @__PURE__ */ new Set();
   const scopes = statements.map(({ statement }) => {
@@ -901,7 +846,7 @@ var planRenames = (statements) => Effect6.gen(function* () {
       const owner = statements.find(
         ({ statement }) => Object.hasOwn(statement.params, binding) || statement.defines.includes(binding)
       );
-      return yield* Effect6.fail(
+      return yield* Effect5.fail(
         new StatementScopeError({
           statement: owner?.statement.name ?? "join",
           binding,
@@ -914,7 +859,7 @@ var planRenames = (statements) => Effect6.gen(function* () {
   for (const { statement } of statements) {
     const scan = scanParameters(statement.sql);
     if (scan === void 0) {
-      return yield* Effect6.fail(
+      return yield* Effect5.fail(
         new StatementScopeError({
           statement: statement.name,
           message: `cannot tokenize \`${statement.name}\` with certainty while renaming shared parameters`
@@ -925,7 +870,7 @@ var planRenames = (statements) => Effect6.gen(function* () {
     for (const token of tokens) used.add(token.value);
     for (const binding of recordNames) {
       if (shared.has(binding)) {
-        return yield* Effect6.fail(
+        return yield* Effect5.fail(
           new StatementScopeError({
             statement: statement.name,
             binding,
@@ -964,13 +909,13 @@ var requestPart = (statement, bindings, offset, slots, names) => ({
   offset,
   slots
 });
-var joinWith = (statements, options) => Effect6.gen(function* () {
+var joinWith = (statements, options) => Effect5.gen(function* () {
   if (options.refuseTransactional) {
     const own = statements.find(
       ({ statement }) => statement.transactional
     )?.statement;
     if (own !== void 0)
-      return yield* Effect6.fail(
+      return yield* Effect5.fail(
         new StatementScopeError({
           statement: own.name,
           message: `\`${own.name}\` writes its own BEGIN, COMMIT or CANCEL, so it cannot run inside a transaction; run it on its own`
@@ -991,7 +936,7 @@ var joinWith = (statements, options) => Effect6.gen(function* () {
     for (const [binding, value] of Object.entries(mine)) {
       const key = planned?.names.get(binding) ?? binding;
       if (options.mode === "atomic" && key === "__proto__") {
-        return yield* Effect6.fail(
+        return yield* Effect5.fail(
           new StatementScopeError({
             statement: statement.name,
             binding,
@@ -1022,6 +967,547 @@ var joinWith = (statements, options) => Effect6.gen(function* () {
   };
 });
 
+// src/client/live.ts
+var unsupported = (statement, cause) => new StatementUnsupported({
+  feature: "live query",
+  statement,
+  message: "the connection cannot listen for live queries",
+  ...cause !== void 0 && { cause }
+});
+var requestError = (statement, cause) => cause instanceof UnsupportedFeatureError || cause instanceof UnavailableFeatureError || cause instanceof ConfigurationError && cause.isLiveQueryNotSupported ? unsupported(statement, cause) : new StatementRequestError({
+  statement,
+  message: requestErrorText(cause),
+  cause
+});
+var closed = (statement, reason) => new LiveQueryClosed({
+  statement,
+  reason,
+  message: reason === "killed" ? `the engine killed live query \`${statement}\`` : `the connection for live query \`${statement}\` closed`
+});
+var liveIterator = (handle, onError) => Effect6.try({
+  try: () => handle.messages[Symbol.asyncIterator](),
+  catch: onError
+});
+var consumeFrames = (statement, iterator, consume, onError) => Effect6.forever(
+  Effect6.gen(function* () {
+    const frame = yield* Effect6.tryPromise({
+      try: () => iterator.next(),
+      catch: onError
+    });
+    if (frame.done)
+      return yield* Effect6.fail(closed(statement, "disconnected"));
+    const { action, id, value } = frame.value;
+    if (action === "KILLED")
+      return yield* Effect6.fail(closed(statement, "killed"));
+    yield* consume({ action, id, value });
+  })
+);
+var consumeLive = (statement, handle, consume, onError) => liveIterator(handle, onError).pipe(
+  Effect6.flatMap(
+    (iterator) => consumeFrames(statement, iterator, consume, onError)
+  )
+);
+var decodeField = (statement, field, codec, value) => Schema2.decodeUnknownEffect(codec)(value, {
+  onExcessProperty: "error"
+}).pipe(
+  Effect6.mapError(
+    (error) => new StatementDecodeError({
+      statement,
+      slot: 1,
+      committed: false,
+      message: `live event ${field}: ${codecIssueText(error.issue, codec.ast)}`
+    })
+  )
+);
+var changes = (statement, handle) => Effect6.gen(function* () {
+  const disconnected = () => closed(statement, "disconnected");
+  const iterator = yield* liveIterator(handle, disconnected);
+  const queue = yield* Queue.unbounded();
+  yield* Effect6.addFinalizer(() => Queue.shutdown(queue));
+  yield* Effect6.forkScoped(
+    consumeFrames(
+      statement,
+      iterator,
+      (frame) => Queue.offer(queue, frame),
+      disconnected
+    ).pipe(Effect6.catch((error) => Queue.fail(queue, error))),
+    { startImmediately: true }
+  );
+  return Stream2.fromQueue(queue);
+});
+var register = (open, descriptor, input, connectionSignal) => {
+  const { name: name2, sql } = descriptor;
+  const operation = `live(${name2})`;
+  return recording(
+    "run",
+    operation,
+    (recorder) => Effect6.gen(function* () {
+      const bindings = yield* Effect6.interruptible(
+        recorder.encode(
+          encode(descriptor, input).pipe(
+            Effect6.tap(
+              (encoded) => checkValues(encoded, () => name2, void 0)
+            )
+          )
+        )
+      );
+      yield* recorder.server(name2, void 0);
+      return yield* recorder.wait(
+        Effect6.tryPromise({
+          try: (signal) => open(
+            {
+              mode: "query",
+              sql,
+              bindings,
+              parts: [
+                requestPart(descriptor, bindings, 0, 1)
+              ]
+            },
+            signal,
+            connectionSignal
+          ),
+          catch: (cause) => requestError(name2, cause)
+        })
+      );
+    })
+  ).pipe(withClientSpan(operation, { kind: "client" }));
+};
+var acquireLive = (transport, statement, input, connectionSignal) => {
+  const open = transport.live;
+  const { name: name2, sql, params } = statement;
+  if (open === void 0) return Effect6.fail(unsupported(name2));
+  const descriptor = make({
+    name: name2,
+    sql,
+    params,
+    result: Schema2.Unknown,
+    writes: false
+  });
+  return Effect6.acquireRelease(
+    register(open, descriptor, input, connectionSignal),
+    (subscribed) => kill(name2, subscribed)
+  );
+};
+var kill = (name2, handle) => {
+  const operation = `kill(${name2})`;
+  return recording(
+    "run",
+    operation,
+    (recorder) => recorder.wait(Effect6.tryPromise(() => handle.kill())).pipe(
+      Effect6.catch(
+        () => Effect6.logWarning(
+          "live query cleanup could not be confirmed"
+        ).pipe(Effect6.annotateLogs({ statement: name2 }))
+      )
+    )
+  ).pipe(withClientSpan(operation, { kind: "client" }));
+};
+var scoped = (transport) => (statement, ...args) => Effect6.gen(function* () {
+  const { name: name2 } = statement;
+  const input = args[0] ?? {};
+  const handle = yield* acquireLive(transport, statement, input);
+  const messages = yield* changes(name2, handle);
+  return messages.pipe(
+    Stream2.mapEffect(
+      ({ action, id, value }) => Effect6.gen(function* () {
+        const recordId = yield* decodeField(
+          name2,
+          "id",
+          statement.id,
+          id
+        );
+        const row = yield* decodeField(
+          name2,
+          "value",
+          statement.row,
+          value
+        );
+        return { action, id: recordId, value: row };
+      })
+    )
+  );
+});
+var makeLive = (transport) => {
+  const liveScoped = scoped(transport);
+  return {
+    liveScoped,
+    live: (statement, ...args) => Stream2.unwrap(liveScoped(statement, ...args))
+  };
+};
+
+// src/client/watch-query.ts
+var bindLive = (statement, ...input) => ({ statement, input: input[0] ?? {} });
+var closed2 = (statement, reason) => new WatchQueryClosed({
+  statement,
+  reason,
+  message: {
+    disconnected: "the observer connection closed",
+    "session-closed": "the observer session closed",
+    "identity-changed": "the observer session credentials or database selection changed",
+    authentication: "the observer session authentication failed or was invalidated",
+    "source-overflow": "a live source reported notification overflow"
+  }[reason]
+});
+var intervalOf = (input) => {
+  const interval = Duration3.fromInput(input);
+  if (interval._tag === "None") return;
+  const millis = Duration3.toMillis(interval.value);
+  if (Number.isFinite(millis) && millis > 0) return interval.value;
+};
+var watchFailure = (name2, error) => {
+  if (isAuthenticationFailure(error)) return closed2(name2, "authentication");
+  if (isClosedSession(error)) return closed2(name2, "session-closed");
+  if (causedBy(error, (cause) => cause.name === "LiveQueryOverflowError"))
+    return closed2(name2, "source-overflow");
+  return error;
+};
+var sessionIsValid = (transport) => transport.isWatchSessionValid?.() !== false;
+var notificationFailure = (name2, cause) => {
+  const error = watchFailure(name2, cause);
+  return error instanceof WatchQueryClosed ? error : closed2(name2, "disconnected");
+};
+var newConnectionController = () => new globalThis.AbortController();
+var maintain = (name2, transport, sources, interval, read, generation, publish, onFailure) => Effect7.scoped(
+  Effect7.gen(function* () {
+    const dirty = yield* Queue2.dropping(1);
+    const failed = yield* Deferred.make();
+    const markDirty = () => Queue2.offerUnsafe(dirty, void 0);
+    const invalidate = Effect7.sync(markDirty);
+    yield* Effect7.forkScoped(
+      Effect7.forever(
+        Effect7.sleep(interval).pipe(
+          Effect7.andThen(
+            Effect7.sync(() => {
+              if (sessionIsValid(transport)) markDirty();
+              else onFailure(closed2(name2, "session-closed"));
+            })
+          )
+        )
+      ),
+      { startImmediately: true }
+    );
+    return yield* Effect7.raceFirst(
+      Deferred.await(failed),
+      Effect7.gen(function* () {
+        const verify = transport.verifyWatchOwner;
+        if (verify !== void 0) {
+          const verified = yield* Effect7.tryPromise({
+            try: verify,
+            catch: (cause) => new StatementRequestError({
+              statement: name2,
+              message: requestErrorText(cause),
+              cause
+            })
+          });
+          if (!verified)
+            return yield* Effect7.fail(
+              new StatementScopeError({
+                statement: name2,
+                message: "watchQuery requires the connection that owns the session"
+              })
+            );
+        }
+        for (const { statement, input } of sources) {
+          const handle = yield* acquireLive(
+            transport,
+            statement,
+            input,
+            generation.connection.signal
+          );
+          yield* Effect7.forkScoped(
+            consumeLive(
+              statement.name,
+              handle,
+              () => invalidate,
+              (cause) => notificationFailure(statement.name, cause)
+            ).pipe(
+              Effect7.catch(
+                (error) => Deferred.fail(failed, error)
+              )
+            ),
+            { startImmediately: true }
+          );
+        }
+        yield* Queue2.poll(dirty);
+        yield* Effect7.forever(
+          Effect7.suspend(
+            () => sessionIsValid(transport) ? read : Effect7.fail(closed2(name2, "session-closed"))
+          ).pipe(
+            Effect7.tap(
+              (value) => Effect7.sync(() => publish(value))
+            ),
+            Effect7.andThen(Queue2.take(dirty))
+          )
+        );
+      })
+    ).pipe(
+      Effect7.mapError((error) => watchFailure(name2, error)),
+      Effect7.tapError((error) => Effect7.sync(() => onFailure(error)))
+    );
+  })
+);
+var observer = (name2, transport, watch, sources, interval, read) => Effect7.gen(function* () {
+  const output = yield* Queue2.sliding(1);
+  const lifecycle = yield* Queue2.dropping(1);
+  let generation;
+  let supervised;
+  let status;
+  let currentPublished = false;
+  let stale = false;
+  let finished = false;
+  const publishStale = () => {
+    if (stale) return;
+    stale = true;
+    Queue2.offerUnsafe(output, { _tag: "Stale" });
+  };
+  const fail2 = (cause, wasConnected = false) => {
+    if (finished) return;
+    finished = true;
+    if (currentPublished || wasConnected) publishStale();
+    Queue2.failCauseUnsafe(output, cause);
+  };
+  const notify = (event) => {
+    if (event === "reconnecting" || event === "disconnected" || event === "session-closed") {
+      generation?.connection.abort();
+      supervised?.connection.abort();
+    }
+    if (finished) return;
+    if (event === status) return;
+    status = event;
+    if (event === "connected") {
+      generation = {
+        ended: Deferred.makeUnsafe(),
+        connection: newConnectionController()
+      };
+    } else {
+      const previous = generation;
+      generation = void 0;
+      if (previous !== void 0)
+        Deferred.doneUnsafe(previous.ended, Effect7.void);
+      if (event === "reconnecting") publishStale();
+      else
+        fail2(
+          Cause2.fail(closed2(name2, event)),
+          previous !== void 0
+        );
+    }
+    Queue2.offerUnsafe(lifecycle, void 0);
+  };
+  yield* Effect7.acquireRelease(
+    Effect7.try({
+      try: () => watch(notify),
+      catch: () => closed2(name2, "disconnected")
+    }),
+    (stop) => Effect7.sync(stop)
+  );
+  yield* Effect7.forkScoped(
+    Effect7.forever(
+      Effect7.gen(function* () {
+        const active = generation;
+        if (active === void 0)
+          return yield* Queue2.take(lifecycle);
+        supervised = active;
+        yield* Effect7.raceFirst(
+          Deferred.await(active.ended),
+          maintain(
+            name2,
+            transport,
+            sources,
+            interval,
+            read,
+            active,
+            (value) => {
+              if (generation !== active || finished) return;
+              if (!sessionIsValid(transport)) {
+                notify("session-closed");
+                return;
+              }
+              currentPublished = true;
+              stale = false;
+              Queue2.offerUnsafe(output, {
+                _tag: "Current",
+                value,
+                generation: active
+              });
+            },
+            (error) => {
+              if (generation !== active) return;
+              if (error instanceof WatchQueryClosed && error.reason === "session-closed")
+                notify("session-closed");
+              else fail2(Cause2.fail(error));
+            }
+          )
+        ).pipe(
+          Effect7.ensuring(
+            Effect7.sync(() => {
+              supervised = void 0;
+            })
+          ),
+          Effect7.catchCause(
+            (cause) => generation === active ? Effect7.failCause(cause) : Effect7.void
+          )
+        );
+      })
+    ).pipe(
+      Effect7.catchCause((cause) => Effect7.sync(() => fail2(cause)))
+    ),
+    { startImmediately: true }
+  );
+  const emit = (state) => Effect7.suspend(() => {
+    if (state._tag === "Stale") return Effect7.succeed(state);
+    if (state.generation === generation && !finished) {
+      if (sessionIsValid(transport))
+        return Effect7.succeed({
+          _tag: "Current",
+          value: state.value
+        });
+      notify("session-closed");
+    }
+    return Queue2.take(output).pipe(Effect7.flatMap(emit));
+  });
+  const states = Stream3.fromEffectRepeat(
+    Queue2.take(output).pipe(Effect7.flatMap(emit))
+  );
+  return Stream3.concat(
+    Stream3.succeed({ _tag: "Loading" }),
+    states
+  );
+});
+var makeWatchQuery = (transport, run2) => (statement, options, ...input) => Stream3.unwrap(
+  Effect7.gen(function* () {
+    const { name: name2, writes } = statement;
+    const scopeError2 = (message) => new StatementScopeError({ statement: name2, message });
+    if (writes !== false)
+      return yield* Effect7.fail(
+        scopeError2(
+          "watchQuery requires a statement declared with writes: false"
+        )
+      );
+    if (options.sources.length === 0)
+      return yield* Effect7.fail(
+        scopeError2(
+          "watchQuery requires at least one live source"
+        )
+      );
+    const interval = intervalOf(
+      options.reconcileEvery ?? "30 seconds"
+    );
+    if (interval === void 0)
+      return yield* Effect7.fail(
+        scopeError2(
+          "watchQuery reconcileEvery must be positive and finite"
+        )
+      );
+    const watch = transport.watch;
+    if (watch === void 0 || transport.live === void 0)
+      return yield* Effect7.fail(
+        new StatementUnsupported({
+          feature: "live query",
+          statement: name2,
+          message: "watchQuery requires live queries and connection lifecycle events"
+        })
+      );
+    return yield* observer(
+      name2,
+      transport,
+      watch,
+      options.sources,
+      interval,
+      run2(statement, ...input)
+    );
+  })
+);
+
+// src/client/client.ts
+import {
+  Context as Context3,
+  Effect as Effect14,
+  Layer,
+  Stream as Stream7
+} from "effect";
+
+// src/client/bulk.ts
+import {
+  Cause as Cause3,
+  Duration as Duration6,
+  Effect as Effect11,
+  Pull,
+  Stream as Stream5
+} from "effect";
+import {
+  AuthenticationError as AuthenticationError2,
+  ConnectionUnavailableError as ConnectionUnavailableError2,
+  ExpressionError as ExpressionError2,
+  InvalidSessionError as InvalidSessionError3,
+  MissingNamespaceDatabaseError as MissingNamespaceDatabaseError2,
+  ServerError as ServerError2,
+  UnavailableFeatureError as UnavailableFeatureError3,
+  UnsupportedFeatureError as UnsupportedFeatureError3,
+  UnsupportedVersionError
+} from "surrealdb";
+
+// src/client/interactive.ts
+import { Context as Context2, Duration as Duration4, Effect as Effect9, Exit as Exit2, Stream as Stream4 } from "effect";
+import {
+  ConnectionUnavailableError,
+  InvalidSessionError as InvalidSessionError2,
+  MissingNamespaceDatabaseError,
+  ServerError,
+  UnavailableFeatureError as UnavailableFeatureError2,
+  UnsupportedFeatureError as UnsupportedFeatureError2
+} from "surrealdb";
+
+// src/client/internal/decode.ts
+import { Effect as Effect8, Schema as Schema3 } from "effect";
+var changesOf = (statements) => statements.some((statement) => statement.writes === true) ? "writes" : statements.every((statement) => statement.writes === false) ? "none" : "maybe";
+var committedNote = (changes2) => changes2 === "writes" ? ". The request succeeded and its writes are committed, so do not send it again to retry" : changes2 === "maybe" ? ". The request succeeded and may have written: it is not known whether it writes, and any writes it made are committed; read the data back before sending it again" : "";
+var decodeOutcome = (request, changes2) => (error) => changes2 !== "none" && error instanceof StatementDecodeError ? new StatementWriteOutcomeError({ request, cause: error }) : error;
+var decode = (statement, results, offset, writes) => {
+  const at = offset + statement.valueSlot - 1;
+  for (let slot = offset; slot < offset + statement.slots; slot++) {
+    if (slot !== at && results[slot] !== void 0) {
+      return Effect8.fail(
+        new StatementDecodeError({
+          statement: statement.name,
+          slot: slot - offset + 1,
+          committed: writes !== "none",
+          message: `result ${slot - offset + 1} of ${statement.slots} must be NONE; only result ${statement.valueSlot} of a statement is decoded${committedNote(writes)}`
+        })
+      );
+    }
+  }
+  const value = results[at];
+  if (statement.nonEmpty === true && (value === void 0 || value === null || Array.isArray(value) && value.length === 0)) {
+    return Effect8.fail(
+      new StatementEmptyResult({
+        statement: statement.name,
+        slot: statement.valueSlot,
+        message: `\`${statement.name}\` returned nothing, although it returns a row whenever it applies: the session may lack permission for it (SurrealDB reports a denied write as an empty result, without an error), and it wrote nothing`
+      })
+    );
+  }
+  return Schema3.decodeUnknownEffect(statement.result)(value, {
+    onExcessProperty: "error"
+  }).pipe(
+    Effect8.mapError(
+      (error) => new StatementDecodeError({
+        statement: statement.name,
+        slot: statement.valueSlot,
+        committed: writes !== "none",
+        message: `${codecIssueText(error.issue, statement.result.ast)}${committedNote(writes)}`
+      })
+    )
+  );
+};
+var countOf = (name2, results, expected, writes) => Array.isArray(results) && results.length === expected ? Effect8.succeed(results) : Effect8.fail(
+  new StatementDecodeError({
+    statement: name2,
+    slot: 0,
+    committed: writes !== "none",
+    message: `expected ${expected} results, one per SurrealQL statement, and received ${Array.isArray(results) ? results.length : "no list"}${committedNote(writes)}`
+  })
+);
+
 // src/client/interactive.ts
 var name = "withTransaction";
 var commitDeadline = "30 seconds";
@@ -1033,12 +1519,12 @@ var scopeError = (operation) => new StatementScopeError({
   statement: operation,
   message: `${operation} cannot run inside an interactive transaction`
 });
-var unsupported = (cause) => new StatementUnsupported({
+var unsupported2 = (cause) => new StatementUnsupported({
   feature: "interactive transaction",
   message: "the connection does not support interactive transactions",
   ...cause !== void 0 && { cause }
 });
-var requestError = (cause) => new StatementRequestError({
+var requestError2 = (cause) => new StatementRequestError({
   statement: name,
   message: requestErrorText(cause),
   cause
@@ -1050,8 +1536,8 @@ var commitUnknown = (cause) => new TransactionOutcomeUnknown({
 var commitError = (cause) => {
   const classified = classify(name, [], cause);
   if (classified instanceof StatementConflict) return classified;
-  if (cause instanceof ServerError || cause instanceof ConnectionUnavailableError || cause instanceof InvalidSessionError || cause instanceof MissingNamespaceDatabaseError || cause instanceof UnsupportedFeatureError || cause instanceof UnavailableFeatureError)
-    return requestError(cause);
+  if (cause instanceof ServerError || cause instanceof ConnectionUnavailableError || cause instanceof InvalidSessionError2 || cause instanceof MissingNamespaceDatabaseError || cause instanceof UnsupportedFeatureError2 || cause instanceof UnavailableFeatureError2)
+    return requestError2(cause);
   return commitUnknown(cause);
 };
 var recordControl = (operation, request) => {
@@ -1072,15 +1558,15 @@ var recordControl = (operation, request) => {
 };
 var commit = (handle) => recordControl(
   "commit",
-  Effect7.interruptible(
-    Effect7.tryPromise({
+  Effect9.interruptible(
+    Effect9.tryPromise({
       try: () => handle.commit(),
       catch: commitError
     })
   ).pipe(
-    Effect7.timeoutOrElse({
+    Effect9.timeoutOrElse({
       duration: commitDeadline,
-      orElse: () => Effect7.fail(
+      orElse: () => Effect9.fail(
         commitUnknown(
           new Error(
             `No acknowledgement within ${commitDeadline}`
@@ -1092,34 +1578,34 @@ var commit = (handle) => recordControl(
 );
 var cancel = (handle) => recordControl(
   "cancel",
-  Effect7.tryPromise({
+  Effect9.tryPromise({
     try: () => handle.cancel(),
     catch: (cause) => cause
   })
 ).pipe(
-  Effect7.catch(
-    () => Effect7.annotateCurrentSpan("effect_surrealkit.cancel_failed", true)
+  Effect9.catch(
+    () => Effect9.annotateCurrentSpan("effect_surrealkit.cancel_failed", true)
   )
 );
 var serverTime = (answers) => {
   let total;
   for (const { server } of answers) {
     if (server !== void 0)
-      total = total === void 0 ? server : Duration3.sum(total, server);
+      total = total === void 0 ? server : Duration4.sum(total, server);
   }
   return total;
 };
 var execute = (send, requestName, statements, options) => recording(
   "interactive",
   requestName,
-  (recorder) => Effect7.gen(function* () {
+  (recorder) => Effect9.gen(function* () {
     if (statements.length === 0) return [];
     const request = yield* recorder.encode(
-      Effect7.gen(function* () {
+      Effect9.gen(function* () {
         const request2 = yield* joinWith(
           statements.map(({ statement, input }) => ({
             statement,
-            bindings: Effect7.suspend(
+            bindings: Effect9.suspend(
               () => encode(statement, input)
             )
           })),
@@ -1141,7 +1627,7 @@ var execute = (send, requestName, statements, options) => recording(
       cause
     );
     const answers = yield* recorder.wait(
-      Effect7.tryPromise({
+      Effect9.tryPromise({
         try: (signal) => send(request, signal),
         catch: failureOf2
       })
@@ -1152,13 +1638,13 @@ var execute = (send, requestName, statements, options) => recording(
     );
     const failure = firstFailure(answers);
     if (failure !== void 0) {
-      yield* Effect7.forEach(request.parts, recordServer, {
+      yield* Effect9.forEach(request.parts, recordServer, {
         discard: true
       });
-      return yield* Effect7.fail(failureOf2(failure.error));
+      return yield* Effect9.fail(failureOf2(failure.error));
     }
     return yield* recorder.decode(
-      Effect7.gen(function* () {
+      Effect9.gen(function* () {
         const values = yield* countOf(
           requestName,
           answers.map(
@@ -1194,7 +1680,7 @@ var transactionClient = (send) => ({
     const input = args[0] ?? {};
     const bound = { statement, input };
     return execute(send, statement.name, [bound], args[1]).pipe(
-      Effect7.map(([value]) => value)
+      Effect9.map(([value]) => value)
     );
   },
   transaction: (given, options) => {
@@ -1211,13 +1697,13 @@ var transactionClient = (send) => ({
 });
 var beginTransaction = (begin) => recordControl(
   "begin",
-  Effect7.tryPromise({
+  Effect9.tryPromise({
     try: (signal) => begin(signal),
-    catch: (cause) => cause instanceof UnsupportedFeatureError || cause instanceof UnavailableFeatureError ? unsupported(cause) : requestError(cause)
+    catch: (cause) => cause instanceof UnsupportedFeatureError2 || cause instanceof UnavailableFeatureError2 ? unsupported2(cause) : requestError2(cause)
   })
 );
-var attempt = (begin, body) => Effect7.uninterruptibleMask(
-  (restore) => Effect7.gen(function* () {
+var attempt = (begin, body) => Effect9.uninterruptibleMask(
+  (restore) => Effect9.gen(function* () {
     const handle = yield* beginTransaction(begin);
     let open = true;
     const send = (request, signal) => open ? handle.send(request, signal) : Promise.reject(
@@ -1227,35 +1713,35 @@ var attempt = (begin, body) => Effect7.uninterruptibleMask(
       })
     );
     const tx = transactionClient(send);
-    const result = yield* Effect7.exit(
+    const result = yield* Effect9.exit(
       restore(
-        Effect7.suspend(() => body(tx)).pipe(
-          Effect7.provideService(activeTransaction, true)
+        Effect9.suspend(() => body(tx)).pipe(
+          Effect9.provideService(activeTransaction, true)
         )
       )
     );
     open = false;
     if (Exit2.isFailure(result)) {
       yield* cancel(handle);
-      return yield* Effect7.failCause(result.cause);
+      return yield* Effect9.failCause(result.cause);
     }
     yield* commit(handle).pipe(
-      Effect7.tapError(
-        (error) => error instanceof TransactionOutcomeUnknown ? Effect7.void : cancel(handle)
+      Effect9.tapError(
+        (error) => error instanceof TransactionOutcomeUnknown ? Effect9.void : cancel(handle)
       )
     );
     return result.value;
   })
 );
-var makeWithTransaction = (transport) => (body, options) => Effect7.gen(function* () {
+var makeWithTransaction = (transport) => (body, options) => Effect9.gen(function* () {
   if (yield* activeTransaction)
-    return yield* Effect7.fail(scopeError(name));
+    return yield* Effect9.fail(scopeError(name));
   if (transport.begin === void 0)
-    return yield* Effect7.fail(unsupported());
+    return yield* Effect9.fail(unsupported2());
   const run2 = attempt(transport.begin, body);
   const retry = options?.retry;
   if (retry === void 0) return yield* run2;
-  return yield* Effect7.retry(run2, {
+  return yield* Effect9.retry(run2, {
     schedule: retry,
     while: (error) => error instanceof StatementConflict
   });
@@ -1269,32 +1755,83 @@ var contextClient = (tx) => ({
   run: tx.run,
   transaction: tx.transaction,
   bulk: (statement, input, { atomic: _atomic, retry: _retry, ...options }) => tx.bulk(statement, input, options),
-  pipeline: () => Effect7.fail(scopeError("pipeline")),
-  withTransaction: () => Effect7.fail(scopeError(name)),
-  stream: () => Stream2.fail(scopeError("stream")),
-  live: () => Stream2.fail(scopeError("live")),
-  liveScoped: () => Effect7.fail(scopeError("liveScoped"))
+  pipeline: () => Effect9.fail(scopeError("pipeline")),
+  withTransaction: () => Effect9.fail(scopeError(name)),
+  stream: () => Stream4.fail(scopeError("stream")),
+  live: () => Stream4.fail(scopeError("live")),
+  liveScoped: () => Effect9.fail(scopeError("liveScoped")),
+  watchQuery: () => Stream4.fail(scopeError("watchQuery"))
 });
 var withTransactionContext = (client, effect, options) => client.withTransaction(
-  (tx) => Effect7.provideService(effect, SurrealClient, contextClient(tx)),
+  (tx) => Effect9.provideService(effect, SurrealClient, contextClient(tx)),
   options
 );
 
 // src/client/internal/transport.ts
-import { Duration as Duration4, Effect as Effect8 } from "effect";
+import { Duration as Duration5, Effect as Effect10 } from "effect";
 import {
   BoundQuery,
+  Surreal,
+  SurrealSession,
   Uuid as Uuid2
 } from "surrealdb";
 var sdkDuration = (value) => {
   const [seconds = 0n, nanos = 0n] = value.toCompact();
-  return Duration4.nanos(seconds * 1000000000n + nanos);
+  return Duration5.nanos(seconds * 1000000000n + nanos);
 };
 var responseSlots = (responses) => responses.map((response) => {
   const timing = response.stats === void 0 ? {} : { server: sdkDuration(response.stats.duration) };
   return response.success ? { ok: true, value: response.result, ...timing } : { ok: false, error: response.error, ...timing };
 });
-var sdkTransport = (db) => {
+var watchConnection = (session, connection) => (notify) => {
+  const status = connection.status;
+  if (status !== "connected" && status !== "reconnecting") {
+    notify("disconnected");
+    return () => {
+    };
+  }
+  if (!session.isValid) {
+    notify("session-closed");
+    return () => {
+    };
+  }
+  const { namespace, database, accessToken } = session;
+  const unsubscribe = [
+    connection.subscribe("reconnecting", () => notify("reconnecting")),
+    connection.subscribe("disconnected", () => notify("disconnected")),
+    connection.subscribe("error", (error) => {
+      if (connection.status === "reconnecting" && isAuthenticationFailure(error))
+        notify("authentication");
+    }),
+    connection.subscribe("connected", () => {
+      if (!session.isValid) notify("session-closed");
+      else notify("connected");
+    }),
+    session.subscribe("using", (selected) => {
+      if (selected.namespace !== namespace || selected.database !== database)
+        notify("identity-changed");
+    }),
+    session.subscribe("auth", (tokens) => {
+      if (tokens === null) notify("authentication");
+      else if (tokens.access !== accessToken)
+        notify("identity-changed");
+    })
+  ];
+  notify(status);
+  return () => {
+    for (const stop of unsubscribe) stop();
+  };
+};
+var waitForLiveCleanup = (cleanup, connectionSignal) => {
+  if (connectionSignal === void 0) return cleanup;
+  return new Promise((resolve, reject) => {
+    const gone = () => resolve();
+    if (connectionSignal.aborted) gone();
+    else connectionSignal.addEventListener("abort", gone, { once: true });
+    void cleanup.then(resolve, reject).finally(() => connectionSignal.removeEventListener("abort", gone));
+  });
+};
+var sdkTransport = (db, owner) => {
   const requests = /* @__PURE__ */ new WeakMap();
   const collectAtomic = (request, signal) => {
     let bound = requests.get(request);
@@ -1313,7 +1850,20 @@ var sdkTransport = (db) => {
   };
   const beginTransaction2 = db.beginTransaction?.bind(db);
   const liveOf = db.liveOf?.bind(db);
+  const connection = db instanceof Surreal ? db : owner;
   return {
+    ...connection !== void 0 && db instanceof SurrealSession && {
+      watch: watchConnection(db, connection),
+      isWatchSessionValid: () => db.isValid,
+      ...db !== connection && {
+        verifyWatchOwner: async () => {
+          const id = db.session;
+          return id !== void 0 && (await connection.sessions()).some(
+            (session) => session.toString() === id.toString()
+          );
+        }
+      }
+    },
     collect: (request, signal) => request.mode === "atomic" ? collectAtomic(request, signal) : query(request, signal),
     send: async (request, signal) => {
       if (request.mode === "atomic") {
@@ -1336,18 +1886,29 @@ var sdkTransport = (db) => {
       }
     },
     ...liveOf === void 0 ? {} : {
-      live: async (request, signal) => {
+      live: async (request, signal, connectionSignal) => {
         signal.throwIfAborted();
-        const ids = await db.query(request.sql, request.bindings).retry(false).collect();
+        const pending = db.query(request.sql, request.bindings).retry(false);
+        const ids = await (connectionSignal === void 0 ? pending : pending.signal(connectionSignal)).collect();
         const [id] = ids;
         if (ids.length !== 1 || !(id instanceof Uuid2))
           throw new LiveRegistrationError("missing-id");
         const killById = async () => {
-          await db.query("KILL $id;", { id }).retry(false).collect();
+          const pending2 = db.query("KILL $id;", { id }).retry(false);
+          await (connectionSignal === void 0 ? pending2 : pending2.signal(connectionSignal)).collect();
         };
         let attached;
+        const killAttached = (subscription) => {
+          if (connectionSignal?.aborted)
+            return Promise.resolve();
+          return waitForLiveCleanup(
+            subscription.kill().catch(killById),
+            connectionSignal
+          );
+        };
         try {
-          attached = await liveOf(id);
+          connectionSignal?.throwIfAborted();
+          attached = await (connectionSignal !== void 0 && db instanceof SurrealSession ? db.withSignal(connectionSignal).liveOf(id) : liveOf(id));
           const subscription = attached;
           const iterator = subscription[Symbol.asyncIterator]();
           signal.throwIfAborted();
@@ -1368,10 +1929,11 @@ var sdkTransport = (db) => {
             })(),
             // The SDK caches a rejected kill. A fresh request
             // on the same session can still release this UUID.
-            kill: () => subscription.kill().catch(killById)
+            kill: () => killAttached(subscription)
           };
         } catch (error) {
-          const cleanup = attached === void 0 ? killById() : attached.kill().catch(killById);
+          if (connectionSignal?.aborted) throw error;
+          const cleanup = attached === void 0 ? killById() : killAttached(attached);
           await cleanup.catch(() => {
             throw new LiveRegistrationError(
               "cleanup-unconfirmed",
@@ -1415,7 +1977,7 @@ var sdkTransport = (db) => {
   };
 };
 var sending = (send, options) => options?.retry === void 0 ? send : send.pipe(
-  Effect8.retry({
+  Effect10.retry({
     schedule: options.retry,
     while: (error) => error._tag === "StatementConflict"
   })
@@ -1428,22 +1990,22 @@ var SourceFailure = class {
   }
   error;
 };
-var streamChunks = (source, size) => Effect9.map(
-  Stream3.toPull(Stream3.grouped(source, size)),
+var streamChunks = (source, size) => Effect11.map(
+  Stream5.toPull(Stream5.grouped(source, size)),
   (pull) => pull.pipe(
-    Effect9.map(([chunk]) => chunk),
-    Pull.catchDone(() => Effect9.succeed(void 0))
+    Effect11.map(([chunk]) => chunk),
+    Pull.catchDone(() => Effect11.succeed(void 0))
   )
 );
-var iterableChunks = (source, size) => Effect9.gen(function* () {
+var iterableChunks = (source, size) => Effect11.gen(function* () {
   let done = false;
-  const iterator = yield* Effect9.acquireRelease(
-    Effect9.sync(() => source[Symbol.iterator]()),
-    (cursor) => Effect9.sync(() => {
+  const iterator = yield* Effect11.acquireRelease(
+    Effect11.sync(() => source[Symbol.iterator]()),
+    (cursor) => Effect11.sync(() => {
       if (!done) cursor.return?.();
     })
   );
-  return Effect9.sync(() => {
+  return Effect11.sync(() => {
     if (done) return void 0;
     const head = iterator.next();
     if (head.done) {
@@ -1464,7 +2026,7 @@ var iterableChunks = (source, size) => Effect9.gen(function* () {
 });
 var totalOf = (rows) => Array.isArray(rows) ? rows.length : rows instanceof Set || rows instanceof Map ? rows.size : void 0;
 var inputWith = (input, key, rows) => ({ ...input, [key]: rows });
-var definiteRejection = (cause) => cause instanceof ServerError2 || cause instanceof AuthenticationError || cause instanceof ConnectionUnavailableError2 || cause instanceof ExpressionError2 || cause instanceof InvalidSessionError2 || cause instanceof MissingNamespaceDatabaseError2 || cause instanceof UnavailableFeatureError2 || cause instanceof UnsupportedFeatureError2 || cause instanceof UnsupportedVersionError;
+var definiteRejection = (cause) => cause instanceof ServerError2 || cause instanceof AuthenticationError2 || cause instanceof ConnectionUnavailableError2 || cause instanceof ExpressionError2 || cause instanceof InvalidSessionError3 || cause instanceof MissingNamespaceDatabaseError2 || cause instanceof UnavailableFeatureError3 || cause instanceof UnsupportedFeatureError3 || cause instanceof UnsupportedVersionError;
 var failureOf = (statement, atomic, cause) => {
   if (cause instanceof StatementScopeError || cause instanceof StatementConflict || cause instanceof TransactionOutcomeUnknown)
     return cause;
@@ -1482,7 +2044,7 @@ var serverTime2 = (answers) => {
   let server;
   for (const slot of answers) {
     if (slot.server !== void 0)
-      server = server === void 0 ? slot.server : Duration5.sum(server, slot.server);
+      server = server === void 0 ? slot.server : Duration6.sum(server, slot.server);
   }
   return server;
 };
@@ -1494,9 +2056,9 @@ var submit = (sender, job, chunks, atomic) => {
   return recording(
     "bulk",
     label,
-    (recorder) => Effect9.gen(function* () {
+    (recorder) => Effect11.gen(function* () {
       const request = yield* recorder.encode(
-        Effect9.gen(function* () {
+        Effect11.gen(function* () {
           const request2 = yield* joinWith(
             chunks.map((rows) => ({
               statement,
@@ -1525,7 +2087,7 @@ var submit = (sender, job, chunks, atomic) => {
       let answers;
       if (scoped2) {
         answers = yield* recorder.wait(
-          Effect9.tryPromise({
+          Effect11.tryPromise({
             try: (signal) => sender.transaction.send(request, signal),
             catch: sendFailure
           })
@@ -1533,13 +2095,13 @@ var submit = (sender, job, chunks, atomic) => {
         const failure = firstFailure(answers);
         if (failure !== void 0) {
           yield* recorder.server(statement.name, serverTime2(answers));
-          return yield* Effect9.fail(sendFailure(failure.error));
+          return yield* Effect11.fail(sendFailure(failure.error));
         }
         raw = answers.map((slot) => slot.ok ? slot.value : void 0);
       } else {
         raw = yield* sending(
           recorder.wait(
-            Effect9.tryPromise({
+            Effect11.tryPromise({
               try: (signal) => sender.transport.collect(request, signal),
               catch: sendFailure
             })
@@ -1548,7 +2110,7 @@ var submit = (sender, job, chunks, atomic) => {
         );
       }
       return yield* recorder.decode(
-        Effect9.gen(function* () {
+        Effect11.gen(function* () {
           const slots = yield* countOf(
             label,
             raw,
@@ -1577,7 +2139,7 @@ var submit = (sender, job, chunks, atomic) => {
             decoded.push(value);
           }
           return decoded;
-        }).pipe(Effect9.mapError(decodeOutcome(label, writes)))
+        }).pipe(Effect11.mapError(decodeOutcome(label, writes)))
       );
     })
   ).pipe(
@@ -1587,16 +2149,16 @@ var submit = (sender, job, chunks, atomic) => {
     })
   );
 };
-var sequential = (sender, job, first, next) => Effect9.gen(function* () {
+var sequential = (sender, job, first, next) => Effect11.gen(function* () {
   const { statement, options, total } = job;
   const atomic = !("transaction" in sender) && statement.slots > 1;
   const results = [];
   let rows = 0;
   for (let chunk = first; chunk !== void 0; chunk = yield* next) {
     const index = results.length;
-    yield* options.beforeChunk?.({ index, rows: chunk }) ?? Effect9.void;
+    yield* options.beforeChunk?.({ index, rows: chunk }) ?? Effect11.void;
     const [result] = yield* submit(sender, job, [chunk], atomic).pipe(
-      Effect9.mapError(
+      Effect11.mapError(
         (cause) => "transaction" in sender || cause instanceof TransactionOutcomeUnknown ? cause : new BulkWriteError({
           statement: statement.name,
           chunk: index,
@@ -1612,25 +2174,25 @@ var sequential = (sender, job, first, next) => Effect9.gen(function* () {
       chunks: results.length,
       rows,
       total
-    }) ?? Effect9.void;
+    }) ?? Effect11.void;
   }
   return { chunks: results.length, rows, results };
 });
-var batched = (sender, job, first, next) => Effect9.gen(function* () {
+var batched = (sender, job, first, next) => Effect11.gen(function* () {
   const { options, total } = job;
   const chunks = [];
   for (let chunk = first; chunk !== void 0; chunk = yield* next) {
     yield* options.beforeChunk?.({
       index: chunks.length,
       rows: chunk
-    }) ?? Effect9.void;
+    }) ?? Effect11.void;
     chunks.push(chunk);
   }
   const results = yield* submit(sender, job, chunks, true);
   let rows = 0;
   for (const [index, chunk] of chunks.entries()) {
     rows += chunk.length;
-    yield* options.onProgress?.({ chunks: index + 1, rows, total }) ?? Effect9.void;
+    yield* options.onProgress?.({ chunks: index + 1, rows, total }) ?? Effect11.void;
   }
   return { chunks: chunks.length, rows, results };
 });
@@ -1639,45 +2201,45 @@ var fromOneShot = (first, next, replay) => {
   let finished = false;
   return () => {
     let index = 0;
-    const pull = Effect9.suspend(() => {
+    const pull = Effect11.suspend(() => {
       const cached = history[index++];
-      if (cached !== void 0) return Effect9.succeed(cached);
-      if (finished) return Cause2.done();
+      if (cached !== void 0) return Effect11.succeed(cached);
+      if (finished) return Cause3.done();
       return next.pipe(
-        Effect9.mapError((error) => new SourceFailure(error)),
-        Effect9.flatMap((chunk) => {
+        Effect11.mapError((error) => new SourceFailure(error)),
+        Effect11.flatMap((chunk) => {
           if (chunk === void 0) {
             finished = true;
-            return Cause2.done();
+            return Cause3.done();
           }
           if (replay) history.push(chunk);
-          return Effect9.succeed(chunk);
+          return Effect11.succeed(chunk);
         })
       );
     });
-    return Stream3.fromPull(Effect9.succeed(pull));
+    return Stream5.fromPull(Effect11.succeed(pull));
   };
 };
 function makeBulk(sender) {
   return (statement, input, options) => {
     const size = options.chunk ?? 500;
     if (!Number.isInteger(size) || size <= 0) {
-      return Effect9.die(
+      return Effect11.die(
         new RangeError("bulk chunk size must be a positive integer")
       );
     }
     if (statement.transactional) {
-      return Effect9.fail(
+      return Effect11.fail(
         new StatementScopeError({
           statement: statement.name,
           message: "bulk cannot run a statement with its own BEGIN, COMMIT or CANCEL"
         })
       );
     }
-    return Effect9.scoped(
-      Effect9.gen(function* () {
+    return Effect11.scoped(
+      Effect11.gen(function* () {
         const source = input[options.over];
-        const next = Stream3.isStream(source) ? yield* streamChunks(
+        const next = Stream5.isStream(source) ? yield* streamChunks(
           source,
           size
         ) : yield* iterableChunks(source, size);
@@ -1718,7 +2280,7 @@ function makeBulk(sender) {
                 },
                 ...before !== void 0 && {
                   beforeChunk: (chunk) => before(chunk).pipe(
-                    Effect9.mapError(
+                    Effect11.mapError(
                       (error) => new SourceFailure(error)
                     )
                   )
@@ -1732,13 +2294,13 @@ function makeBulk(sender) {
           options.retry === void 0 ? void 0 : { retry: options.retry }
         );
         return yield* scoped2.pipe(
-          Effect9.catch(
+          Effect11.catch(
             (error) => {
               if (error instanceof SourceFailure)
-                return Effect9.fail(error.error);
+                return Effect11.fail(error.error);
               if (!bodyStarted && error instanceof StatementUnsupported)
                 return batched(sender, job, first, next);
-              return Effect9.fail(error);
+              return Effect11.fail(error);
             }
           )
         );
@@ -1747,181 +2309,23 @@ function makeBulk(sender) {
   };
 }
 
-// src/client/live.ts
-import { Effect as Effect10, Queue, Schema as Schema3, Stream as Stream4 } from "effect";
-import {
-  ConfigurationError,
-  UnavailableFeatureError as UnavailableFeatureError3,
-  UnsupportedFeatureError as UnsupportedFeatureError3
-} from "surrealdb";
-var unsupported2 = (statement, cause) => new StatementUnsupported({
-  feature: "live query",
-  statement,
-  message: "the connection cannot listen for live queries",
-  ...cause !== void 0 && { cause }
-});
-var requestError2 = (statement, cause) => cause instanceof UnsupportedFeatureError3 || cause instanceof UnavailableFeatureError3 || cause instanceof ConfigurationError && cause.isLiveQueryNotSupported ? unsupported2(statement, cause) : new StatementRequestError({
-  statement,
-  message: requestErrorText(cause),
-  cause
-});
-var closed = (statement, reason) => new LiveQueryClosed({
-  statement,
-  reason,
-  message: reason === "killed" ? `the engine killed live query \`${statement}\`` : `the connection for live query \`${statement}\` closed`
-});
-var decodeField = (statement, field, codec, value) => Schema3.decodeUnknownEffect(codec)(value, {
-  onExcessProperty: "error"
-}).pipe(
-  Effect10.mapError(
-    (error) => new StatementDecodeError({
-      statement,
-      slot: 1,
-      committed: false,
-      message: `live event ${field}: ${codecIssueText(error.issue, codec.ast)}`
-    })
-  )
-);
-var changes = (statement, handle) => Effect10.gen(function* () {
-  const disconnected = () => closed(statement, "disconnected");
-  const iterator = yield* Effect10.try({
-    try: () => handle.messages[Symbol.asyncIterator](),
-    catch: disconnected
-  });
-  const queue = yield* Queue.unbounded();
-  yield* Effect10.addFinalizer(() => Queue.shutdown(queue));
-  const poll = Effect10.gen(function* () {
-    const frame = yield* Effect10.tryPromise({
-      try: () => iterator.next(),
-      catch: disconnected
-    });
-    if (frame.done) return yield* Effect10.fail(disconnected());
-    const { action, id, value } = frame.value;
-    if (action === "KILLED")
-      return yield* Effect10.fail(closed(statement, "killed"));
-    yield* Queue.offer(queue, { action, id, value });
-  });
-  yield* Effect10.forkScoped(
-    Effect10.forever(poll).pipe(
-      Effect10.catch((error) => Queue.fail(queue, error))
-    ),
-    { startImmediately: true }
-  );
-  return Stream4.fromQueue(queue);
-});
-var register = (open, descriptor, input) => {
-  const { name: name2, sql } = descriptor;
-  const operation = `live(${name2})`;
-  return recording(
-    "run",
-    operation,
-    (recorder) => Effect10.gen(function* () {
-      const bindings = yield* Effect10.interruptible(
-        recorder.encode(
-          encode(descriptor, input).pipe(
-            Effect10.tap(
-              (encoded) => checkValues(encoded, () => name2, void 0)
-            )
-          )
-        )
-      );
-      yield* recorder.server(name2, void 0);
-      return yield* recorder.wait(
-        Effect10.tryPromise({
-          try: (signal) => open(
-            {
-              mode: "query",
-              sql,
-              bindings,
-              parts: [
-                requestPart(descriptor, bindings, 0, 1)
-              ]
-            },
-            signal
-          ),
-          catch: (cause) => requestError2(name2, cause)
-        })
-      );
-    })
-  ).pipe(withClientSpan(operation, { kind: "client" }));
-};
-var kill = (name2, handle) => {
-  const operation = `kill(${name2})`;
-  return recording(
-    "run",
-    operation,
-    (recorder) => recorder.wait(Effect10.tryPromise(() => handle.kill())).pipe(
-      Effect10.catch(
-        () => Effect10.logWarning(
-          "live query cleanup could not be confirmed"
-        ).pipe(Effect10.annotateLogs({ statement: name2 }))
-      )
-    )
-  ).pipe(withClientSpan(operation, { kind: "client" }));
-};
-var scoped = (transport) => (statement, ...args) => Effect10.gen(function* () {
-  const open = transport.live;
-  if (open === void 0)
-    return yield* Effect10.fail(unsupported2(statement.name));
-  const { name: name2, sql, params } = statement;
-  const descriptor = make({
-    name: name2,
-    sql,
-    params,
-    result: Schema3.Unknown,
-    writes: false
-  });
-  const input = args[0] ?? {};
-  const handle = yield* Effect10.acquireRelease(
-    register(open, descriptor, input),
-    (subscribed) => kill(name2, subscribed)
-  );
-  const messages = yield* changes(name2, handle);
-  return messages.pipe(
-    Stream4.mapEffect(
-      ({ action, id, value }) => Effect10.gen(function* () {
-        const recordId = yield* decodeField(
-          name2,
-          "id",
-          statement.id,
-          id
-        );
-        const row = yield* decodeField(
-          name2,
-          "value",
-          statement.row,
-          value
-        );
-        return { action, id: recordId, value: row };
-      })
-    )
-  );
-});
-var makeLive = (transport) => {
-  const liveScoped = scoped(transport);
-  return {
-    liveScoped,
-    live: (statement, ...args) => Stream4.unwrap(liveScoped(statement, ...args))
-  };
-};
-
 // src/client/pipeline.ts
-import { Duration as Duration6, Effect as Effect11, Result } from "effect";
+import { Duration as Duration7, Effect as Effect12, Result } from "effect";
 var wrap = { before: "BEGIN;", after: "COMMIT;" };
 var decodePart = ({ statement, slots: expected }, answers, wrapped) => {
   const failed = firstFailure(answers);
   if (failed !== void 0) {
-    return Effect11.succeed(
+    return Effect12.succeed(
       Result.fail(classify(statement.name, [statement], failed.error))
     );
   }
   const writes = changesOf([statement]);
-  return Effect11.gen(function* () {
+  return Effect12.gen(function* () {
     const values = answers.map(
       (slot) => slot.ok ? slot.value : void 0
     );
     if (wrapped && (values[0] !== void 0 || values[expected - 1] !== void 0)) {
-      return yield* Effect11.fail(
+      return yield* Effect12.fail(
         new StatementDecodeError({
           statement: statement.name,
           slot: 0,
@@ -1932,24 +2336,24 @@ var decodePart = ({ statement, slots: expected }, answers, wrapped) => {
     }
     return yield* decode(statement, values, wrapped ? 1 : 0, writes);
   }).pipe(
-    Effect11.mapError(decodeOutcome(statement.name, writes)),
-    Effect11.result
+    Effect12.mapError(decodeOutcome(statement.name, writes)),
+    Effect12.result
   );
 };
 var serverTime3 = (slots) => {
   let duration;
   for (const { server } of slots) {
     if (server !== void 0)
-      duration = Duration6.sum(duration ?? Duration6.zero, server);
+      duration = Duration7.sum(duration ?? Duration7.zero, server);
   }
   return duration;
 };
 var decodeAnswers = ({ parts }, answers, wrapped, recorder) => {
   const expected = parts.reduce((total, { slots }) => total + slots, 0);
   const aligned = answers.length === expected;
-  return Effect11.forEach(
+  return Effect12.forEach(
     parts,
-    (part) => Effect11.gen(function* () {
+    (part) => Effect12.gen(function* () {
       const { statement, offset, slots } = part;
       if (!aligned) {
         yield* recorder.server(statement.name, void 0);
@@ -1960,8 +2364,8 @@ var decodeAnswers = ({ parts }, answers, wrapped, recorder) => {
           expected,
           writes
         ).pipe(
-          Effect11.mapError(decodeOutcome(statement.name, writes)),
-          Effect11.result
+          Effect12.mapError(decodeOutcome(statement.name, writes)),
+          Effect12.result
         );
       }
       const returned = answers.slice(offset, offset + slots);
@@ -1977,7 +2381,7 @@ var decodeAnswers = ({ parts }, answers, wrapped, recorder) => {
 var makePipeline = (transport) => (given, options) => {
   const statements = given;
   if (statements.length === 0)
-    return Effect11.succeed([]);
+    return Effect12.succeed([]);
   const names = statements.map(({ statement }) => statement.name);
   const name2 = `pipeline(${names.join(", ")})`;
   const sql = statements.map(({ statement }) => statement.sql).join("\n");
@@ -1996,13 +2400,13 @@ var makePipeline = (transport) => (given, options) => {
     recording(
       "pipeline",
       name2,
-      (recorder) => Effect11.gen(function* () {
+      (recorder) => Effect12.gen(function* () {
         const request = yield* recorder.encode(
-          Effect11.gen(function* () {
+          Effect12.gen(function* () {
             const joined = yield* joinWith(
               statements.map(({ statement, input }) => ({
                 statement,
-                bindings: Effect11.suspend(
+                bindings: Effect12.suspend(
                   () => encode(statement, input)
                 )
               })),
@@ -2026,7 +2430,7 @@ var makePipeline = (transport) => (given, options) => {
           })
         );
         const answers = yield* recorder.wait(
-          Effect11.tryPromise({
+          Effect12.tryPromise({
             try: (signal) => transport.send(request, signal),
             catch: (cause) => new StatementRequestError({
               statement: name2,
@@ -2048,21 +2452,21 @@ var makePipeline = (transport) => (given, options) => {
       }
     }
   ).pipe(
-    Effect11.map((outcomes) => outcomes)
+    Effect12.map((outcomes) => outcomes)
   );
 };
 
 // src/client/stream.ts
 import {
-  Cause as Cause3,
+  Cause as Cause4,
   Clock as Clock3,
-  Duration as Duration7,
-  Effect as Effect12,
+  Duration as Duration8,
+  Effect as Effect13,
   Exit as Exit3,
   Metric as Metric2,
   Schema as Schema4,
   Scope as Scope2,
-  Stream as Stream5
+  Stream as Stream6
 } from "effect";
 import { UnavailableFeatureError as UnavailableFeatureError4, UnsupportedFeatureError as UnsupportedFeatureError4 } from "surrealdb";
 var makeStream = (transport) => (statement, ...args) => {
@@ -2077,24 +2481,24 @@ var makeStream = (transport) => (statement, ...args) => {
     message: "the connection does not support streaming queries",
     cause
   }) : classify(name2, [statement], cause);
-  return Stream5.unwrap(
-    Effect12.gen(function* () {
+  return Stream6.unwrap(
+    Effect13.gen(function* () {
       const recorder = yield* recordingScoped("stream", name2);
       const started = yield* Clock3.currentTimeNanos;
       let outcome = "success";
       let rows = 0;
       let server;
-      yield* Effect12.addFinalizer(
-        (exit) => Effect12.gen(function* () {
+      yield* Effect13.addFinalizer(
+        (exit) => Effect13.gen(function* () {
           yield* recorder.server(name2, server);
           yield* recorder.rows(name2, rows);
           const label = Exit3.hasInterrupts(exit) ? "interrupted" : outcome;
-          yield* Effect12.annotateCurrentSpan(
+          yield* Effect13.annotateCurrentSpan(
             "db.response.returned_rows",
             rows
           );
           if (label !== "success" && label !== "interrupted")
-            yield* Effect12.annotateCurrentSpan(
+            yield* Effect13.annotateCurrentSpan(
               "error.type",
               label
             );
@@ -2109,19 +2513,19 @@ var makeStream = (transport) => (statement, ...args) => {
             Metric2.withAttributes(metrics.duration, {
               statement: name2
             }),
-            Duration7.nanos(
+            Duration8.nanos(
               (yield* Clock3.currentTimeNanos) - started
             )
           );
         })
       );
-      const countError = (error) => Effect12.sync(() => {
-        if (!Cause3.isDone(error)) outcome = error._tag;
+      const countError = (error) => Effect13.sync(() => {
+        if (!Cause4.isDone(error)) outcome = error._tag;
       });
       const bindings = yield* recorder.encode(
-        Effect12.gen(function* () {
+        Effect13.gen(function* () {
           if (result.ast.checks !== void 0 || result.ast.encoding !== void 0) {
-            return yield* Effect12.fail(
+            return yield* Effect13.fail(
               new StatementUnsupported({
                 statement: name2,
                 feature: "stream",
@@ -2133,7 +2537,7 @@ var makeStream = (transport) => (statement, ...args) => {
           yield* checkValues(encoded, () => name2, void 0);
           return encoded;
         })
-      ).pipe(Effect12.tapError(countError));
+      ).pipe(Effect13.tapError(countError));
       const request = {
         mode: "query",
         sql,
@@ -2142,8 +2546,8 @@ var makeStream = (transport) => (statement, ...args) => {
       };
       const scope = yield* Scope2.Scope;
       const sourceScope = yield* Scope2.fork(scope, "sequential");
-      const signal = yield* Effect12.abortSignal;
-      const frames = Stream5.fromAsyncIterable(
+      const signal = yield* Effect13.abortSignal;
+      const frames = Stream6.fromAsyncIterable(
         {
           async *[Symbol.asyncIterator]() {
             yield* transport.stream(request, signal);
@@ -2151,8 +2555,8 @@ var makeStream = (transport) => (statement, ...args) => {
         },
         classifyError
       );
-      const pull = yield* Stream5.toPull(frames).pipe(
-        Effect12.provideService(Scope2.Scope, sourceScope)
+      const pull = yield* Stream6.toPull(frames).pipe(
+        Effect13.provideService(Scope2.Scope, sourceScope)
       );
       const nextFrame = recorder.pull(pull);
       const completed = /* @__PURE__ */ new Set();
@@ -2181,14 +2585,14 @@ var makeStream = (transport) => (statement, ...args) => {
       const validate = (slot, value) => {
         const values = [];
         values[slot] = value;
-        return recorder.decode(decode(statement, values, 0, "none")).pipe(Effect12.mapError(decodeError));
+        return recorder.decode(decode(statement, values, 0, "none")).pipe(Effect13.mapError(decodeError));
       };
       const checkedFrame = nextFrame.pipe(
-        Effect12.catchIf(
-          Cause3.isDone,
-          (end2) => Effect12.gen(function* () {
+        Effect13.catchIf(
+          Cause4.isDone,
+          (end2) => Effect13.gen(function* () {
             if (collateral !== void 0)
-              return yield* Effect12.fail(
+              return yield* Effect13.fail(
                 classifyError(collateral.error)
               );
             yield* countOf(
@@ -2196,31 +2600,31 @@ var makeStream = (transport) => (statement, ...args) => {
               Array.from(completed),
               slots,
               "none"
-            ).pipe(Effect12.mapError(decodeError));
-            return yield* Effect12.fail(end2);
+            ).pipe(Effect13.mapError(decodeError));
+            return yield* Effect13.fail(end2);
           })
         )
       );
-      const nextRow = Effect12.gen(function* () {
+      const nextRow = Effect13.gen(function* () {
         while (true) {
           const [frame] = yield* checkedFrame;
           const { slot } = frame;
           if ((frame.kind === "done" || frame.kind === "error") && frame.server !== void 0) {
-            server = Duration7.sum(
-              server ?? Duration7.zero,
+            server = Duration8.sum(
+              server ?? Duration8.zero,
               frame.server
             );
           }
           if (frame.kind === "error") {
             if (!isCollateralFailure(frame.error))
-              return yield* Effect12.fail(
+              return yield* Effect13.fail(
                 classifyError(frame.error)
               );
             collateral ??= frame;
           }
           if (collateral !== void 0) continue;
           if (!Number.isInteger(slot) || slot < 0 || slot >= slots || completed.has(slot)) {
-            return yield* Effect12.fail(
+            return yield* Effect13.fail(
               decodeError(
                 makeDecodeError(
                   0,
@@ -2247,7 +2651,7 @@ var makeStream = (transport) => (statement, ...args) => {
                 onExcessProperty: "error"
               })
             ).pipe(
-              Effect12.mapError(
+              Effect13.mapError(
                 (error) => decodeError(
                   makeDecodeError(
                     valueSlot,
@@ -2263,8 +2667,8 @@ var makeStream = (transport) => (statement, ...args) => {
             return [row];
           }
         }
-      }).pipe(Effect12.tapError(countError));
-      return Stream5.fromPull(Effect12.succeed(nextRow));
+      }).pipe(Effect13.tapError(countError));
+      return Stream6.fromPull(Effect13.succeed(nextRow));
     })
   ).pipe(
     withClientStreamSpan(name2, {
@@ -2291,8 +2695,8 @@ var SurrealClient = class extends Context3.Service()(
   "effect-surrealkit/SurrealClient"
 ) {
 };
-var make2 = (db) => makeWith(sdkTransport(db));
-var makeRun = (transport) => (statement, ...args) => {
+var make2 = (db, options) => makeWith(sdkTransport(db, options?.connection));
+var makeRun = (transport, sdkRetry) => (statement, ...args) => {
   const input = args[0] ?? {};
   const options = args[1];
   const writes = changesOf([statement]);
@@ -2305,9 +2709,9 @@ var makeRun = (transport) => (statement, ...args) => {
     recording(
       "run",
       statement.name,
-      (recorder) => Effect13.gen(function* () {
+      (recorder) => Effect14.gen(function* () {
         const request = yield* recorder.encode(
-          Effect13.gen(function* () {
+          Effect14.gen(function* () {
             const bindings = yield* encode(statement, input);
             yield* checkValues(
               bindings,
@@ -2316,6 +2720,7 @@ var makeRun = (transport) => (statement, ...args) => {
             );
             return {
               mode: "query",
+              ...sdkRetry === false && { sdkRetry },
               sql: statement.sql,
               bindings,
               parts: [
@@ -2331,7 +2736,7 @@ var makeRun = (transport) => (statement, ...args) => {
         );
         const results = yield* sending(
           recorder.wait(
-            Effect13.tryPromise({
+            Effect14.tryPromise({
               try: (signal) => transport.collect(request, signal),
               catch: (cause) => classify(
                 statement.name,
@@ -2344,7 +2749,7 @@ var makeRun = (transport) => (statement, ...args) => {
         );
         yield* recorder.server(statement.name, void 0);
         const decoded = yield* recorder.decode(
-          Effect13.gen(function* () {
+          Effect14.gen(function* () {
             const slots = yield* countOf(
               statement.name,
               results,
@@ -2353,7 +2758,7 @@ var makeRun = (transport) => (statement, ...args) => {
             );
             return yield* decode(statement, slots, 0, writes);
           }).pipe(
-            Effect13.mapError(
+            Effect14.mapError(
               decodeOutcome(statement.name, writes)
             )
           )
@@ -2385,14 +2790,14 @@ var makeTransaction = (transport) => (given, options) => {
     recording(
       "transaction",
       name2,
-      (recorder) => Effect13.gen(function* () {
+      (recorder) => Effect14.gen(function* () {
         if (statements.length === 0) return [];
         const request = yield* recorder.encode(
-          Effect13.gen(function* () {
+          Effect14.gen(function* () {
             const joined = yield* joinWith(
               statements.map(({ statement, input }) => ({
                 statement,
-                bindings: Effect13.suspend(
+                bindings: Effect14.suspend(
                   () => encode(statement, input)
                 )
               })),
@@ -2413,7 +2818,7 @@ var makeTransaction = (transport) => (given, options) => {
         );
         const results = yield* sending(
           recorder.wait(
-            Effect13.tryPromise({
+            Effect14.tryPromise({
               try: (signal) => transport.collect(request, signal),
               catch: (cause) => classify(name2, descriptors, cause)
             })
@@ -2421,7 +2826,7 @@ var makeTransaction = (transport) => (given, options) => {
           options
         );
         return yield* recorder.decode(
-          Effect13.gen(function* () {
+          Effect14.gen(function* () {
             const slots = yield* countOf(
               name2,
               results,
@@ -2451,7 +2856,7 @@ var makeTransaction = (transport) => (given, options) => {
               decoded.push(value);
             }
             return decoded;
-          }).pipe(Effect13.mapError(decodeOutcome(name2, writes)))
+          }).pipe(Effect14.mapError(decodeOutcome(name2, writes)))
         );
       })
     )
@@ -2464,29 +2869,36 @@ var makeWith = (transport) => ({
   withTransaction: makeWithTransaction(transport),
   bulk: makeBulk({ transport }),
   stream: makeStream(transport),
-  ...makeLive(transport)
+  ...makeLive(transport),
+  watchQuery: makeWatchQuery(transport, makeRun(transport, false))
 });
-var layer = (db) => Layer.succeed(SurrealClient, make2(db));
-var run = (statement, ...args) => Effect13.flatMap(
-  Effect13.service(SurrealClient),
+var layer = (db, options) => Layer.succeed(SurrealClient, make2(db, options));
+var run = (statement, ...args) => Effect14.flatMap(
+  Effect14.service(SurrealClient),
   (client) => client.run(statement, ...args)
 );
-var transaction = (statements, options) => Effect13.flatMap(
-  Effect13.service(SurrealClient),
+var transaction = (statements, options) => Effect14.flatMap(
+  Effect14.service(SurrealClient),
   (client) => client.transaction(statements, options)
 );
-var pipeline = (statements, options) => Effect13.flatMap(
-  Effect13.service(SurrealClient),
+var pipeline = (statements, options) => Effect14.flatMap(
+  Effect14.service(SurrealClient),
   (client) => client.pipeline(statements, options)
 );
-var withTransaction = (effect, options) => Effect13.flatMap(
-  Effect13.service(SurrealClient),
+var withTransaction = (effect, options) => Effect14.flatMap(
+  Effect14.service(SurrealClient),
   (client) => withTransactionContext(client, effect, options)
 );
-var stream = (statement, ...input) => Stream6.unwrap(
-  Effect13.map(
-    Effect13.service(SurrealClient),
+var stream = (statement, ...input) => Stream7.unwrap(
+  Effect14.map(
+    Effect14.service(SurrealClient),
     (client) => client.stream(statement, ...input)
+  )
+);
+var watchQuery = (statement, options, ...input) => Stream7.unwrap(
+  Effect14.map(
+    Effect14.service(SurrealClient),
+    (client) => client.watchQuery(statement, options, ...input)
   )
 );
 
@@ -2506,8 +2918,10 @@ export {
   TransactionOutcomeUnknown,
   BulkWriteError,
   LiveQueryClosed,
+  WatchQueryClosed,
   timed,
   metrics,
+  bindLive,
   bind,
   SurrealClient,
   make2 as make,
@@ -2517,6 +2931,7 @@ export {
   transaction,
   pipeline,
   withTransaction,
-  stream
+  stream,
+  watchQuery
 };
-//# sourceMappingURL=chunk-4ZDSITFZ.js.map
+//# sourceMappingURL=chunk-7IAWJOZ5.js.map

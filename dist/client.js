@@ -15,7 +15,9 @@ import {
   StatementWriteOutcomeError,
   SurrealClient,
   TransactionOutcomeUnknown,
+  WatchQueryClosed,
   bind,
+  bindLive,
   layer,
   make,
   metrics,
@@ -24,8 +26,9 @@ import {
   stream,
   timed,
   transaction,
+  watchQuery,
   withTransaction
-} from "./chunk-4ZDSITFZ.js";
+} from "./chunk-7IAWJOZ5.js";
 import "./chunk-6LS7V54M.js";
 import "./chunk-Q5N5NWCM.js";
 import "./chunk-3SWEJO3L.js";
@@ -48,7 +51,9 @@ export {
   StatementWriteOutcomeError,
   SurrealClient,
   TransactionOutcomeUnknown,
+  WatchQueryClosed,
   bind,
+  bindLive,
   layer,
   make,
   metrics,
@@ -57,6 +62,7 @@ export {
   stream,
   timed,
   transaction,
+  watchQuery,
   withTransaction
 };
 //# sourceMappingURL=client.js.map

@@ -11,7 +11,7 @@ import {
   make as make2,
   makeWith,
   run
-} from "./chunk-4ZDSITFZ.js";
+} from "./chunk-7IAWJOZ5.js";
 import "./chunk-6LS7V54M.js";
 import {
   make,
@@ -189,7 +189,14 @@ var recordUser = (options) => Effect2.gen(function* () {
       cause
     })
   });
-  return { session, client: make2(session) };
+  const { connection } = database;
+  return {
+    session,
+    client: make2(
+      session,
+      connection instanceof Surreal ? { connection } : void 0
+    )
+  };
 });
 
 // src/testing/drift.ts

@@ -1,5 +1,5 @@
 import { Effect, Context, Layer, Scope } from 'effect';
-import { o as StatementError, x as SurrealClient, C as Client, v as StatementUnsupported, Q as Queryable } from './bulk-H5jCvinP.js';
+import { q as StatementError, z as SurrealClient, C as Client, x as StatementUnsupported, Q as Queryable } from './bulk-Pth8MGan.js';
 import { Surreal, SurrealSession } from 'surrealdb';
 import * as effect_Cause from 'effect/Cause';
 import * as effect_Types from 'effect/Types';

@@ -1,5 +1,5 @@
-import { Effect, Schedule, Result, Schema, Stream, Scope, Context, Layer } from 'effect';
-import { SurrealSession } from 'surrealdb';
+import { Effect, Schedule, Result, Duration, Stream, Schema, Scope, Context, Layer } from 'effect';
+import { Surreal, SurrealSession } from 'surrealdb';
 import { P as Params, C as Codec, q as Input, S as Statement, o as ElementOf, m as CheckedInput } from './expr-99eIx780.js';
 import { i as LiveStatement } from './live-DS7CDSd5.js';
 import * as effect_Cause from 'effect/Cause';
@@ -251,6 +251,16 @@ declare class LiveQueryClosed extends LiveQueryClosed_base<{
     readonly message: string;
 }> {
 }
+declare const WatchQueryClosed_base: new <A extends Record<string, any> = {}>(args: effect_Types.VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => effect_Cause.YieldableError & {
+    readonly _tag: "WatchQueryClosed";
+} & Readonly<A>;
+/** The observer's connection, authority or notification feed was lost. */
+declare class WatchQueryClosed extends WatchQueryClosed_base<{
+    readonly statement: string;
+    readonly reason: 'disconnected' | 'session-closed' | 'identity-changed' | 'authentication' | 'source-overflow';
+    readonly message: string;
+}> {
+}
 
 interface TransactionOptions {
     /** Retry the whole transaction body on a statement or commit conflict. */
@@ -282,6 +292,32 @@ type PipelineResults<S extends ReadonlyArray<unknown>> = {
     readonly [I in keyof S]: S[I] extends Bound<infer R, infer T, infer U> ? Result.Result<R['Type'], StatementError<T, U>> : never;
 };
 
+declare const BoundLiveTypeId: unique symbol;
+/** A typed live statement and its bindings, paired by {@link bindLive}. */
+interface BoundLive {
+    readonly [BoundLiveTypeId]: 'made by bindLive';
+    readonly statement: LiveStatement;
+    readonly input: Readonly<Record<string, unknown>>;
+}
+/** Pair a live statement with the values of its bindings. */
+declare const bindLive: <P extends Params, Row extends Codec, Id extends Codec, I = Input<P>>(statement: LiveStatement<P, Row, Id>, ...input: InputOf<P, I>) => BoundLive;
+interface WatchQueryOptions {
+    /** Explicit notification sources covering changes to the query's result. */
+    readonly sources: readonly [BoundLive, ...BoundLive[]];
+    /** Re-read even without a notification. Positive and finite, default 30 seconds. */
+    readonly reconcileEvery?: Duration.Input;
+}
+type WatchQueryState<A> = {
+    readonly _tag: 'Loading';
+} | {
+    readonly _tag: 'Stale';
+} | {
+    readonly _tag: 'Current';
+    readonly value: A;
+};
+type WatchQueryError<T extends string = never, U extends string = never> = StatementError<T, U> | LiveError | WatchQueryClosed;
+type WatchQuery = <P extends Params, R extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, R, T, U>, options: WatchQueryOptions, ...input: InputOf<P, I>) => Stream.Stream<WatchQueryState<R['Type']>, WatchQueryError<T, U>>;
+
 /**
  * Runs statements against SurrealDB through the JavaScript SDK.
  *
@@ -297,6 +333,10 @@ type PipelineResults<S extends ReadonlyArray<unknown>> = {
  * and live queries also require the corresponding optional SDK methods.
  */
 type Queryable = Pick<SurrealSession, 'query' | 'transaction'> & Partial<Pick<SurrealSession, 'beginTransaction' | 'liveOf'>>;
+interface ClientOptions {
+    /** The owning connection when observing queries on a child SDK session. */
+    readonly connection?: Surreal;
+}
 interface RunOptions {
     /**
      * Sends the same, already encoded request again while the engine
@@ -388,6 +428,8 @@ interface Client {
     readonly liveScoped: <P extends Params, Row extends Codec, Id extends Codec, I = Input<P>>(statement: LiveStatement<P, Row, Id>, ...input: InputOf<P, I>) => Effect.Effect<Stream.Stream<LiveEvent<Row['Type'], Id['Type']>, LiveError>, LiveError, Scope.Scope>;
     /** Streams changes for the lifetime of the subscription. */
     readonly live: <P extends Params, Row extends Codec, Id extends Codec, I = Input<P>>(statement: LiveStatement<P, Row, Id>, ...input: InputOf<P, I>) => Stream.Stream<LiveEvent<Row['Type'], Id['Type']>, LiveError>;
+    /** Watch the complete result of a read, refreshed by live sources and a timer. */
+    readonly watchQuery: WatchQuery;
 }
 declare const SurrealClient_base: Context.ServiceClass<SurrealClient, "effect-surrealkit/SurrealClient", Client>;
 /** The client statements run through, as a service. */
@@ -401,9 +443,9 @@ declare class SurrealClient extends SurrealClient_base {
  * await db.connect(url, { namespace, database, authentication });
  * const client = make(db);
  */
-declare const make: (db: Queryable) => Client;
+declare const make: (db: Queryable, options?: ClientOptions) => Client;
 /** Provides {@link SurrealClient} from an SDK connection or session. */
-declare const layer: (db: Queryable) => Layer.Layer<SurrealClient>;
+declare const layer: (db: Queryable, options?: ClientOptions) => Layer.Layer<SurrealClient>;
 /** Runs a statement through the {@link SurrealClient} in context. */
 declare const run: <P extends Params, R extends Codec, Throws extends string, Unique extends string = never, I = Input<P>>(statement: Statement<P, R, Throws, Unique>, ...args: RunArgs<P, I>) => Effect.Effect<R["Type"], StatementError<Throws, Unique>, SurrealClient>;
 /** Runs statements atomically through the {@link SurrealClient} in context. */
@@ -414,6 +456,8 @@ declare const pipeline: <const S extends ReadonlyArray<unknown>>(statements: Bou
 declare const withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: TransactionOptions) => Effect.Effect<A, E | TransactionError, R | SurrealClient>;
 /** Streams rows through the client in context. */
 declare const stream: <P extends Params, Row extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, Schema.$Array<Row>, T, U>, ...input: InputOf<P, I>) => Stream.Stream<Row["Type"], StatementError<T, U> | StatementUnsupported, SurrealClient>;
+/** Observes a finite read through the {@link SurrealClient} in context. */
+declare const watchQuery: <P extends Params, R extends Codec, T extends string, U extends string = never, I = Input<P>>(statement: Statement<P, R, T, U>, options: WatchQueryOptions, ...input: InputOf<P, I>) => Stream.Stream<WatchQueryState<R["Type"]>, WatchQueryError<T, U>, SurrealClient>;
 
 /** The names of the bindings whose decoded values are lists. */
 type ListBindingsOf<P extends Params> = {
@@ -455,4 +499,4 @@ interface BulkSummary<A> {
     readonly results: ReadonlyArray<A>;
 }
 
-export { type TransactionOptions as A, type Bound as B, type Client as C, TransactionOutcomeUnknown as D, bind as E, layer as F, make as G, pipeline as H, type InputOf as I, run as J, stream as K, type ListBindingsOf as L, transaction as M, withTransaction as N, type PipelineOptions as P, type Queryable as Q, type Results as R, StatementConflict as S, type ThrownByAny as T, type UniqueIndexesOfAny as U, type BoundStatements as a, type BulkOptions as b, type BulkProgress as c, type BulkSummary as d, BulkWriteError as e, type LiveError as f, type LiveEvent as g, LiveQueryClosed as h, type PipelineResults as i, type RunArgs as j, type RunOptions as k, StatementDecodeError as l, StatementEmptyResult as m, StatementEncodeError as n, type StatementError as o, StatementIndexConflict as p, StatementRecordExists as q, StatementRequestError as r, StatementScopeError as s, StatementThrown as t, StatementUnexpectedThrow as u, StatementUnsupported as v, StatementWriteOutcomeError as w, SurrealClient as x, type TransactionClient as y, type TransactionError as z };
+export { watchQuery as $, type TransactionClient as A, type Bound as B, type Client as C, type TransactionError as D, type TransactionOptions as E, TransactionOutcomeUnknown as F, WatchQueryClosed as G, type WatchQueryError as H, type InputOf as I, type WatchQueryOptions as J, type WatchQueryState as K, type ListBindingsOf as L, bind as M, bindLive as N, layer as O, type PipelineOptions as P, type Queryable as Q, type Results as R, StatementConflict as S, type ThrownByAny as T, type UniqueIndexesOfAny as U, make as V, type WatchQuery as W, pipeline as X, run as Y, stream as Z, transaction as _, type BoundLive as a, withTransaction as a0, type BoundStatements as b, type BulkOptions as c, type BulkProgress as d, type BulkSummary as e, BulkWriteError as f, type ClientOptions as g, type LiveError as h, type LiveEvent as i, LiveQueryClosed as j, type PipelineResults as k, type RunArgs as l, type RunOptions as m, StatementDecodeError as n, StatementEmptyResult as o, StatementEncodeError as p, type StatementError as q, StatementIndexConflict as r, StatementRecordExists as s, StatementRequestError as t, StatementScopeError as u, StatementThrown as v, StatementUnexpectedThrow as w, StatementUnsupported as x, StatementWriteOutcomeError as y, SurrealClient as z };
