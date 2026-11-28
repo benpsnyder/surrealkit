@@ -21,6 +21,7 @@ import {
 	generate,
 	semanticDigest,
 } from '../src/emitter/index.js';
+import { unarySchema } from '../src/emitter/kinds.js';
 import { refine, type TableDescriptor } from '../src/index.js';
 import {
 	at,
@@ -277,6 +278,46 @@ describe('golden generated output', () => {
 });
 
 describe('generation rules', () => {
+	it('extends a trailing pipe instead of chaining another one', () => {
+		expect(unarySchema('Schema.Array', 'SurrealSchema.String', true)).toBe(
+			'Schema.Array(SurrealSchema.String)',
+		);
+		expect(
+			unarySchema('Schema.optionalKey', 'Schema.Struct({ a: X })', true),
+		).toBe('Schema.Struct({ a: X }).pipe(Schema.optionalKey)');
+		expect(
+			unarySchema(
+				'Schema.optionalKey',
+				'Schema.Struct({ a: X }).pipe(Schema.Array)',
+				true,
+			),
+		).toBe(
+			'Schema.Struct({ a: X }).pipe(Schema.Array, Schema.optionalKey)',
+		);
+		expect(
+			unarySchema('Schema.optionalKey', 'Schema.Literals([")"])', true),
+		).toBe('Schema.Literals([")"]).pipe(Schema.optionalKey)');
+		expect(
+			unarySchema(
+				'Schema.optionalKey',
+				'X.pipe(Schema.Array).check(c)',
+				true,
+			),
+		).toBe('X.pipe(Schema.Array).check(c).pipe(Schema.optionalKey)');
+		expect(
+			unarySchema('Schema.optionalKey', 'Schema.Struct({})', false),
+		).toBe('Schema.optionalKey(Schema.Struct({}))');
+	});
+	it('never chains pipe calls in pipeable output', async () => {
+		const document = readJson(compiledPath('corpus'));
+		const piped = await run(
+			generate(document, { ...corpusOptions, pipeable: true }),
+		);
+		for (const file of piped.files)
+			expect(file.content, file.path).not.toMatch(
+				/\)\.pipe\([^()]*\)\.pipe\(/,
+			);
+	});
 	const example = () =>
 		readJson(examplePath) as Record<string, unknown> & {
 			tables: Array<Record<string, unknown>>;
